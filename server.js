@@ -1,0 +1,3189 @@
+// Imports
+import fs from 'fs'
+import axios from 'axios';
+import express from 'express';
+import path, { dirname } from 'path';
+import { fileURLToPath } from 'url';
+import multer from 'multer'
+import FormData from 'form-data'
+import ffmpeg from 'fluent-ffmpeg'
+import dotenv from 'dotenv'
+import passport from 'passport'
+import session from 'express-session'
+import cors from 'cors'
+import helmet from 'helmet'
+import compression from 'compression'
+import { google } from 'googleapis'
+import { OAuth2Client } from 'google-auth-library'
+import { CreativeDB, CreativeAccountDB, BatchDB } from './backend/utils/database.js'
+import { processCreative, updateCreativeThumbnail, getCreativeFilePath, getThumbnailFilePath } from './backend/utils/creative-utils.js'
+import { FacebookCacheDB } from './backend/utils/facebook-cache-db.js'
+import { UserDB } from './backend/auth/auth-db.js'
+import { configurePassport, ensureAuthenticated, ensureAuthenticatedAPI, ensureNotAuthenticated } from './backend/auth/passport-config.js'
+import { validateRequest, loginRateLimiter, apiRateLimiter } from './backend/middleware/validation.js'
+import { getPaths } from './backend/utils/paths.js'
+
+// ffmpeg set up
+const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Multer set up
+const paths = getPaths();
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Ensure uploads directory exists
+    const uploadDir = paths.uploads;
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir)
+  },
+  filename: function (req, file, cb) {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+})
+
+dotenv.config()
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 4 * 1024 * 1024 * 1024 // 4GB limit per file
+  }
+})
+
+// Express server set up
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 6969;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Security Configuration
+// Enable trust proxy for production (when behind a reverse proxy like Nginx)
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
+// Enable compression for all responses
+app.use(compression());
+
+// Configure CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    // In production, use FRONTEND_URL from environment
+    const allowedOrigins = isProduction
+      ? (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL, process.env.FRONTEND_URL.replace('https://', 'https://www.')] : ['*'])
+      : ['http://localhost:3000', 'http://localhost:6969', 'http://localhost:5173'];
+
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+
+    // Allow all origins if * is specified (not recommended for production)
+    if (allowedOrigins.includes('*')) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // Allow credentials (cookies, authorization headers)
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+// Security headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // You may want to remove unsafe-eval in production
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      connectSrc: ["'self'", "https://graph.facebook.com", "https://www.googleapis.com"],
+      mediaSrc: ["'self'", "blob:"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // May need to be false for some external resources
+}));
+
+// Configure session before passport
+const sessionSecret = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
+if (!process.env.SESSION_SECRET && isProduction) {
+  console.warn('WARNING: SESSION_SECRET not set in production!');
+}
+
+const sessionConfig = {
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: isProduction, // Only use secure cookies in production with HTTPS
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isProduction ? 'lax' : 'strict', // Use 'lax' in production for redirects
+  }
+};
+
+// In production, we need to trust the proxy for secure cookies
+if (isProduction) {
+  sessionConfig.proxy = true; // Trust the proxy
+}
+
+console.log('Session config:', {
+  isProduction,
+  cookieSecure: sessionConfig.cookie.secure,
+  sameSite: sessionConfig.cookie.sameSite,
+  proxy: sessionConfig.proxy
+});
+
+app.use(session(sessionConfig));
+
+// Initialize Passport
+configurePassport();
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(paths.uploads));
+
+// Apply rate limiting to API routes
+app.use('/api/', apiRateLimiter);
+
+// Facebook Graph API credentials
+const api_version = 'v23.0';
+const access_token = process.env.META_ACCESS_TOKEN;
+const system_user_id = process.env.META_SYSTEM_USER_ID;
+
+// Google OAuth2 setup
+const oauth2Client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+oauth2Client.setCredentials({
+  refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+});
+
+// SSE Upload Progress Management
+const uploadSessions = new Map();
+
+// Circuit Breaker for external API calls
+class CircuitBreaker {
+  constructor(name, timeout = 60000) {
+    this.name = name;
+    this.failureCount = 0;
+    this.failureThreshold = 5;
+    this.timeout = timeout;
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.nextAttempt = Date.now();
+  }
+
+  async call(fn) {
+    if (this.state === 'OPEN') {
+      if (Date.now() < this.nextAttempt) {
+        throw new Error(`Circuit breaker is OPEN for ${this.name}`);
+      }
+      this.state = 'HALF_OPEN';
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  onSuccess() {
+    this.failureCount = 0;
+    this.state = 'CLOSED';
+  }
+
+  onFailure() {
+    this.failureCount++;
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = 'OPEN';
+      this.nextAttempt = Date.now() + this.timeout;
+      console.error(`Circuit breaker opened for ${this.name}. Will retry after ${new Date(this.nextAttempt)}`);
+
+      // Only notify for critical services
+      if (this.name === 'Facebook API') {
+        const telegramMessage = `<b>🔴 CRITICAL: Facebook API Circuit Breaker Opened</b>\n<b>Service Down - Multiple Failures Detected</b>\n<b>Next Retry:</b> ${new Date(this.nextAttempt).toLocaleString()}`;
+        sendTelegramNotification(telegramMessage);
+      }
+    }
+  }
+
+  getState() {
+    return {
+      name: this.name,
+      state: this.state,
+      failureCount: this.failureCount,
+      nextAttempt: this.state === 'OPEN' ? new Date(this.nextAttempt) : null
+    };
+  }
+}
+
+// Initialize circuit breakers for external services
+const circuitBreakers = {
+  facebook: new CircuitBreaker('Facebook API', 60000),
+  google: new CircuitBreaker('Google Drive API', 60000)
+};
+
+// Telegram notification helper
+async function sendTelegramNotification(message, isError = true) {
+  try {
+    if (!process.env.TELEGRAM_BOT_TOKEN) {
+      console.log('Telegram bot token not configured');
+      return;
+    }
+
+    const url = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+    // Format the message with HTML
+    const timestamp = new Date().toLocaleString();
+    const serverName = process.env.SERVER_NAME || 'MetaMass Server';
+    const environment = process.env.NODE_ENV || 'development';
+
+    let formattedMessage = `<b>${isError ? '🚨 ERROR' : 'ℹ️ INFO'} - ${serverName}</b>\n`;
+    formattedMessage += `<b>Environment:</b> ${environment}\n`;
+    formattedMessage += `<b>Time:</b> ${timestamp}\n`;
+    formattedMessage += `<b>Message:</b>\n${message}`;
+
+    const response = await axios.post(url, {
+      chat_id: 5008532894,
+      text: formattedMessage,
+      parse_mode: 'HTML'
+    });
+
+    if (response.data.ok) {
+      console.log('Telegram notification sent successfully');
+    }
+  } catch (error) {
+    // Don't throw error to avoid breaking the main flow
+    console.error('Failed to send Telegram notification:', error.message);
+  }
+}
+
+// Helper to send SSE messages
+function sendSSE(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+  if (res.flush) res.flush();
+}
+
+function createUploadSession() {
+  const sessionId = Date.now().toString(36) + Math.random().toString(36);
+  uploadSessions.set(sessionId, {
+    sessionId,
+    totalFiles: 0,
+    processedFiles: 0,
+    currentFile: null,
+    clients: new Set(),
+    errors: []
+  });
+  return sessionId;
+}
+
+function broadcastToSession(sessionId, event, data) {
+  const session = uploadSessions.get(sessionId);
+  if (!session) {
+    console.log('No session found for broadcast:', sessionId);
+    return;
+  }
+
+  console.log(`Broadcasting ${event} to ${session.clients.size} clients:`, data);
+
+  session.clients.forEach(client => {
+    try {
+      sendSSE(client, event, data);
+    } catch (err) {
+      console.error('Error sending SSE:', err);
+    }
+  });
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Authentication routes
+app.post('/login', ensureNotAuthenticated, loginRateLimiter, (req, res, next) => {
+  console.log('Login attempt for username:', req.body.username);
+
+  passport.authenticate('local', (err, user, info) => {
+    if (err) {
+      console.error('Login error:', err);
+      return next(err);
+    }
+
+    if (!user) {
+      console.log('Login failed - no user returned:', info);
+      return res.redirect('/login.html?error=auth');
+    }
+
+    req.logIn(user, (err) => {
+      if (err) {
+        console.error('Session login error:', err);
+        return next(err);
+      }
+
+      console.log('Login successful for user:', user.username);
+      console.log('Session after login:', {
+        sessionID: req.sessionID,
+        user: req.user,
+        isAuthenticated: req.isAuthenticated()
+      });
+
+      return res.redirect('/');
+    });
+  })(req, res, next);
+});
+
+app.post('/logout', (req, res) => {
+  req.logout(function (err) {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.redirect('/login.html');
+  });
+});
+
+app.get('/api/auth/status', (req, res) => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
+  console.log('Auth status check:', {
+    authenticated: isDevelopment ? true : req.isAuthenticated(),
+    sessionID: req.sessionID,
+    user: req.user,
+    session: req.session,
+    isDevelopment: isDevelopment
+  });
+
+  res.json({
+    authenticated: isDevelopment ? true : req.isAuthenticated(),
+    user: isDevelopment
+      ? { id: 'dev-user', username: 'developer' }
+      : (req.user ? { id: req.user.id, username: req.user.username } : null),
+    isDevelopment: isDevelopment,
+    environment: process.env.NODE_ENV
+  });
+});
+
+// User management routes (only for authenticated users)
+app.post('/api/users', ensureAuthenticated, validateRequest.createUser, async (req, res) => {
+  try {
+    const { username, password, email } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const result = await UserDB.create(username, password, email);
+    res.json({ message: 'User created successfully', userId: result.lastID });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    if (error.message?.includes('UNIQUE constraint failed')) {
+      res.status(400).json({ error: 'Username already exists' });
+    } else {
+      // Critical database error - notify
+      const telegramMessage = `<b>🚨 CRITICAL: User Database Error</b>\n<b>Operation:</b> Create User Failed\n<b>Error:</b> ${error.message}`;
+      sendTelegramNotification(telegramMessage);
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  }
+});
+
+app.get('/api/users', ensureAuthenticated, async (req, res) => {
+  try {
+    const users = await UserDB.getAll();
+    res.json({ users });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Serve login page without authentication
+app.get('/login.html', ensureNotAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Serve index.html to root (no authentication required for viewing)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Apply authentication to all API routes except auth status
+app.use('/api', (req, res, next) => {
+  // Skip authentication for auth status endpoint
+  if (req.path === '/auth/status') {
+    return next();
+  }
+  // All other API routes require authentication
+  ensureAuthenticatedAPI(req, res, next);
+});
+
+// SSE endpoint for Meta data updates
+const metaDataClients = new Set();
+app.get('/api/meta-data-updates', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  metaDataClients.add(res);
+
+  // Send initial connection message
+  sendSSE(res, 'connected', { message: 'Connected to Meta data updates' });
+
+  const keepAlive = setInterval(() => {
+    res.write(':keep-alive\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    metaDataClients.delete(res);
+  });
+});
+
+// Broadcast updates to all connected clients
+function broadcastMetaDataUpdate(event, data) {
+  metaDataClients.forEach(client => {
+    try {
+      sendSSE(client, event, data);
+    } catch (err) {
+      console.error('Error sending Meta data SSE:', err);
+      metaDataClients.delete(client);
+    }
+  });
+}
+
+// Manual cache refresh endpoint
+app.post('/api/refresh-meta-cache', async (req, res) => {
+  try {
+    if (isRefreshing) {
+      return res.json({
+        status: 'already_refreshing',
+        message: 'A refresh is already in progress'
+      });
+    }
+
+    // Start refresh
+    broadcastMetaDataUpdate('refresh-started', { timestamp: new Date().toISOString() });
+
+    const freshData = await fetchMetaDataFresh();
+
+    // Broadcast completion with the new data
+    broadcastMetaDataUpdate('refresh-completed', {
+      timestamp: new Date().toISOString(),
+      data: freshData
+    });
+
+    res.json({
+      status: 'success',
+      message: 'Cache refreshed successfully',
+      data: freshData
+    });
+  } catch (error) {
+    console.error('Manual cache refresh failed:', error);
+
+    broadcastMetaDataUpdate('refresh-failed', {
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to refresh cache',
+      error: error.message
+    });
+  }
+});
+
+// Clear cache endpoint
+app.delete('/api/meta-cache', async (req, res) => {
+  try {
+    await FacebookCacheDB.clearCache();
+    res.json({ message: 'Cache cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing cache:', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
+});
+
+
+// Create upload session endpoint
+app.post('/api/create-upload-session', (req, res) => {
+  const sessionId = createUploadSession();
+  const session = uploadSessions.get(sessionId);
+
+  if (req.body.totalFiles) {
+    session.totalFiles = req.body.totalFiles;
+  }
+
+  res.json({ sessionId });
+});
+
+// SSE endpoint for upload progress
+app.get('/api/upload-progress/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = uploadSessions.get(sessionId);
+
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  session.clients.add(res);
+
+  sendSSE(res, 'connected', {
+    sessionId,
+    totalFiles: session.totalFiles,
+    processedFiles: session.processedFiles
+  });
+
+  const keepAlive = setInterval(() => {
+    res.write(':keep-alive\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    session.clients.delete(res);
+
+    if (session.clients.size === 0) {
+      setTimeout(() => {
+        if (session.clients.size === 0) {
+          uploadSessions.delete(sessionId);
+        }
+      }, 60000);
+    }
+  });
+});
+
+// Fetch ad account data with caching
+app.get('/api/fetch-meta-data', async (req, res) => {
+  const forceRefresh = req.query.refresh === 'true';
+
+  try {
+    // Check if we have cached data and it's still valid
+    const hasValidCache = await FacebookCacheDB.isCacheValid(60); // Cache valid for 60 minutes
+
+    if (!forceRefresh && hasValidCache) {
+      // Return cached data immediately
+      const cachedData = await FacebookCacheDB.getAllCachedData();
+
+      // Send cached data with a flag indicating it's from cache
+      res.json({
+        ...cachedData,
+        fromCache: true,
+        cacheAge: await getCacheAge()
+      });
+
+      // Trigger background refresh
+      refreshMetaDataInBackground();
+    } else {
+      // No cache or force refresh - fetch fresh data
+      const freshData = await fetchMetaDataFresh();
+      res.json({
+        ...freshData,
+        fromCache: false
+      });
+    }
+  } catch (error) {
+    console.error('Error in fetch-meta-data endpoint:', error);
+
+    // If there's an error but we have cache, return cached data
+    try {
+      const cachedData = await FacebookCacheDB.getAllCachedData();
+      if (cachedData.adAccounts && cachedData.adAccounts.length > 0) {
+        res.json({
+          ...cachedData,
+          fromCache: true,
+          error: 'Using cached data due to API error'
+        });
+        return;
+      }
+    } catch (cacheError) {
+      console.error('Cache retrieval also failed:', cacheError);
+    }
+
+    // Critical: Both API and cache failed
+    const telegramMessage = `<b>🔴 CRITICAL: Meta Data Fetch Failed</b>\n<b>Both API and cache retrieval failed</b>\n<b>Error:</b> ${error.message}`;
+    sendTelegramNotification(telegramMessage);
+
+    res.status(500).json({ error: 'Failed to fetch Meta data' });
+  }
+});
+
+// Helper function to get cache age
+async function getCacheAge() {
+  const db = await import('./backend/utils/facebook-cache-db.js').then(m => m.default);
+  const result = await db.getAsync(`
+    SELECT (julianday('now') - julianday(MIN(last_fetched))) * 24 * 60 as age_minutes
+    FROM cached_ad_accounts
+  `);
+  return result ? Math.round(result.age_minutes) : null;
+}
+
+// Background refresh function
+let isRefreshing = false;
+async function refreshMetaDataInBackground() {
+  if (isRefreshing) return; // Prevent multiple simultaneous refreshes
+
+  isRefreshing = true;
+  try {
+    console.log('Starting background refresh of Meta data...');
+    broadcastMetaDataUpdate('refresh-started', {
+      timestamp: new Date().toISOString(),
+      source: 'background'
+    });
+
+    const freshData = await fetchMetaDataFresh();
+    console.log('Background refresh completed successfully');
+
+    broadcastMetaDataUpdate('refresh-completed', {
+      timestamp: new Date().toISOString(),
+      source: 'background',
+      data: freshData
+    });
+  } catch (error) {
+    console.error('Background refresh failed:', error);
+    broadcastMetaDataUpdate('refresh-failed', {
+      timestamp: new Date().toISOString(),
+      source: 'background',
+      error: error.message
+    });
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+// Extract the main fetch logic into a separate function
+async function fetchMetaDataFresh() {
+  async function fetchMetaData() {
+    let adAccAndPagesPromises = [fetchAdAccounts(), fetchAssignedPages()];
+
+    const metaResponse = await Promise.allSettled(adAccAndPagesPromises)
+
+    let adAccounts;
+    let pages;
+    let failedPromises = [];
+
+    try {
+      metaResponse
+      const metaData = metaResponse
+
+      for (const data of metaData) {
+        if (data.status === 'fulfilled' && data.value.adAccounts) {
+          adAccounts = data.value.adAccounts
+        }
+        else if (data.status === 'fulfilled' && data.value.pages) {
+          pages = data.value.pages
+        }
+        else {
+          failedPromises.push(data)
+        }
+      }
+
+      if (failedPromises.length > 0) {
+        const error = {
+          error_code: 'META_DATA_FETCH_FAILED',
+          error_message: `${failedPromises.length} promises failed while fetching Meta data.`,
+          error_details: failedPromises,
+          timestamp: new Date().toISOString()
+        }
+
+        console.error(JSON.stringify(error))
+      } else {
+        console.log(`Successfully fetched ad account data assigned to system user id ${system_user_id}:`, adAccounts);
+      }
+
+      const dataPromises = adAccounts.flatMap(account => {
+        return Promise.all([
+          fetchCampaigns(account.id),
+          fetchPixels(account.id),
+        ]).then(([campaigns, pixels]) => ({
+          campaigns,
+          pixels,
+        }))
+      });
+
+      const results = await Promise.all(dataPromises)
+
+      const allCampaigns = results.flatMap(accountData => accountData.campaigns)
+      const allPixels = results.flatMap(accountData => accountData.pixels)
+
+      // Save to cache using single transaction
+      await FacebookCacheDB.saveAllData(adAccounts, pages, allCampaigns, allPixels);
+
+      return {
+        adAccounts,
+        pages,
+        campaigns: allCampaigns,
+        pixels: allPixels
+      }
+
+    } catch (err) {
+      console.log('Error fetching data from Meta: ', err.message)
+      throw err;
+    }
+  }
+
+  return await fetchMetaData();
+}
+
+// Fetch ad accounts
+async function fetchAdAccounts() {
+  const adAccURL = `https://graph.facebook.com/${api_version}/${system_user_id}/assigned_ad_accounts`;
+
+  try {
+    const adAccResponse = await axios.get(adAccURL, {
+      params: {
+        fields: 'name,id,account_id',
+        access_token
+      },
+    });
+    return { adAccounts: adAccResponse.data.data }
+
+  } catch (err) {
+    console.error('There was an error fetching assigned ad accounts.', err)
+  }
+}
+
+// Fetch assigned pages for system user
+async function fetchAssignedPages() {
+  try {
+    return await circuitBreakers.facebook.call(async () => {
+      const pagesUrl = `https://graph.facebook.com/${api_version}/${system_user_id}/assigned_pages`
+
+      const response = await axios.get(pagesUrl, {
+        params: {
+          fields: 'name,id',
+          access_token
+        }
+      })
+      return { pages: response.data.data }
+    });
+  } catch (err) {
+    console.error(`There was an error fetching assigned pages:`, err);
+    return { pages: [] };
+  }
+}
+
+async function fetchCampaigns(account_id) {
+  const campaignUrl = `https://graph.facebook.com/${api_version}/${account_id}/campaigns`;
+
+  try {
+    const campaignResponse = await axios.get(campaignUrl, {
+      params: {
+        fields:
+          'account_id,id,name,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,created_time',
+        access_token
+      },
+    });
+    return campaignResponse.data.data
+  } catch (err) {
+    console.error(`Error fetching campaigns for account ${account_id}:`, err);
+    return [];
+  }
+}
+
+// Fetch pixels for ad account
+async function fetchPixels(account_id) {
+  const pixelUrl = `https://graph.facebook.com/${api_version}/${account_id}/`;
+
+  const params = {
+    fields: 'account_id,adspixels{name,id}',
+    access_token
+  }
+
+  const pixelResponse = await axios.get(pixelUrl, { params })
+
+  try {
+    pixelResponse
+    if (pixelResponse.status === 200) {
+      console.log('Successfully fetched pixels.')
+      return pixelResponse.data
+    }
+    else {
+      console.log('Fetch pixels failed in if else block.')
+    }
+  }
+
+  catch (err) {
+    console.log('There was an error fetching pixels.', err)
+  }
+}
+
+// Global helper function to upload image to Meta
+async function uploadImageToMeta(filePath, adAccountId) {
+  const imageUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/adimages`;
+
+  try {
+    const fd = new FormData();
+    fd.append('source', fs.createReadStream(filePath));
+    fd.append('access_token', access_token);
+
+    const response = await axios.post(imageUrl, fd, {
+      headers: {
+        ...fd.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    console.log('Successfully uploaded image to Meta!');
+    const images = response.data.images;
+    const dynamicKey = Object.keys(images)[0];
+    const imageHash = images[dynamicKey].hash;
+
+    return imageHash;
+
+  } catch (err) {
+    console.log('Error uploading image:', err.response?.data || err.message);
+    throw err;
+  }
+}
+
+// Global helper function to upload video to Meta
+async function uploadVideoToMeta(file, adAccountId) {
+  const fileStats = fs.statSync(file.path);
+  const fileSize = fileStats.size;
+
+  // Use resumable upload for files > 20MB
+  if (fileSize > 20 * 1024 * 1024) {
+    return await uploadLargeVideoToMeta(file, adAccountId);
+  }
+
+  // Regular upload for smaller files
+  const upload_url = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+  try {
+    const fd = new FormData();
+    fd.append('source', fs.createReadStream(file.path));
+    fd.append('name', file.originalname);
+    fd.append('access_token', access_token);
+
+    const response = await axios.post(upload_url, fd, {
+      headers: {
+        ...fd.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    console.log('Successfully uploaded video to Meta!');
+    return response.data.id;
+
+  } catch (err) {
+    console.log('Error uploading video to Facebook:', err.response?.data || err.message);
+    throw err;
+  }
+}
+
+// Global helper function for large video uploads
+async function uploadLargeVideoToMeta(file, adAccountId) {
+  const fileStats = fs.statSync(file.path);
+  const fileSize = fileStats.size;
+
+  const initUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+  try {
+    const initResponse = await axios.post(initUrl, {
+      upload_phase: 'start',
+      file_size: fileSize,
+      access_token
+    });
+
+    const { upload_session_id, video_id } = initResponse.data;
+
+    const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+    let offset = 0;
+
+    while (offset < fileSize) {
+      const endChunk = Math.min(offset + chunkSize, fileSize);
+      const chunk = fs.createReadStream(file.path, {
+        start: offset,
+        end: endChunk - 1
+      });
+
+      const fd = new FormData();
+      fd.append('video_file_chunk', chunk);
+      fd.append('upload_phase', 'transfer');
+      fd.append('upload_session_id', upload_session_id);
+      fd.append('start_offset', offset.toString());
+      fd.append('access_token', access_token);
+
+      await axios.post(initUrl, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      offset = endChunk;
+    }
+
+    await axios.post(initUrl, {
+      upload_phase: 'finish',
+      upload_session_id: upload_session_id,
+      access_token,
+      title: file.originalname
+    });
+
+    return video_id;
+
+  } catch (err) {
+    console.log('Error uploading large video to Facebook:', err.response?.data || err.message);
+    throw err;
+  }
+}
+
+// Global helper function to get thumbnail from video
+async function getThumbnailFromVideo(file) {
+  const videoPath = file.path;
+  const thumbnailDir = path.join(__dirname, 'uploads', 'thumbnails');
+  const thumbnailName = `thumb-${Date.now()}-${path.basename(file.originalname, path.extname(file.originalname))}.png`;
+  const thumbnailPath = path.join(thumbnailDir, thumbnailName);
+
+  console.log('Creating thumbnail from video:');
+  console.log('  Video path:', videoPath);
+  console.log('  Thumbnail path:', thumbnailPath);
+
+  // Ensure thumbnails directory exists
+  if (!fs.existsSync(thumbnailDir)) {
+    fs.mkdirSync(thumbnailDir, { recursive: true });
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .seekInput('00:00:01')
+      .screenshots({
+        timestamps: ['00:00:01'],
+        filename: thumbnailName,
+        folder: thumbnailDir,
+      })
+      .on('end', () => {
+        console.log('Thumbnail created successfully:', thumbnailPath);
+        resolve({ path: thumbnailPath });
+      })
+      .on('error', (err) => {
+        console.error('Error creating thumbnail:', err);
+        reject(err);
+      });
+  });
+}
+
+// Fetch file names from Google Drive folder
+app.get('/api/fetch-google-data', async (req, res) => {
+  const { folderId } = req.query;
+
+  if (!folderId) {
+    return res.status(400).json({ error: 'Folder ID is required' });
+  }
+
+  try {
+    const drive = google.drive({
+      version: 'v3',
+      auth: oauth2Client
+    });
+
+    const response = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: 'files(id, name, mimeType, size, webContentLink, webViewLink)',
+      pageSize: 1000,
+      corpora: 'allDrives',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true
+    });
+
+    const files = response.data.files || [];
+
+    const folders = files.filter(file => file.mimeType === 'application/vnd.google-apps.folder');
+    const regularFiles = files.filter(file => file.mimeType !== 'application/vnd.google-apps.folder');
+
+    res.json({
+      files: regularFiles,
+      folders: folders,
+      totalCount: files.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching Google Drive files:', error);
+    res.status(500).json({
+      error: 'Failed to fetch Google Drive files',
+      details: error.message
+    });
+  }
+})
+
+app.post('/api/download-and-upload-google-files', validateRequest.googleDriveDownload, async (req, res) => {
+  const { fileIds, account_id } = req.body;
+  const sessionId = req.body.sessionId || createUploadSession();
+
+  if (!fileIds || !Array.isArray(fileIds)) {
+    return res.status(400).json({ error: 'File IDs array is required' });
+  }
+
+  if (!account_id) {
+    return res.status(400).json({ error: 'Account ID is required' });
+  }
+
+  try {
+    const drive = google.drive({
+      version: 'v3',
+      auth: oauth2Client
+    });
+
+    const uploadPromises = fileIds.map(async (fileId, index) => {
+      try {
+        const metadataResponse = await drive.files.get({
+          fileId: fileId,
+          fields: 'id, name, mimeType, size',
+          supportsAllDrives: true
+        });
+
+        const file = metadataResponse.data;
+
+        const isImage = file.mimeType.startsWith('image/');
+        const isVideo = file.mimeType.startsWith('video/');
+
+        if (!isImage && !isVideo) {
+          console.log(`Skipping non-media file: ${file.name} (${file.mimeType})`);
+          return {
+            fileId: file.id,
+            fileName: file.name,
+            status: 'skipped',
+            error: 'Only images and videos are supported',
+            mimeType: file.mimeType
+          };
+        }
+
+        const response = await drive.files.get({
+          fileId: fileId,
+          alt: 'media',
+          supportsAllDrives: true
+        }, { responseType: 'stream' });
+
+        const timestamp = Date.now();
+        const fileName = `${timestamp}-${file.name}`;
+        const tempPath = path.join(__dirname, 'uploads', fileName);
+
+        await new Promise((resolve, reject) => {
+          const writeStream = fs.createWriteStream(tempPath);
+          response.data
+            .pipe(writeStream)
+            .on('finish', resolve)
+            .on('error', reject);
+        });
+
+        broadcastToSession(sessionId, 'file-start', {
+          fileIndex: index,
+          fileName: file.name,
+          fileSize: file.size ? (parseInt(file.size) / (1024 * 1024)).toFixed(2) + 'MB' : 'Unknown',
+          totalFiles: fileIds.length,
+          source: 'google-drive'
+        });
+
+        if (isVideo) {
+          try {
+            const fileObj = {
+              filename: fileName,
+              path: tempPath,
+              originalname: file.name,
+              size: file.size,
+              mimetype: 'video/mp4'
+            };
+
+            broadcastToSession(sessionId, 'file-progress', {
+              fileIndex: index,
+              fileName: file.name,
+              stage: 'Processing creative',
+              progress: 5
+            });
+
+            // Process creative with deduplication
+            const creativeResult = await processCreative(fileObj, account_id);
+
+            let videoId, imageHash;
+
+            if (creativeResult.isDuplicate) {
+              // Creative already exists and is uploaded to this account
+              videoId = creativeResult.facebookIds.facebook_video_id;
+              imageHash = creativeResult.facebookIds.facebook_image_hash;
+
+              // Update session progress
+              const uploadSession = uploadSessions.get(sessionId);
+              if (uploadSession) {
+                uploadSession.processedFiles++;
+              }
+
+              // Send file complete event
+              broadcastToSession(sessionId, 'file-complete', {
+                fileIndex: index,
+                fileName: file.name,
+                processedFiles: uploadSession.processedFiles,
+                totalFiles: fileIds.length,
+                isDuplicate: true,
+                message: 'Using existing creative from library'
+              });
+
+              return {
+                type: 'video',
+                file: file.name,
+                data: {
+                  uploadVideo: videoId,
+                  getImageHash: imageHash,
+                  adAccountId: account_id
+                },
+                status: 'success',
+                isDuplicate: true
+              };
+            } else {
+              // Need to upload to Meta
+              if (!creativeResult.isNew) {
+                // Use existing file from library
+                fileObj.path = getCreativeFilePath(creativeResult.creative);
+              } else {
+                // New file was moved to library, update the path
+                fileObj.path = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+              }
+
+              broadcastToSession(sessionId, 'file-progress', {
+                fileIndex: index,
+                fileName: file.name,
+                stage: 'Creating thumbnail',
+                progress: 10
+              });
+
+              const thumbnail = await getThumbnailFromVideo(fileObj);
+
+              broadcastToSession(sessionId, 'file-progress', {
+                fileIndex: index,
+                fileName: file.name,
+                stage: 'Uploading video to Meta',
+                progress: 30
+              });
+
+              videoId = await uploadVideoToMeta(fileObj, account_id, sessionId, index);
+
+              broadcastToSession(sessionId, 'file-progress', {
+                fileIndex: index,
+                fileName: file.name,
+                stage: 'Uploading thumbnail',
+                progress: 90
+              });
+
+              imageHash = await uploadThumbnailImage(thumbnail, account_id);
+
+              // Store Facebook IDs in database
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, account_id, {
+                videoId: videoId,
+                imageHash: imageHash
+              });
+
+              // Update creative with thumbnail path
+              if (creativeResult.isNew) {
+                await updateCreativeThumbnail(creativeResult.creative.id, thumbnail);
+              }
+
+              // Clean up temporary thumbnail
+              if (fs.existsSync(thumbnail)) {
+                fs.unlinkSync(thumbnail);
+              }
+
+              // Update session progress
+              const uploadSession = uploadSessions.get(sessionId);
+              if (uploadSession) {
+                uploadSession.processedFiles++;
+              }
+
+              // Send file complete event
+              broadcastToSession(sessionId, 'file-complete', {
+                fileIndex: index,
+                fileName: file.name,
+                processedFiles: uploadSession.processedFiles,
+                totalFiles: fileIds.length,
+                isNew: creativeResult.isNew
+              });
+
+              return {
+                type: 'video',
+                file: file.name,
+                data: {
+                  uploadVideo: videoId,
+                  getImageHash: imageHash,
+                  adAccountId: account_id
+                },
+                status: 'success',
+                isNew: creativeResult.isNew
+              };
+            }
+
+          } catch (error) {
+            console.error('Error processing video:', error);
+
+            // Send file error event
+            broadcastToSession(sessionId, 'file-error', {
+              fileIndex: index,
+              fileName: file.name,
+              error: error.message
+            });
+
+            if (fs.existsSync(tempPath) && tempPath.startsWith(paths.uploads)) {
+              fs.unlinkSync(tempPath);
+            }
+            return {
+              file: file.name,
+              status: 'failed',
+              error: error.message
+            };
+          }
+
+        } else if (isImage) {
+          try {
+            const fileObj = {
+              filename: fileName,
+              path: tempPath,
+              originalname: file.name,
+              size: file.size,
+              mimetype: file.mimeType
+            };
+
+            // Process creative with deduplication
+            const creativeResult = await processCreative(fileObj, account_id);
+
+            let imageHash;
+
+            if (creativeResult.isDuplicate) {
+              // Creative already exists and is uploaded to this account
+              imageHash = creativeResult.facebookIds.facebook_image_hash;
+
+              return {
+                type: 'image',
+                file: file.name,
+                imageHash: imageHash,
+                status: 'success',
+                isDuplicate: true,
+                message: 'Using existing creative from library'
+              };
+            } else {
+              // Need to upload to Meta
+              let uploadPath = tempPath;
+              if (!creativeResult.isNew) {
+                // Use existing file from library
+                uploadPath = getCreativeFilePath(creativeResult.creative);
+              } else {
+                // New file was moved to library, use the new path
+                uploadPath = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+              }
+
+              imageHash = await uploadImageToMeta(uploadPath, account_id);
+
+              // Store Facebook IDs in database
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, account_id, {
+                imageHash: imageHash
+              });
+
+              // Clean up temp file if it still exists (for new files it was moved)
+              if (!creativeResult.isNew && fs.existsSync(tempPath) && tempPath.startsWith(paths.uploads)) {
+                fs.unlinkSync(tempPath);
+              }
+
+              return {
+                type: 'image',
+                file: file.name,
+                imageHash: imageHash,
+                status: 'success',
+                isNew: creativeResult.isNew
+              };
+            }
+
+          } catch (error) {
+            console.error('Error processing image:', error);
+            if (fs.existsSync(tempPath) && tempPath.startsWith(paths.uploads)) {
+              fs.unlinkSync(tempPath);
+            }
+            return {
+              file: file.name,
+              status: 'failed',
+              error: error.message
+            };
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error processing file ${fileId}:`, error);
+        return {
+          fileId: fileId,
+          status: 'failed',
+          error: error.message,
+          details: error.response?.data?.error || error.message
+        };
+      }
+    });
+
+    // Process files with concurrency limit to avoid EPIPE errors
+    const processInBatches = async (promises, batchSize = 3) => {
+      const results = [];
+      for (let i = 0; i < promises.length; i += batchSize) {
+        const batch = promises.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch);
+        results.push(...batchResults);
+      }
+      return results;
+    };
+
+    const uploadResults = await processInBatches(uploadPromises, 3);
+
+    const uploadSession = uploadSessions.get(sessionId);
+    broadcastToSession(sessionId, 'session-complete', {
+      totalFiles: fileIds.length,
+      processedFiles: uploadSession?.processedFiles || 0,
+      results: uploadResults
+    });
+
+    res.json({ results: uploadResults, sessionId });
+
+  } catch (error) {
+    console.error('Error in download and upload process:', error);
+    res.status(500).json({
+      error: 'Failed to process Google Drive files',
+      details: error.message
+    });
+  }
+
+  async function getThumbnailFromVideo(file) {
+    const videoPath = file.path;
+    const thumbnailDir = path.join(__dirname, 'uploads');
+    const thumbnailName = `${file.filename}-thumb.png`;
+    const thumbnailPath = path.join(thumbnailDir, thumbnailName);
+
+    console.log('Attempting to create thumbnail (Google Drive):');
+    console.log('  Video path:', videoPath);
+    console.log('  Thumbnail path:', thumbnailPath);
+    console.log('  Video exists:', fs.existsSync(videoPath));
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(thumbnailDir)) {
+      console.log('Creating uploads directory:', thumbnailDir);
+      fs.mkdirSync(thumbnailDir, { recursive: true });
+    }
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .seekInput('00:00:01')
+        .screenshots({
+          timestamps: ['00:00:01'],
+          filename: thumbnailName,
+          folder: thumbnailDir,
+        })
+        .on('end', () => {
+          console.log('Thumbnail created successfully:', thumbnailPath);
+          console.log('Thumbnail exists:', fs.existsSync(thumbnailPath));
+          resolve(thumbnailPath);
+        })
+        .on('error', (err) => {
+          console.error('Error creating thumbnail:', err);
+          reject(err);
+        });
+    });
+  }
+
+  // Helper function to upload video using resumable upload for large files
+  async function uploadVideoToMeta(file, adAccountId, sessionId, fileIndex) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    // Use resumable upload for files > 20MB
+    if (fileSize > 20 * 1024 * 1024) {
+      return await uploadLargeVideoToMeta(file, adAccountId, sessionId, fileIndex);
+    }
+
+    // Regular upload for smaller files
+    const upload_url = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(file.path));
+      fd.append('name', file.originalname);
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(upload_url, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      console.log('Successfully uploaded video to Meta!');
+      return response.data.id;
+
+    } catch (err) {
+      console.log('Error uploading video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function for chunked upload of large videos
+  async function uploadLargeVideoToMeta(file, adAccountId, sessionId, fileIndex) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    // Step 1: Initialize upload session
+    const initUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      // Initialize the upload session
+      const initResponse = await axios.post(initUrl, {
+        upload_phase: 'start',
+        file_size: fileSize,
+        access_token
+      });
+
+      const { upload_session_id, video_id, start_offset, end_offset } = initResponse.data;
+      console.log(`Upload session initialized. Session ID: ${upload_session_id}`);
+
+      // Step 2: Upload chunks
+      const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+      let offset = 0;
+      const totalChunks = Math.ceil(fileSize / chunkSize);
+      let currentChunk = 0;
+
+      while (offset < fileSize) {
+        currentChunk++;
+        const endChunk = Math.min(offset + chunkSize, fileSize);
+        const chunk = fs.createReadStream(file.path, {
+          start: offset,
+          end: endChunk - 1
+        });
+
+        const fd = new FormData();
+        fd.append('video_file_chunk', chunk);
+        fd.append('upload_phase', 'transfer');
+        fd.append('upload_session_id', upload_session_id);
+        fd.append('start_offset', offset.toString());
+        fd.append('access_token', access_token);
+
+        await axios.post(initUrl, fd, {
+          headers: {
+            ...fd.getHeaders()
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        });
+
+        const percentComplete = Math.round((endChunk / fileSize) * 100);
+        console.log(`Uploaded chunk: ${offset}-${endChunk} of ${fileSize} (${percentComplete}%)`);
+
+        // Send chunk progress event if sessionId provided
+        if (sessionId && fileIndex !== undefined) {
+          broadcastToSession(sessionId, 'file-progress', {
+            fileIndex: fileIndex,
+            fileName: file.originalname,
+            stage: `Uploading video chunk ${currentChunk}/${totalChunks}`,
+            progress: 30 + Math.round((percentComplete * 0.6)) // Scale from 30% to 90%
+          });
+        }
+
+        offset = endChunk;
+      }
+
+      // Step 3: Finish upload
+      const finishResponse = await axios.post(initUrl, {
+        upload_phase: 'finish',
+        upload_session_id: upload_session_id,
+        access_token,
+        title: file.originalname
+      });
+
+      console.log('Successfully completed large video upload to Meta!');
+      return video_id;
+
+    } catch (err) {
+      console.log('Error uploading large video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function to upload image
+  async function uploadImageToMeta(filePath, adAccountId) {
+    const imageUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/adimages`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(filePath));
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(imageUrl, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      console.log('Successfully uploaded image!');
+      const images = response.data.images;
+      const dynamicKey = Object.keys(images)[0];
+      return images[dynamicKey].hash;
+
+    } catch (err) {
+      console.log('Error uploading image:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function to upload thumbnail
+  async function uploadThumbnailImage(thumbnailPath, adAccountId) {
+    return uploadImageToMeta(thumbnailPath, adAccountId);
+  }
+})
+
+app.post('/api/create-ad-set', validateRequest.createAdSet, (req, res) => {
+
+  const payload = {
+    name: req.body.adset_name,
+    optimization_goal: req.body.optimization_goal,
+    billing_event: req.body.billing_event,
+    bid_strategy: req.body.bid_strategy,
+    daily_budget: parseInt(req.body.daily_budget),
+    campaign_id: req.body.campaign_id,
+    destination_type: req.body.destination_type,
+    targeting: {
+      geo_locations: req.body.geo_locations || {
+        countries: ['US']
+      },
+      ...(req.body.excluded_geo_locations && {
+        excluded_geo_locations: req.body.excluded_geo_locations
+      }),
+      targeting_automation: {
+        advantage_audience: 0
+      },
+      ...(req.body.min_age && req.body.max_age && {
+        age_min: req.body.min_age,
+        age_max: req.body.max_age
+      })
+    },
+    promoted_object: {
+      pixel_id: req.body.pixel_id,
+      custom_event_type: req.body.event_type
+    },
+    status: req.body.status,
+    access_token
+  }
+
+  if (req.body.bid_amount) {
+    payload.bid_amount = req.body.bid_amount
+  }
+
+  const graphUrl = `https://graph.facebook.com/${api_version}/act_${req.body.account_id}/adsets`
+
+  async function createAdSet() {
+
+    try {
+      await axios.post(graphUrl,
+        payload, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+      ).then(response => {
+        if (!response.statusText === 'OK') {
+          console.log('There was an error posting to adsets endpoint:', res)
+        } else {
+          // return the adset info for the creative upload section
+          console.log(`Successfully created ad set ${req.body.adset_name} in act_${req.body.account_id}`)
+          res.status(200).send(response.data)
+        }
+      })
+    }
+    catch (err) {
+      console.log('There was an error creating your ad set.', err.response?.data)
+
+      // Critical ad creation failure
+      const fbError = err.response?.data?.error;
+      const errorMessage = fbError?.error_user_msg || fbError?.message || err.message;
+      const telegramMessage = `<b>⚠️ CRITICAL: Ad Set Creation Failed</b>\n<b>Account:</b> ${adAccountId}\n<b>Error:</b> ${errorMessage}`;
+      sendTelegramNotification(telegramMessage);
+
+      res.status(400).send('Error creating ad set.', err)
+    }
+  }
+
+  createAdSet()
+
+})
+
+app.post('/api/duplicate-ad-set', async (req, res) => {
+  const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body
+
+  const payload = {
+    deep_copy: deep_copy || false,
+    status_option: status_option || 'PAUSED',
+    access_token
+  }
+
+  const graphUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}/copies`
+
+  try {
+    const response = await axios.post(graphUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (response.status === 200 && response.data) {
+      console.log(`Successfully duplicated ad set ${ad_set_id}`)
+
+      const newAdSetId = response.data.copied_adset_id || response.data.id
+
+      if (name && newAdSetId) {
+        try {
+          const updateUrl = `https://graph.facebook.com/${api_version}/${newAdSetId}`
+          await axios.post(updateUrl, {
+            name: name,
+            access_token
+          })
+          console.log(`Updated ad set name to: ${name}`)
+        } catch (updateErr) {
+          console.log('Warning: Could not update ad set name:', updateErr.response?.data || updateErr.message)
+        }
+      }
+
+      // Add the new ad set to the cache
+      if (campaign_id && account_id) {
+        const newAdSet = {
+          id: newAdSetId,
+          name: name || `Copy of ${ad_set_id}`,
+          account_id: account_id,
+          campaign_id: campaign_id
+        }
+
+        await FacebookCacheDB.addAdSetToCampaign(campaign_id, newAdSet)
+      }
+
+      // Return success
+      res.status(200).json({
+        id: newAdSetId,
+        original_id: ad_set_id,
+        success: true
+      })
+    } else {
+      console.log('Unexpected response from Facebook API:', response.data)
+      res.status(400).json({ error: 'Failed to duplicate ad set' })
+    }
+  } catch (err) {
+    console.log('Error duplicating ad set:', err.response?.data || err.message)
+    res.status(400).json({
+      error: 'Error duplicating ad set',
+      details: err.response?.data?.error || err.message
+    })
+  }
+})
+
+app.post('/api/duplicate-campaign', async (req, res) => {
+  const { campaign_id, deep_copy, status_option, name, account_id } = req.body
+
+  const payload = {
+    deep_copy: deep_copy || false,
+    status_option: status_option || 'PAUSED',
+    rename_options: {
+      rename_strategy: 'ONLY_TOP_LEVEL_RENAME',
+      rename_suffix: ' - Copy'
+    },
+    access_token
+  }
+
+  const graphUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/copies`
+
+  try {
+    const response = await axios.post(graphUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (response.status === 200 && response.data) {
+      console.log(`Successfully duplicated campaign ${campaign_id}`)
+      console.log('Facebook API response:', JSON.stringify(response.data, null, 2))
+
+      const newCampaignId = response.data.copied_campaign_id || response.data.id || response.data.campaign_id
+
+      if (!newCampaignId) {
+        console.error('No campaign ID found in response:', response.data)
+        res.status(400).json({ error: 'Campaign duplicated but ID not found in response' })
+        return
+      }
+
+      if (name && newCampaignId) {
+        try {
+          const updateUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`
+          await axios.post(updateUrl, {
+            name: name,
+            access_token
+          })
+          console.log(`Updated campaign name to: ${name}`)
+
+          // If we have a name, update the database with the new campaign info
+          if (account_id) {
+            await addCampaignToDatabase(newCampaignId, name, account_id)
+          }
+        } catch (updateError) {
+          console.error('Error updating campaign name:', updateError.response?.data || updateError.message)
+          // Don't fail the whole operation if just the rename fails
+        }
+      } else if (account_id) {
+        // If no name provided, still add to database with original name
+        try {
+          await addCampaignToDatabase(newCampaignId, null, account_id)
+        } catch (dbError) {
+          console.error('Error adding to database:', dbError)
+          // Don't fail the whole operation if just the database update fails
+        }
+      }
+
+      // Return success
+      res.status(200).json({
+        id: newCampaignId,
+        original_id: campaign_id,
+        success: true
+      })
+    } else {
+      console.log('Unexpected response from Facebook API:', response.data)
+      res.status(400).json({ error: 'Failed to duplicate campaign' })
+    }
+  } catch (err) {
+    console.log('Error duplicating campaign:', err.response?.data || err.message)
+    res.status(400).json({
+      error: 'Error duplicating campaign',
+      details: err.response?.data?.error || err.message
+    })
+  }
+})
+
+// Helper function to add campaign to database
+async function addCampaignToDatabase(campaignId, campaignName, accountId) {
+  try {
+    // Get campaign details from Facebook API
+    const campaignUrl = `https://graph.facebook.com/${api_version}/${campaignId}?fields=name,status,special_ad_categories,daily_budget,bid_strategy&access_token=${access_token}`
+    const campaignResponse = await axios.get(campaignUrl)
+
+    if (campaignResponse.data) {
+      const campaign = campaignResponse.data
+      const name = campaignName || campaign.name
+
+      // Insert into database
+      await FacebookCacheDB.saveCampaigns([{
+        id: campaign.id,
+        account_id: accountId,
+        name: name,
+        status: campaign.status || 'PAUSED',
+        special_ad_categories: campaign.special_ad_categories || [],
+        daily_budget: campaign.daily_budget || '',
+        bid_strategy: campaign.bid_strategy || ''
+      }])
+
+      console.log(`Added campaign ${campaignId} to database`)
+    }
+  } catch (error) {
+    console.error('Error adding campaign to database:', error.response?.data || error.message)
+  }
+}
+
+app.post('/api/upload-videos', upload.array('file', 50), validateRequest.uploadFiles, (req, res) => {
+
+  try {
+    const files = req.files
+    const adAccountId = req.body.account_id
+
+    let sessionId = req.body.sessionId;
+    let session;
+
+    if (sessionId && uploadSessions.has(sessionId)) {
+      // Use existing session
+      session = uploadSessions.get(sessionId);
+      console.log('Using existing session:', sessionId);
+    } else {
+      // Create new session
+      sessionId = createUploadSession();
+      session = uploadSessions.get(sessionId);
+      console.log('Created new session:', sessionId);
+    }
+
+    // Update session with file info
+    if (session) {
+      session.totalFiles = files.length;
+      session.processedFiles = 0;
+
+      // Send session start event
+      broadcastToSession(sessionId, 'session-start', {
+        sessionId,
+        totalFiles: files.length
+      });
+    }
+
+    async function videoUploadPromise() {
+      const results = await Promise.allSettled(
+        files.map((file, index) => {
+          return handleVideoUpload(file, index)
+            .then(response => ({
+              type: 'video',
+              file: file.originalname,
+              data: response,
+              status: 'success'
+            }))
+            .then(data => {
+              return data
+            })
+            .catch(error => ({
+              file: file.originalname,
+              status: 'failed',
+              error: error.message
+            }))
+        })
+      );
+
+      // Send session complete event
+      broadcastToSession(sessionId, 'session-complete', {
+        totalFiles: files.length,
+        processedFiles: session.processedFiles,
+        results: results
+      });
+
+      res.status(200).json({ results, sessionId })
+    }
+
+    videoUploadPromise()
+
+    async function handleVideoUpload(file, index) {
+
+      console.log('File: ', file)
+      console.log(`File size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`)
+
+      // Send file start event
+      broadcastToSession(sessionId, 'file-start', {
+        fileIndex: index,
+        fileName: file.originalname,
+        fileSize: (file.size / (1024 * 1024)).toFixed(2) + 'MB',
+        totalFiles: files.length
+      });
+
+      try {
+        // Update session current file
+        if (session) {
+          session.currentFile = {
+            name: file.originalname,
+            size: (file.size / (1024 * 1024)).toFixed(2) + 'MB',
+            status: 'processing',
+            progress: 0,
+            stage: 'Processing creative'
+          };
+        }
+
+        // Process creative with deduplication
+        broadcastToSession(sessionId, 'file-progress', {
+          fileIndex: index,
+          fileName: file.originalname,
+          stage: 'Processing creative',
+          progress: 5
+        });
+
+        file.mimetype = 'video/mp4'; // Set mimetype for videos
+        const creativeResult = await processCreative(file, adAccountId);
+
+        let uploadVideo, getImageHash;
+        let filePath = file.path; // Default to uploaded file path
+
+        if (creativeResult.isDuplicate) {
+          // Creative already exists and is uploaded to this account
+          uploadVideo = creativeResult.facebookIds.facebook_video_id;
+          getImageHash = creativeResult.facebookIds.facebook_image_hash;
+
+          // Update session progress
+          if (session) {
+            session.processedFiles++;
+          }
+
+          // Send file complete event
+          broadcastToSession(sessionId, 'file-complete', {
+            fileIndex: index,
+            fileName: file.originalname,
+            processedFiles: session.processedFiles,
+            totalFiles: files.length,
+            isDuplicate: true,
+            message: 'Using existing creative from library'
+          });
+
+          return { uploadVideo, getImageHash, adAccountId, isDuplicate: true }
+
+        } else {
+          // Need to upload to Meta
+          if (!creativeResult.isNew) {
+            // Use existing file from library
+            filePath = getCreativeFilePath(creativeResult.creative);
+          } else {
+            // New creative was moved to library, get the new path
+            filePath = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+          }
+
+          // Update file path for all upload functions
+          file.path = filePath;
+
+          // 1. Get thumbnail from video
+          broadcastToSession(sessionId, 'file-progress', {
+            fileIndex: index,
+            fileName: file.originalname,
+            stage: 'Creating thumbnail',
+            progress: 10
+          });
+          const thumbnail = await getThumbnailFromVideo(file)
+
+          // 2. Upload video 
+          broadcastToSession(sessionId, 'file-progress', {
+            fileIndex: index,
+            fileName: file.originalname,
+            stage: 'Uploading video to Meta',
+            progress: 30
+          });
+          uploadVideo = await uploadVideosToMeta(file, adAccountId, sessionId, index)
+
+          // 3. Upload thumbnail to meta
+          broadcastToSession(sessionId, 'file-progress', {
+            fileIndex: index,
+            fileName: file.originalname,
+            stage: 'Uploading thumbnail',
+            progress: 90
+          });
+          getImageHash = await uploadThumbnailImage(thumbnail, adAccountId)
+
+          // 4. Store Facebook IDs in database
+          await CreativeAccountDB.recordUpload(creativeResult.creative.id, adAccountId, {
+            videoId: uploadVideo,
+            imageHash: getImageHash
+          });
+
+          // 5. Update creative with thumbnail path
+          if (creativeResult.isNew) {
+            await updateCreativeThumbnail(creativeResult.creative.id, thumbnail);
+          }
+
+          // 6. Clean up temporary thumbnail (but not the video - it's in library now)
+          try {
+            if (fs.existsSync(thumbnail)) {
+              fs.unlinkSync(thumbnail);
+              console.log(`Deleted temporary thumbnail file: ${thumbnail}`);
+            }
+          } catch (cleanupErr) {
+            console.error('Error cleaning up thumbnail:', cleanupErr);
+          }
+
+          // Update session progress
+          if (session) {
+            session.processedFiles++;
+          }
+
+          // Send file complete event
+          broadcastToSession(sessionId, 'file-complete', {
+            fileIndex: index,
+            fileName: file.originalname,
+            processedFiles: session.processedFiles,
+            totalFiles: files.length,
+            isNew: creativeResult.isNew
+          });
+
+          return { uploadVideo, getImageHash, adAccountId, isNew: creativeResult.isNew }
+        }
+
+      } catch (err) {
+        console.log('There was an error inside handleVideoUpload() try catch block.', err)
+
+        // Send file error event
+        broadcastToSession(sessionId, 'file-error', {
+          fileIndex: index,
+          fileName: file.originalname,
+          error: err.message
+        });
+
+        // Clean up files on error as well
+        try {
+          if (file.path && fs.existsSync(file.path) && file.path.includes(paths.uploads)) {
+            // Only delete if it's still in uploads directory
+            fs.unlinkSync(file.path);
+          }
+        } catch (cleanupErr) {
+          console.error('Error cleaning up files on error:', cleanupErr);
+        }
+
+        throw err; // Re-throw to be caught by Promise
+      }
+    }
+  } catch (err) {
+    console.log('There was an error in uploading videos to facebook.', err)
+    res.status(500).send('Could not upload videos to facebook.', err)
+  }
+
+  // function to get thumbnail from video
+  async function getThumbnailFromVideo(file) {
+    // Use the actual file path which may be in creative-library
+    const videoPath = file.path;
+    const thumbnailDir = path.join(__dirname, 'uploads');
+    const thumbnailName = `${path.basename(file.path)}-thumb.png`;
+    const thumbnailPath = path.join(thumbnailDir, thumbnailName);
+
+    console.log('Attempting to create thumbnail:');
+    console.log('  Video path:', videoPath);
+    console.log('  Thumbnail path:', thumbnailPath);
+    console.log('  Video exists:', fs.existsSync(videoPath));
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(thumbnailDir)) {
+      console.log('Creating uploads directory:', thumbnailDir);
+      fs.mkdirSync(thumbnailDir, { recursive: true });
+    }
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .seekInput('00:00:01')
+        .screenshots({
+          timestamps: ['00:00:01'],
+          filename: thumbnailName,
+          folder: thumbnailDir,
+        })
+        .on('end', () => {
+          console.log('Thumbnail created successfully:', thumbnailPath);
+          console.log('Thumbnail exists:', fs.existsSync(thumbnailPath));
+          resolve(thumbnailPath);
+        })
+        .on('error', (err) => {
+          console.error('Error creating thumbnail:', err);
+          reject(err);
+        });
+    });
+  }
+
+  // Upload videos to meta 
+  async function uploadVideosToMeta(file, adAccountId, sessionId, fileIndex) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    // Use resumable upload for files > 20MB
+    if (fileSize > 20 * 1024 * 1024) {
+      return await uploadLargeVideoToMetaWithProgress(file, adAccountId, sessionId, fileIndex);
+    }
+
+    // Regular upload for smaller files
+    const upload_url = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(file.path));
+      fd.append('name', file.originalname);
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(upload_url, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      console.log('Successfully uploaded video to Meta!');
+      console.log('Video ID:', response.data.id);
+
+      return response.data.id;
+
+    } catch (err) {
+      console.log('There was an error uploading video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function for chunked upload with progress
+  async function uploadLargeVideoToMetaWithProgress(file, adAccountId, sessionId, fileIndex) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    // Step 1: Initialize upload session
+    const initUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      // Initialize the upload session
+      const initResponse = await axios.post(initUrl, {
+        upload_phase: 'start',
+        file_size: fileSize,
+        access_token
+      });
+
+      const { upload_session_id, video_id } = initResponse.data;
+      console.log(`Upload session initialized. Session ID: ${upload_session_id}`);
+
+      // Step 2: Upload chunks
+      const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+      let offset = 0;
+      const totalChunks = Math.ceil(fileSize / chunkSize);
+      let currentChunk = 0;
+
+      while (offset < fileSize) {
+        currentChunk++;
+        const endChunk = Math.min(offset + chunkSize, fileSize);
+        const chunk = fs.createReadStream(file.path, {
+          start: offset,
+          end: endChunk - 1
+        });
+
+        const fd = new FormData();
+        fd.append('video_file_chunk', chunk);
+        fd.append('upload_phase', 'transfer');
+        fd.append('upload_session_id', upload_session_id);
+        fd.append('start_offset', offset.toString());
+        fd.append('access_token', access_token);
+
+        await axios.post(initUrl, fd, {
+          headers: {
+            ...fd.getHeaders()
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        });
+
+        const percentComplete = Math.round((endChunk / fileSize) * 100);
+        console.log(`Uploaded chunk: ${offset}-${endChunk} of ${fileSize} (${percentComplete}%)`);
+
+        // Send chunk progress event
+        broadcastToSession(sessionId, 'file-progress', {
+          fileIndex: fileIndex,
+          fileName: file.originalname,
+          stage: `Uploading video chunk ${currentChunk}/${totalChunks}`,
+          progress: 30 + Math.round((percentComplete * 0.6)) // Scale from 30% to 90%
+        });
+
+        offset = endChunk;
+      }
+
+      // Step 3: Finish upload
+      await axios.post(initUrl, {
+        upload_phase: 'finish',
+        upload_session_id: upload_session_id,
+        access_token,
+        title: file.originalname
+      });
+
+      console.log('Successfully completed large video upload to Meta!');
+      return video_id;
+
+    } catch (err) {
+      console.log('Error uploading large video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // upload thumbnail as image to get image_hash
+  async function uploadThumbnailImage(thumbnailPath, adAccountId) {
+    const imageUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/adimages`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(thumbnailPath));
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(imageUrl, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      console.log('Successfully uploaded thumbnail image!');
+
+      console.log(response.data)
+
+      const images = response.data.images;
+      const dynamicKey = Object.keys(images)[0];
+      const imageHash = images[dynamicKey].hash;
+
+      return imageHash;
+
+    } catch (err) {
+      console.log('Error uploading thumbnail image:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+})
+
+app.post('/api/upload-images', upload.array('file', 50), validateRequest.uploadFiles, (req, res) => {
+  const files = req.files
+  const accountId = req.body.account_id
+  const imageUrl = `https://graph.facebook.com/${api_version}/act_${accountId}/adimages`
+
+  async function imageUploadPromise() {
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        try {
+          // Process creative with deduplication
+          file.mimetype = file.mimetype || 'image/jpeg'; // Set mimetype for images
+          const creativeResult = await processCreative(file, accountId);
+
+          if (creativeResult.isDuplicate) {
+            // Creative already exists and is uploaded to this account
+            return {
+              type: 'image',
+              file: file.originalname,
+              imageHash: creativeResult.facebookIds.facebook_image_hash,
+              status: 'success',
+              isDuplicate: true,
+              message: 'Using existing creative from library'
+            };
+          } else {
+            // Need to upload to Meta
+            let filePath;
+            if (!creativeResult.isNew) {
+              // Use existing file from library
+              filePath = getCreativeFilePath(creativeResult.creative);
+            } else {
+              // New file was moved to library, use the new path
+              filePath = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+            }
+            // Update file.path for consistency
+            file.path = filePath;
+
+            const imageHash = await uploadImages(filePath, file.originalname);
+
+            // Store Facebook IDs in database
+            await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
+              imageHash: imageHash
+            });
+
+            return {
+              type: 'image',
+              file: file.originalname,
+              imageHash: imageHash,
+              status: 'success',
+              isNew: creativeResult.isNew
+            };
+          }
+        } catch (error) {
+          return {
+            file: file.originalname,
+            status: 'failed',
+            error: error.message
+          };
+        }
+      })
+    );
+
+    res.status(200).json(results)
+  }
+
+  imageUploadPromise();
+
+  async function uploadImages(filePath, originalName) {
+
+    const file_path = fs.createReadStream(filePath)
+
+    try {
+      const fd = new FormData()
+      fd.append(`${originalName}`, file_path)
+      fd.append('access_token', access_token)
+
+      const response = await axios.post(imageUrl, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      })
+
+      console.log('Successfully uploaded images!')
+
+      const images = response.data.images
+      const dynamicKey = Object.keys(images)[0]
+      const imageHash = images[dynamicKey].hash
+
+      return imageHash
+
+    } catch (err) {
+      console.log('There was an error uploading images to facebook.', err.response?.data)
+      throw err;
+    }
+  }
+})
+
+app.post('/api/create-ad-creative', (req, res) => {
+  try {
+    const { name, page_id, message, headline, type, link, description, account_id, adset_id, assets } = req.body;
+
+    // Log the link safely
+    console.log('Received ad creative request with link length:', link ? link.length : 0);
+
+    async function createAdCreativePromises() {
+      const response = await Promise.allSettled(
+        assets.map(asset => {
+          return createAdCreative(asset)
+        })
+      )
+
+      // Check if any creatives failed
+      const failures = response.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        console.log('Some ad creatives failed to create:', failures);
+      }
+
+      res.status(200).json(response)
+    }
+
+    createAdCreativePromises()
+
+    async function createAdCreative(asset) {
+
+      let creativeData
+
+      const adName = asset.adName || name
+      const assetType = asset.value.type
+
+      // IZAK - i believe to update the display link it is "caption" https://developers.facebook.com/docs/marketing-api/reference/ad-creative-link-data/
+
+      // payload for video upload
+      if (assetType === 'video') {
+        creativeData = {
+          name: adName,
+          object_story_spec: {
+            page_id,
+            video_data: {
+              title: headline,
+              image_hash: asset.value.data.getImageHash,
+              video_id: asset.value.data.uploadVideo,
+              message,
+              link_description: description,
+              call_to_action: {
+                type,
+                value: {
+                  link
+                },
+              }
+            }
+          }
+        }
+      } else {
+        // payload for image upload 
+        creativeData = {
+          name: adName,
+          adset_id,
+          object_story_spec: {
+            page_id,
+            link_data: {
+              call_to_action: {
+                type,
+                value: {
+                  link
+                }
+              },
+              image_hash: asset.value.imageHash,
+              message,
+              name: headline,
+              description,
+              link
+            }
+          }
+        }
+      }
+
+      const creative_url = `https://graph.facebook.com/${api_version}/act_${account_id}/adcreatives`;
+
+      return axios.post(creative_url, {
+        ...creativeData,
+        access_token
+      })
+        .then(response => {
+          return response.data
+        })
+        .then(data => {
+          return createAd(data.id, adName).then(() => {
+            console.log(`Facebook ad created successfully! Ad ID: ${data.id}`)
+            return { adId: data.id, adName: adName, success: true }
+          })
+        })
+        .catch(err => {
+          console.log('Error creating ad creative:', err.response?.data || err.message);
+          const fbError = err.response?.data?.error;
+          let errorMessage = 'Unknown error';
+
+          if (fbError) {
+            // Use Facebook's user-friendly message if available
+            errorMessage = fbError.error_user_msg || fbError.message;
+
+            // Add more context for common errors
+            if (fbError.error_subcode === 1487860) {
+              errorMessage = `${errorMessage} (Ad Set Status: ${fbError.error_user_title})`;
+            }
+          } else {
+            errorMessage = err.message;
+          }
+
+          throw new Error(`Ad "${adName}": ${errorMessage}`);
+        });
+
+    }
+
+    async function createAd(adCreativeId, adName) {
+
+      const payload = {
+        name: adName,
+        adset_id,
+        status: "ACTIVE",
+        creative: {
+          creative_id: adCreativeId
+        },
+        access_token
+      }
+      const url = `https://graph.facebook.com/${api_version}/act_${account_id}/ads`
+
+      try {
+        const response = await axios.post(url, payload)
+        const data = await response
+        console.log('Ad created!', data)
+        return data
+      } catch (err) {
+        console.log('There was an error creating ad.', err.response?.data)
+        throw err
+      }
+    }
+  } catch (error) {
+    console.error('Error in create-ad-creative endpoint:', error);
+    res.status(500).json({ error: 'Failed to process ad creative request' });
+  }
+})
+
+// Get all creatives from library
+app.get('/api/creative-library', async (req, res) => {
+  try {
+    const { limit = 100, offset = 0, search } = req.query;
+
+    let creatives;
+    if (search) {
+      creatives = await CreativeDB.search(search);
+    } else {
+      creatives = await CreativeDB.getAll(parseInt(limit), parseInt(offset));
+    }
+
+    // Add full URLs for thumbnails
+    creatives = creatives.map(creative => ({
+      ...creative,
+      thumbnailUrl: creative.thumbnail_path ? `/creative-library/thumbnails/${path.basename(creative.thumbnail_path)}` : null,
+      fileUrl: `/creative-library/${creative.file_type.startsWith('video/') ? 'videos' : 'images'}/${path.basename(creative.file_path)}`
+    }));
+
+    res.json({ creatives });
+  } catch (error) {
+    console.error('Error fetching creatives:', error);
+    res.status(500).json({ error: 'Failed to fetch creatives' });
+  }
+});
+
+// Get specific creative details
+app.get('/api/creative-library/:id', async (req, res) => {
+  try {
+    const creative = await CreativeDB.getById(req.params.id);
+    if (!creative) {
+      return res.status(404).json({ error: 'Creative not found' });
+    }
+
+    // Add full URLs
+    creative.thumbnailUrl = creative.thumbnail_path ? `/creative-library/thumbnails/${path.basename(creative.thumbnail_path)}` : null;
+    creative.fileUrl = `/creative-library/${creative.file_type.startsWith('video/') ? 'videos' : 'images'}/${path.basename(creative.file_path)}`;
+
+    res.json({ creative });
+  } catch (error) {
+    console.error('Error fetching creative:', error);
+    res.status(500).json({ error: 'Failed to fetch creative' });
+  }
+});
+
+// Upload existing creative to new ad account
+app.post('/api/creative-library/upload-to-account', async (req, res) => {
+  try {
+    const { creativeId, adAccountId } = req.body;
+
+    // Get creative details
+    const creative = await CreativeDB.getById(creativeId);
+    if (!creative) {
+      return res.status(404).json({ error: 'Creative not found' });
+    }
+
+    // Check if already uploaded to this account
+    const isUploaded = await CreativeAccountDB.isUploadedToAccount(creativeId, adAccountId);
+    if (isUploaded) {
+      const facebookIds = await CreativeAccountDB.getFacebookIds(creativeId, adAccountId);
+      return res.json({
+        message: 'Creative already uploaded to this account',
+        facebookIds,
+        isExisting: true
+      });
+    }
+
+    // Get file paths
+    const filePath = getCreativeFilePath(creative);
+    const isVideo = creative.file_type.startsWith('video/');
+
+    if (isVideo) {
+      // Upload video
+      const fileObj = {
+        path: filePath,
+        originalname: creative.original_name,
+        size: creative.file_size
+      };
+
+      const videoId = await uploadVideoToMeta(fileObj, adAccountId);
+
+      // Upload thumbnail if exists
+      let imageHash = null;
+      if (creative.thumbnail_path) {
+        const thumbnailPath = getThumbnailFilePath(creative);
+        imageHash = await uploadThumbnailImage(thumbnailPath, adAccountId);
+      }
+
+      // Store Facebook IDs
+      await CreativeAccountDB.recordUpload(creativeId, adAccountId, {
+        videoId,
+        imageHash
+      });
+
+      res.json({
+        message: 'Video uploaded successfully',
+        facebookIds: { videoId, imageHash }
+      });
+
+    } else {
+      // Upload image
+      const imageHash = await uploadImageToMeta(filePath, adAccountId);
+
+      // Store Facebook IDs
+      await CreativeAccountDB.recordUpload(creativeId, adAccountId, {
+        imageHash
+      });
+
+      res.json({
+        message: 'Image uploaded successfully',
+        facebookIds: { imageHash }
+      });
+    }
+
+  } catch (error) {
+    console.error('Error uploading creative to account:', error);
+    res.status(500).json({ error: 'Failed to upload creative to account' });
+  }
+
+  // Helper function to upload video to Meta (extracted from existing code)
+  async function uploadVideoToMeta(file, adAccountId) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    // Use resumable upload for files > 20MB
+    if (fileSize > 20 * 1024 * 1024) {
+      return await uploadLargeVideoToMeta(file, adAccountId);
+    }
+
+    // Regular upload for smaller files
+    const upload_url = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(file.path));
+      fd.append('name', file.originalname);
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(upload_url, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      console.log('Successfully uploaded video to Meta!');
+      return response.data.id;
+
+    } catch (err) {
+      console.log('Error uploading video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function for large video uploads
+  async function uploadLargeVideoToMeta(file, adAccountId) {
+    const fileStats = fs.statSync(file.path);
+    const fileSize = fileStats.size;
+
+    const initUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/advideos`;
+
+    try {
+      const initResponse = await axios.post(initUrl, {
+        upload_phase: 'start',
+        file_size: fileSize,
+        access_token
+      });
+
+      const { upload_session_id, video_id } = initResponse.data;
+
+      const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+      let offset = 0;
+
+      while (offset < fileSize) {
+        const endChunk = Math.min(offset + chunkSize, fileSize);
+        const chunk = fs.createReadStream(file.path, {
+          start: offset,
+          end: endChunk - 1
+        });
+
+        const fd = new FormData();
+        fd.append('video_file_chunk', chunk);
+        fd.append('upload_phase', 'transfer');
+        fd.append('upload_session_id', upload_session_id);
+        fd.append('start_offset', offset.toString());
+        fd.append('access_token', access_token);
+
+        await axios.post(initUrl, fd, {
+          headers: {
+            ...fd.getHeaders()
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        });
+
+        offset = endChunk;
+      }
+
+      await axios.post(initUrl, {
+        upload_phase: 'finish',
+        upload_session_id: upload_session_id,
+        access_token,
+        title: file.originalname
+      });
+
+      return video_id;
+
+    } catch (err) {
+      console.log('Error uploading large video to Facebook:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function to upload image
+  async function uploadImageToMeta(filePath, adAccountId) {
+    const imageUrl = `https://graph.facebook.com/${api_version}/act_${adAccountId}/adimages`;
+
+    try {
+      const fd = new FormData();
+      fd.append('source', fs.createReadStream(filePath));
+      fd.append('access_token', access_token);
+
+      const response = await axios.post(imageUrl, fd, {
+        headers: {
+          ...fd.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      const images = response.data.images;
+      const dynamicKey = Object.keys(images)[0];
+      return images[dynamicKey].hash;
+
+    } catch (err) {
+      console.log('Error uploading image:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+
+  // Helper function to upload thumbnail
+  async function uploadThumbnailImage(thumbnailPath, adAccountId) {
+    return uploadImageToMeta(thumbnailPath, adAccountId);
+  }
+});
+
+// Delete a creative from library
+app.delete('/api/creative-library/:id', async (req, res) => {
+  try {
+    const creativeId = parseInt(req.params.id);
+
+    // Get creative details before deleting
+    const creativeData = await CreativeDB.getById(creativeId);
+    if (!creativeData) {
+      return res.status(404).json({ error: 'Creative not found' });
+    }
+
+    // Delete files from filesystem
+    const filePath = getCreativeFilePath(creativeData);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Deleted file: ${filePath}`);
+    }
+
+    // Delete thumbnail if exists
+    if (creativeData.thumbnail_path) {
+      const thumbnailPath = getThumbnailFilePath(creativeData);
+      if (fs.existsSync(thumbnailPath)) {
+        fs.unlinkSync(thumbnailPath);
+        console.log(`Deleted thumbnail: ${thumbnailPath}`);
+      }
+    }
+
+    // Delete from database
+    await CreativeDB.delete(creativeId);
+
+    res.json({ message: 'Creative deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting creative:', error);
+    res.status(500).json({ error: 'Failed to delete creative' });
+  }
+});
+
+// Delete all creatives from library
+app.delete('/api/creative-library', async (req, res) => {
+  try {
+    // Get all creatives before deleting
+    const creatives = await CreativeDB.getAll(1000, 0);
+
+    // Delete all files
+    for (const creative of creatives) {
+      // Delete main file
+      const filePath = getCreativeFilePath(creative);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted file: ${filePath}`);
+      }
+
+      // Delete thumbnail if exists
+      if (creative.thumbnail_path) {
+        const thumbnailPath = getThumbnailFilePath(creative);
+        if (fs.existsSync(thumbnailPath)) {
+          fs.unlinkSync(thumbnailPath);
+          console.log(`Deleted thumbnail: ${thumbnailPath}`);
+        }
+      }
+    }
+
+    // Delete all from database
+    const deletedCount = await CreativeDB.deleteAll();
+
+    res.json({
+      message: 'All creatives deleted successfully',
+      deletedCount
+    });
+  } catch (error) {
+    console.error('Error deleting all creatives:', error);
+    res.status(500).json({ error: 'Failed to delete all creatives' });
+  }
+});
+
+// Creative Batch API endpoints
+
+// Get all batches
+app.get('/api/creative-batches', async (req, res) => {
+  try {
+    const batches = await BatchDB.getAll();
+    res.json({ batches });
+  } catch (error) {
+    console.error('Error fetching batches:', error);
+    res.status(500).json({ error: 'Failed to fetch batches' });
+  }
+});
+
+// Create new batch
+app.post('/api/creative-batches', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Batch name is required' });
+    }
+
+    const batchId = await BatchDB.create(name, description);
+    const batch = await BatchDB.getById(batchId);
+
+    res.json({ batch });
+  } catch (error) {
+    console.error('Error creating batch:', error);
+    if (error.message?.includes('UNIQUE constraint failed')) {
+      res.status(400).json({ error: 'A batch with this name already exists' });
+    } else {
+      res.status(500).json({ error: 'Failed to create batch' });
+    }
+  }
+});
+
+// Update batch
+app.put('/api/creative-batches/:id', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const batchId = parseInt(req.params.id);
+
+    if (!name) {
+      return res.status(400).json({ error: 'Batch name is required' });
+    }
+
+    await BatchDB.update(batchId, name, description);
+    const batch = await BatchDB.getById(batchId);
+
+    res.json({ batch });
+  } catch (error) {
+    console.error('Error updating batch:', error);
+    res.status(500).json({ error: 'Failed to update batch' });
+  }
+});
+
+// Delete batch
+app.delete('/api/creative-batches/:id', async (req, res) => {
+  try {
+    const batchId = parseInt(req.params.id);
+    const deletedCount = await BatchDB.delete(batchId);
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    res.json({ message: 'Batch deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting batch:', error);
+    res.status(500).json({ error: 'Failed to delete batch' });
+  }
+});
+
+// Get creatives in a batch
+app.get('/api/creative-batches/:id/creatives', async (req, res) => {
+  try {
+    const batchId = parseInt(req.params.id);
+    const creatives = await BatchDB.getCreatives(batchId);
+
+    // Add full URLs for thumbnails and files
+    const creativesWithUrls = creatives.map(creative => ({
+      ...creative,
+      thumbnailUrl: creative.thumbnail_path ? `/creative-library/thumbnails/${path.basename(creative.thumbnail_path)}` : null,
+      fileUrl: `/creative-library/${creative.file_type.startsWith('video/') ? 'videos' : 'images'}/${path.basename(creative.file_path)}`
+    }));
+
+    res.json({ creatives: creativesWithUrls });
+  } catch (error) {
+    console.error('Error fetching batch creatives:', error);
+    res.status(500).json({ error: 'Failed to fetch batch creatives' });
+  }
+});
+
+// Add creatives to batch
+app.post('/api/creative-batches/:id/creatives', async (req, res) => {
+  try {
+    const batchId = parseInt(req.params.id);
+    const { creativeIds } = req.body;
+
+    if (!Array.isArray(creativeIds) || creativeIds.length === 0) {
+      return res.status(400).json({ error: 'Creative IDs array is required' });
+    }
+
+    const updatedCount = await CreativeDB.updateBatchBulk(creativeIds, batchId);
+
+    res.json({
+      message: `${updatedCount} creative(s) added to batch`,
+      updatedCount
+    });
+  } catch (error) {
+    console.error('Error adding creatives to batch:', error);
+    res.status(500).json({ error: 'Failed to add creatives to batch' });
+  }
+});
+
+// Remove creative from batch
+app.delete('/api/creative-batches/:batchId/creatives/:creativeId', async (req, res) => {
+  try {
+    const creativeId = parseInt(req.params.creativeId);
+
+    await CreativeDB.updateBatch(creativeId, null);
+
+    res.json({ message: 'Creative removed from batch' });
+  } catch (error) {
+    console.error('Error removing creative from batch:', error);
+    res.status(500).json({ error: 'Failed to remove creative from batch' });
+  }
+});
+
+// Upload library creatives to a specific ad account
+app.post('/api/upload-library-creatives', validateRequest.uploadLibraryCreatives, async (req, res) => {
+  try {
+    const { creativeIds, account_id, sessionId } = req.body;
+
+    if (!creativeIds || !Array.isArray(creativeIds) || creativeIds.length === 0) {
+      return res.status(400).json({ error: 'Creative IDs array is required' });
+    }
+
+    if (!account_id) {
+      return res.status(400).json({ error: 'Account ID is required' });
+    }
+
+    const results = [];
+
+    for (const creativeId of creativeIds) {
+      try {
+        // Get creative details
+        const creative = await CreativeDB.getById(creativeId);
+        if (!creative) {
+          results.push({
+            status: 'rejected',
+            creativeId,
+            reason: 'Creative not found'
+          });
+          continue;
+        }
+
+        // Check if already uploaded to this account
+        const existingUpload = await CreativeAccountDB.getFacebookIds(creativeId, account_id);
+        if (existingUpload) {
+          // Already uploaded, just return existing data
+          if (creative.file_type.startsWith('video/')) {
+            results.push({
+              status: 'fulfilled',
+              value: {
+                type: 'video',
+                file: creative.original_name,
+                data: {
+                  uploadVideo: existingUpload.facebook_video_id,
+                  getImageHash: existingUpload.facebook_image_hash
+                },
+                status: 'success',
+                isExisting: true
+              }
+            });
+          } else {
+            results.push({
+              status: 'fulfilled',
+              value: {
+                type: 'image',
+                file: creative.original_name,
+                imageHash: existingUpload.facebook_image_hash,
+                status: 'success',
+                isExisting: true
+              }
+            });
+          }
+          continue;
+        }
+
+        // Get file path
+        const filePath = getCreativeFilePath(creative);
+        const isVideo = creative.file_type.startsWith('video/');
+
+        if (isVideo) {
+          // Upload video
+          const fileObj = {
+            path: filePath,
+            originalname: creative.original_name,
+            size: creative.file_size
+          };
+
+          // Get or create thumbnail
+          let thumbnailPath = creative.thumbnail_path ? getThumbnailFilePath(creative) : null;
+          if (!thumbnailPath) {
+            const thumbnail = await getThumbnailFromVideo(fileObj);
+            thumbnailPath = thumbnail.path;
+
+            // Update creative with thumbnail
+            await updateCreativeThumbnail(creative.id, path.relative(__dirname, thumbnailPath));
+          }
+
+          // Upload video and thumbnail
+          const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, account_id);
+          const video_id = await uploadVideoToMeta(fileObj, account_id);
+
+          // Store Facebook IDs
+          await CreativeAccountDB.recordUpload(creative.id, account_id, {
+            videoId: video_id,
+            imageHash: thumbnail_image_hash
+          });
+
+          results.push({
+            status: 'fulfilled',
+            value: {
+              type: 'video',
+              file: creative.original_name,
+              data: {
+                uploadVideo: video_id,
+                getImageHash: thumbnail_image_hash
+              },
+              status: 'success'
+            }
+          });
+        } else {
+          // Upload image
+          const imageHash = await uploadImageToMeta(filePath, account_id);
+
+          // Store Facebook ID
+          await CreativeAccountDB.recordUpload(creative.id, account_id, { imageHash });
+
+          results.push({
+            status: 'fulfilled',
+            value: {
+              type: 'image',
+              file: creative.original_name,
+              imageHash: imageHash,
+              status: 'success'
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`Error uploading creative ${creativeId}:`, error);
+        results.push({
+          status: 'rejected',
+          creativeId,
+          reason: error.message
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('Error in upload-library-creatives:', error);
+    res.status(500).json({ error: 'Failed to upload library creatives' });
+  }
+});
+
+// Serve creative library files
+app.use('/creative-library', express.static(paths.creativeLibrary));
+
+// Global error handler middleware (must be last)
+app.use((err, req, res, next) => {
+  const errorDetails = {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  };
+
+  console.error('Unhandled error:', errorDetails);
+
+  // Send Telegram notification for unhandled errors
+  const telegramMessage = `<b>Unhandled Express Error</b>
+<b>URL:</b> ${req.method} ${req.url}
+<b>Error:</b> ${err.message}
+<b>IP:</b> ${req.ip}`;
+  sendTelegramNotification(telegramMessage);
+
+  // Don't leak error details in production
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
+  res.status(err.status || 500).json({
+    error: 'Internal server error',
+    message: isDevelopment ? err.message : 'An unexpected error occurred',
+    ...(isDevelopment && { stack: err.stack })
+  });
+});
+
+// Handle 404s
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Process-level error handlers
+process.on('uncaughtException', (err) => {
+  const errorDetails = {
+    error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString()
+  };
+
+  console.error('UNCAUGHT EXCEPTION:', errorDetails);
+
+  // Send critical Telegram notification
+  const telegramMessage = `<b>🔥 CRITICAL: Uncaught Exception</b>
+<b>Error:</b> ${err.message}
+<b>Stack:</b> ${err.stack?.substring(0, 500)}...`;
+  sendTelegramNotification(telegramMessage);
+
+  // Log the error but don't exit immediately to allow ongoing requests to complete
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  const errorDetails = {
+    reason: reason,
+  };
+
+  console.error('UNHANDLED REJECTION:', errorDetails);
+
+  // Send Telegram notification for unhandled rejections
+  const telegramMessage = `<b>⚠️ Unhandled Promise Rejection</b>
+<b>Reason:</b> ${reason?.toString() || 'Unknown reason'}`;
+  sendTelegramNotification(telegramMessage);
+
+  console.error('UNHANDLED REJECTION:', {
+    promise: promise,
+    timestamp: new Date().toISOString()
+  });
+  // Convert unhandled rejections to exceptions
+  throw reason;
+});
+
+// Graceful shutdown handling
+const gracefulShutdown = (signal) => {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+
+  // Stop accepting new connections
+  server.close(() => {
+    console.log('HTTP server closed');
+
+    // Close database connections
+    console.log('Server shut down gracefully');
+    process.exit(0);
+  });
+
+  // Force shutdown after 30 seconds
+  setTimeout(() => {
+    console.error('Forced shutdown after 30 seconds');
+    process.exit(1);
+  }, 30000);
+};
+
+// Listen for termination signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`App is listening on PORT:${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Circuit breakers initialized for: ${Object.keys(circuitBreakers).join(', ')}`);
+
+  // Send startup notification (non-error)
+  const startupMessage = `<b>✅ Server Started Successfully</b>\n<b>Port:</b> ${PORT}\n<b>Environment:</b> ${process.env.NODE_ENV || 'development'}\n<b>Time:</b> ${new Date().toLocaleString()}`;
+  sendTelegramNotification(startupMessage, false);
+});

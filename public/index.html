@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZuckCannon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="app.css" />
+  <link rel="icon" type="image/x-icon" href="icons/favi.png">
+
+</head>
+
+<body>
+  <header>
+    <h1>ZuckCannon <span class="h1-version">v1.0</span>
+      <button class="refresh-data-btn" onclick="refreshMetaDataManually()" title="Refresh data from Facebook">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 4v6h-6"></path>
+          <path d="M1 20v-6h6"></path>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+    </h1>
+    <div class="header-controls">
+      <span id="username-display"></span>
+      <button id="logout-btn" class="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <!-- Not authenticated message -->
+  <div id="auth-message" class="auth-message" style="display: none;">
+    <p>Not authenticated. <a href="/login.html">Please login to view data.</a></p>
+  </div>
+
+  <div class="main-container" id="main-container">
+    <!-- Column 1 - Ad Account -->
+    <aside id="col-1" class="ad-acc-column">
+      <h2>Select Ad Account</h2>
+      <ul id="ad-acc-list"></ul>
+    </aside>
+
+    <!-- Column 2 - Campaign -->
+    <!-- <div id="col-2" class="campaign-column" style="display:none">  -->
+    <div id="col-2" class="campaign-column" style="display: none">
+      <div class="campaign-title-wrapper">
+        <h2>Select Campaign</h2>
+        <a href="#" class="search-icon-btn"><img src="icons/search-icon.svg" alt="Search" /></a>
+      </div>
+      <div class="campaign-search-wrapper" style="display: none;">
+        <input type="text" class="campaign-search-input" placeholder="Search campaigns..." />
+        <button class="search-close-btn">✕</button>
+      </div>
+    </div>
+
+    <!-- Column 3 - Action -->
+    <!-- <div id="col-3" class="action-column" style="display: none;"> -->
+    <div id="col-3" class="action-column" style="display: none">
+      <h2>Select Action</h2>
+      <ul>
+        <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-campaign">
+          Duplicate <strong>Campaign</strong></li>
+        <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="create-new">
+          Create New <strong>Ad Set</strong>
+        </li>
+        <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="upload-existing">Upload
+          to Existing <strong>Ad Set</strong>
+        <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="duplicate-existing">
+          Duplicate Existing <strong>Ad Set</strong></li>
+      </ul>
+    </div>
+    <!-- Upload Column -->
+    <!-- <div id="col-4" class="upload-column" style="display: none;"> -->
+    <div id="col-4" class="upload-column" style="display: none">
+      <!-- Ad Set List (for existing ad set selection) -->
+      <div class="adset-list-container" style="display: none;">
+        <h3>Select Ad Set</h3>
+        <div class="adset-list">
+          <!-- Ad sets will be populated here -->
+        </div>
+      </div>
+
+      <!-- Ad Set Configuration -->
+      <div class="adset-config">
+        <h2>Ad Set Configuration</h2>
+        <div class="adset-form-container">
+          <input type="text" value="Campaign Id" class="preselect config-campaign-id" readonly />
+          <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly />
+          <input type="text" value="OFFSITE_CONVERSIONS" class="preselect config-optimization-goal" readonly />
+          <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly />
+          <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly />
+          <input type="text" placeholder="Ad Set Name*" data-container="adset-form-container" class="config-adset-name"
+            required />
+
+          <!-- Status dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="status">
+                <span class="dropdown-display">Status*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options status">
+                <li class="status-option" data-value="ACTIVE">ACTIVE</li>
+                <li class="status-option" data-value="PAUSED">PAUSED</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Pixel dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="pixel">
+                <span class="dropdown-display">Pixel*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options pixel"></ul>
+            </div>
+          </div>
+
+          <!-- Custom Event Type Selection -->
+          <div class="event-type-container">
+            <input type="text" placeholder="Custom Event Type*" data-container="adset-form-container"
+              class="config-event-type" required readonly>
+            <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
+            <ul class="event-type-suggestions" style="display: none;"></ul>
+          </div>
+          <div class="budget-input-wrapper daily-budget" style="display: none;">
+            <span class="currency-prefix">$</span>
+            <input type="number" placeholder="100" data-container="adset-form-container" class="config-daily-budget"
+              step="0.01" min="0" />
+            <span class="currency-suffix">/day</span>
+          </div>
+          <div class="budget-input-wrapper cost-per-result" style="display: none;">
+            <span class="currency-prefix">$</span>
+            <input type="number" placeholder="12.50" data-container="adset-form-container"
+              class="config-cost-per-result-goal" step="0.01" min="0" />
+            <span class="currency-suffix">per result</span>
+          </div>
+
+          <div class="targeting-age">
+            <input type="number" placeholder="Min Age*" class="min-age" data-container="adset-form-container" required />
+            <input type="number" placeholder="Max Age*" class="max-age" data-container="adset-form-container" required />
+          </div>
+          <!-- Country Selection -->
+          <div class="geo-selection-container">
+            <div class="country-selection">
+              <div class="selected-countries-container">
+                <div class="selected-tags" id="selected-countries"></div>
+                <input type="text" placeholder="Type to search countries*" class="country-search-input"
+                  data-container="adset-form-container" />
+              </div>
+              <ul class="country-suggestions" style="display: none;"></ul>
+            </div>
+          </div>
+
+          <!-- Region Selection -->
+          <div class="geo-selection-container">
+            <div class="region-selection">
+              <div class="selected-regions-container">
+                <div class="selected-tags" id="selected-regions"></div>
+                <input type="text" placeholder="Type to search regions" class="region-search-input"
+                  data-container="adset-form-container" />
+              </div>
+              <ul class="region-suggestions" style="display: none;"></ul>
+            </div>
+          </div>
+          <button>Create Ad Set</button>
+        </div>
+      </div>
+      <!-- Creative Upload -->
+      <div class="creative-upload" style="display: none">
+        <h2>Creative Upload</h2>
+
+        <div class="upload-steps-container">
+          <!-- File upload area -->
+          <div class="upload-step" data-step="2">
+            <div class="file-drop-zone">
+              <p class="drop-zone-text">Drag & drop <strong>images and videos</strong> here <br /><br />or</p>
+              <input type="file" multiple accept="image/*,video/*" />
+              <button class="continue-btn">Browse Files</button>
+              <div class="gdrive-input-container">
+                <p style="margin: 15px 0 10px 0; color: #666; font-size: 14px;">or</p>
+                <div style="display: flex; align-items: center; gap: 8px; max-width: 400px; margin: 0 auto;">
+                  <input type="text" class="gdrive-link-input" placeholder="Paste Google Drive link..."
+                    style="flex: 1; padding: 8px 12px; font-size: 14px;">
+                  <button class="gdrive-fetch-btn"
+                    style="padding: 8px 12px; background: #103dee; color: white; border: none;  cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px;">
+                    <img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;">
+                    Fetch
+                  </button>
+                </div>
+              </div>
+              <div class="creative-library-link-container" style="margin-top: 15px;">
+                <p style="margin: 10px 0; color: #666; font-size: 14px;">or</p>
+                <button class="open-library-btn"
+                  style="padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; font-size: 14px;">
+                  📚 Browse Creative Library
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Uploaded files list -->
+          <div class="upload-step" data-step="3" style="display: none">
+            <div class="uploaded-files-list">
+              <!-- Files will be populated here -->
+            </div>
+
+            <button class="continue-btn">Upload Creatives</button>
+            <button class="back-btn" style="margin-top: 15px">← Clear All Files</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Insert Ad Copy -->
+      <div class="ad-copy-container" style="display: none">
+        <h2>Editing Ad Copy for All 5 Images</h2>
+        <div class="adset-form-container">
+          <textarea placeholder="Primary Text*" required rows="6"></textarea>
+          <input type="text" placeholder="Headline*" required />
+          <!-- Page dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="page">
+                <span class="dropdown-display">Page*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options pages">
+              </ul>
+            </div>
+          </div>
+          <!-- Call to Action dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="cta">
+                <span class="dropdown-display">Learn more</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options cta">
+                <li class="cta-option" data-value="">No button</li>
+                <li class="cta-option" data-value="BUY_TICKETS">Buy tickets</li>
+                <li class="cta-option" data-value="CONTACT_US">Contact us</li>
+                <li class="cta-option" data-value="DOWNLOAD">Download</li>
+                <li class="cta-option" data-value="GET_OFFER">Get offer</li>
+                <li class="cta-option" data-value="GET_QUOTE">Get quote</li>
+                <li class="cta-option" data-value="GET_SHOWTIMES">Get showtimes</li>
+                <li class="cta-option selected" data-value="LEARN_MORE">Learn more</li>
+                <li class="cta-option" data-value="LISTEN_NOW">Listen now</li>
+                <li class="cta-option" data-value="ORDER_NOW">Order now</li>
+                <li class="cta-option" data-value="PLAY_GAME">Play game</li>
+                <li class="cta-option" data-value="REQUEST_TIME">Request time</li>
+                <li class="cta-option" data-value="SEE_MENU">See menu</li>
+                <li class="cta-option" data-value="SHOP_NOW">Shop now</li>
+                <li class="cta-option" data-value="SIGN_UP">Sign up</li>
+                <li class="cta-option" data-value="SUBSCRIBE">Subscribe</li>
+                <li class="cta-option" data-value="WATCH_MORE">Watch more</li>
+                <li class="cta-option" data-value="APPLY_NOW">Apply now</li>
+                <li class="cta-option" data-value="BOOK_NOW">Book now</li>
+              </ul>
+            </div>
+          </div>
+          <input type="url" placeholder="Destination URL*" required />
+          <input type="text" placeholder="Description" class="adcopy-description" />
+          <button>Continue to Review</button>
+        </div>
+      </div>
+
+      <!-- Review & Create Ads -->
+      <div class="create-ads-container" style="display: none">
+        <h2>Review &amp; Create Ads</h2>
+        <div class="review-container">
+          <h3>Ad Set: Auto Test 1</h3>
+          <!-- Display creatives for review -->
+          <div class="data-container-creatives">
+            <div class="images">
+            </div>
+            <!-- Display ad copy for review -->
+
+            <div class="adcopy-text-review">
+              <h3>Primary Text:</h3>
+              <div class="primary-text-review-container primary">
+                <p>
+                  I hate my neighbor. And not for any of the usual reasons...
+                </p>
+              </div>
+            </div>
+            <div class="headline-review">
+              <h3>Headline:</h3>
+              <div class="headline-review-container">
+                <p>Check out the site now ➜</p>
+              </div>
+            </div>
+
+            <div class="adcopy-text-review">
+              <h3>Page:</h3>
+              <div class="cta-text-review-container page">
+                <p></p>
+              </div>
+            </div>
+
+            <div class="adcopy-text-review">
+              <h3>Call to Action:</h3>
+              <div class="cta-text-review-container cta">
+                <p>LEARN_MORE</p>
+              </div>
+            </div>
+
+            <div class="adcopy-text-review">
+              <h3>Destination URL:</h3>
+              <div class="cta-text-review-container link">
+                <p>https://emptylink.com</p>
+              </div>
+            </div>
+
+            <div class="adcopy-text-review">
+              <h3>Description:</h3>
+              <div class="cta-text-review-container description">
+                <p></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="create-ads-button">Create Ads</button>
+      </div>
+
+      <!-- Success Screen -->
+      <div class="success-wrapper" style="display: none">
+        <h2>Success!</h2>
+
+        <div class="success-container">
+          <p>5 Ads Successfully Created</p>
+          <img src="icons/icons8-tick.svg" />
+
+          <button>View in Ads Manager</button>
+          <h3>Create More Ads</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Ad Set Dialog -->
+  <div class="duplicate-adset-dialog" style="display: none;">
+    <div class="dialog-content">
+      <button class="dialog-close-btn">&times;</button>
+      <h3>Duplicate Ad Set</h3>
+      <div class="duplicate-step" data-step="1">
+        <p>Do you want to delete the existing ads from the ad set <strong>(recommended)</strong>?</p>
+        <div class="button-group">
+          <!-- IZAK - these deep copy values are reversed. deep copy = true is throwing error still.  -->
+          <button class="btn-secondary" data-deep-copy="true">No, Copy Ads</button>
+          <button class="btn-primary" data-deep-copy="false">Yes, Delete Ads</button>
+        </div>
+      </div>
+      <div class="duplicate-step" data-step="2" style="display: none;">
+        <p>What do you want to name the new ad set?</p>
+        <input type="text" id="duplicate-adset-name" placeholder="Enter ad set name">
+        <div class="button-group">
+          <button class="btn-secondary duplicate-back">Back</button>
+          <button class="btn-primary duplicate-proceed" disabled>Proceed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Campaign Dialog -->
+  <div class="duplicate-campaign-dialog" style="display: none;">
+    <div class="dialog-content">
+      <button class="dialog-close-btn">&times;</button>
+      <h3>Duplicate Campaign</h3>
+      <div class="duplicate-step" data-step="1">
+        <p>Do you want to delete all ad sets and ads from this campaign <strong>(recommended)</strong>?</p>
+        <div class="button-group">
+          <button class="btn-secondary" data-deep-copy="true">No, Copy Everything</button>
+          <button class="btn-primary" data-deep-copy="false">Yes, Delete Everything</button>
+        </div>
+      </div>
+      <div class="duplicate-step" data-step="2" style="display: none;">
+        <p>What do you want to name the new campaign?</p>
+        <input type="text" id="duplicate-campaign-name" placeholder="Enter campaign name">
+        <div class="button-group">
+          <button class="btn-secondary duplicate-back">Back</button>
+          <button class="btn-primary duplicate-proceed" disabled>Proceed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Creative Library Modal -->
+  <div class="creative-library-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Creative Library</h2>
+        <div class="modal-header-buttons">
+          <button class="clear-all-btn">Delete ALL ⚠️</button>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+
+      <div class="library-controls">
+        <div class="library-view-toggle">
+          <button class="view-toggle-btn active" data-view="creatives">All Creatives</button>
+          <!-- <button class="view-toggle-btn" data-view="batches">Batches</button> -->
+        </div>
+        <div class="library-search-container">
+          <input type="text" class="library-search" placeholder="Search creatives..." />
+        </div>
+      </div>
+
+      <div class="library-filters">
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-new" checked>
+          <span>New</span>
+        </label>
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-uploaded" checked>
+          <span>Already in Account</span>
+        </label>
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-videos" checked>
+          <span>Videos</span>
+        </label>
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-images" checked>
+          <span>Images</span>
+        </label>
+      </div>
+      <!-- 
+      <div class="batch-actions" style="display: none;">
+        <button class="create-batch-btn">+ Create New Batch</button>
+        <div class="batch-breadcrumb" style="display: none;">
+          <span class="breadcrumb-item">All Batches</span>
+          <span class="breadcrumb-separator">›</span>
+          <span class="breadcrumb-current"></span>
+        </div>
+      </div> -->
+
+      <div class="library-grid-container">
+        <div class="library-grid">
+          <!-- Creative items will be dynamically loaded here -->
+        </div>
+        <div class="library-loading" style="display: none;">
+          <p>Loading creatives...</p>
+        </div>
+        <div class="library-empty" style="display: none;">
+          <p>No creatives found in library</p>
+        </div>
+      </div>
+
+      <div class="library-selected-info">
+        <span class="selected-count">0 selected</span>
+        <button class="add-selected-btn" disabled>Add Selected Creatives</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="error-handler.js"></script>
+  <script src="script.js"></script>
+  <script>
+    setTimeout(() => {
+      if (typeof setupMetaDataUpdates === 'function') {
+        setupMetaDataUpdates()
+      }
+    }, 1000)
+  </script>
+</body>
+
+</html>

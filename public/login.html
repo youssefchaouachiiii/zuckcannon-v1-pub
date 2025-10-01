@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - ZuckCannon</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
+    <style>
+        * {
+            font-family: "Geist Mono", monospace;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #ffffff;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .login-container {
+            background: white;
+            padding: 40px;
+            border: 1px solid #e5e5e5;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            color: #103dee;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #333;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e5e5e5;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #103dee;
+        }
+
+        button {
+            width: 100%;
+            background-color: #103dee;
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #0d35d6;
+        }
+
+        button:disabled {
+            background-color: #e5e5e5;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: #d93025;
+            font-size: 12px;
+            margin-top: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        .info-message {
+            color: #666;
+            font-size: 12px;
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <h1>ZuckCannon</h1>
+        <form id="loginForm" action="/login" method="POST">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Login</button>
+            <div class="error-message" id="errorMessage"></div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Check if redirected with error
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'auth') {
+            errorMessage.textContent = 'Invalid username or password';
+            errorMessage.style.display = 'block';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMessage.style.display = 'none';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams(formData),
+                    redirect: 'manual'
+                });
+
+                if (response.type === 'opaqueredirect' || response.status === 0) {
+                    // Login successful, browser will redirect
+                    window.location.href = '/';
+                } else if (response.status === 302 || response.status === 303) {
+                    // Handle redirect manually
+                    const redirectUrl = response.headers.get('Location');
+                    if (redirectUrl && redirectUrl.includes('login.html')) {
+                        errorMessage.textContent = 'Invalid username or password';
+                        errorMessage.style.display = 'block';
+                    } else {
+                        window.location.href = '/';
+                    }
+                } else {
+                    errorMessage.textContent = 'Login failed. Please try again.';
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                errorMessage.textContent = 'An error occurred. Please try again.';
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+
+</html>
