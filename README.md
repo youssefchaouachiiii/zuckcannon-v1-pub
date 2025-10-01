@@ -1,16 +1,6 @@
 # ZuckCannon v1.0
 
-ZuckCannon is a powerful web application for managing and deploying Meta (Facebook) advertising campaigns. It provides an intuitive interface for browsing ad accounts, campaigns, ad sets, and creative assets while integrating with Facebook's Marketing API and Google Drive for media storage.
-
-## Features
-
-- **Facebook Integration**: Browse and manage ad accounts, campaigns, ad sets, and ads
-- **Creative Library**: Upload, organize, and manage creative assets (images/videos)
-- **Batch Operations**: Create multiple ads at once with different creative combinations
-- **Google Drive Integration**: Automatic backup of creative assets to Google Drive
-- **Multi-user Support**: Secure authentication system with session management
-- **Real-time Updates**: Pull latest data from Facebook Marketing API
-- **Media Processing**: Automatic video thumbnail generation using FFmpeg
+ZuckCannon is a web application for managing and deploying Meta advertising campaigns. 
 
 ## Prerequisites
 
