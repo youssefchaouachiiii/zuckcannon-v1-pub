@@ -1,0 +1,186 @@
+.column {
+  display: flex;
+  flex-direction: column;
+}
+
+.column-header {
+  margin-bottom: 20px;
+}
+
+.column-header h2 {
+  font-size: 16px;
+  color: #103dee;
+  border-bottom: 1px solid #103dee;
+  padding-bottom: 5px;
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
+/* Search Input */
+.search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid #e5e5e5;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.search-input:focus {
+  border-color: #103dee;
+  box-shadow: 0 0 0 2px rgba(16, 61, 238, 0.1);
+}
+
+.search-input::placeholder {
+  color: #999;
+}
+
+.column-content {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+}
+
+.column-content::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.column-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.column-content::-webkit-scrollbar-thumb {
+  background: #afafaf;
+}
+
+.column-content::-webkit-scrollbar-thumb:hover {
+  background: #4a90e2;
+}
+
+/* Account List */
+.item-list {
+  list-style: none;
+  font-size: 14px;
+}
+
+.item {
+  display: block;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  text-decoration: none;
+  color: #333;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.item:hover {
+  background-color: #f8f9fa;
+  border-color: #e5e5e5;
+}
+
+.item.selected {
+  background-color: #e8f2ff;
+  border-color: #4a90e2;
+  border-left: 3px solid #4a90e2;
+}
+
+.item-name {
+  display: block;
+  font-size: 14px;
+}
+
+.item-id {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Campaign Items */
+.campaign-item {
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #e5e5e5;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.campaign-item:hover {
+  border-color: #e5e5e5;
+  background-color: #f8f9fa;
+}
+
+.campaign-item.selected {
+  background-color: #e8f2ff;
+  border-color: #4a90e2;
+  border-left: 3px solid #4a90e2;
+}
+
+.campaign-item h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.campaign-item ul {
+  list-style: none;
+  padding: 0;
+}
+
+.campaign-item li {
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: #666;
+}
+
+.campaign-item li:first-child {
+  font-weight: 500;
+}
+
+.campaign-item.active li:first-child {
+  color: #28a745;
+}
+
+/* Action Items */
+.action-item {
+  font-size: 14px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e5e5;
+  cursor: pointer;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.action-item:hover {
+  background-color: #f8f9fa;
+  border-color: #e5e5e5;
+}
+
+.action-item.selected {
+  background-color: #e8f2ff;
+  border-color: #4a90e2;
+  border-left: 3px solid #4a90e2;
+}
+
+.action-item strong {
+  font-weight: 600;
+}
+
+/* Loading & Empty States */
+.loading,
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #666;
+  font-size: 14px;
+}
+
+.empty-state {
+  font-style: italic;
+}

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZuckCannon</title>
+  <title>Bulk Uploader</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
@@ -15,9 +15,10 @@
 
 <body>
   <header>
-    <h1>ZuckCannon <span class="h1-version">v1.0</span>
+    <h1>Bulk Uploader <span class="h1-version">v1.0</span>
       <button class="refresh-data-btn" onclick="refreshMetaDataManually()" title="Refresh data from Facebook">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 4v6h-6"></path>
           <path d="M1 20v-6h6"></path>
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
@@ -25,6 +26,13 @@
       </button>
     </h1>
     <div class="header-controls">
+      <button id="facebook-connect-btn" class="facebook-connect-btn" title="Connect Facebook Account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+        </svg>
+        <span id="facebook-status-text">Connect Facebook</span>
+      </button>
       <span id="username-display"></span>
       <button id="logout-btn" class="logout-btn">Logout</button>
     </div>
@@ -146,8 +154,10 @@
           </div>
 
           <div class="targeting-age">
-            <input type="number" placeholder="Min Age*" class="min-age" data-container="adset-form-container" required />
-            <input type="number" placeholder="Max Age*" class="max-age" data-container="adset-form-container" required />
+            <input type="number" placeholder="Min Age*" class="min-age" data-container="adset-form-container"
+              required />
+            <input type="number" placeholder="Max Age*" class="max-age" data-container="adset-form-container"
+              required />
           </div>
           <!-- Country Selection -->
           <div class="geo-selection-container">
@@ -463,6 +473,57 @@
       <div class="library-selected-info">
         <span class="selected-count">0 selected</span>
         <button class="add-selected-btn" disabled>Add Selected Creatives</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Facebook Connection Modal -->
+  <div id="facebook-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Facebook Account Connection</h2>
+        <span class="close" id="facebook-modal-close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div id="facebook-not-connected" style="display: none;">
+          <p>Connect your Facebook account to manage your ad accounts, pages, and business portfolios directly.</p>
+          <button id="facebook-connect-action-btn" class="primary-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+              <path
+                d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+            </svg>
+            Connect Facebook
+          </button>
+        </div>
+        <div id="facebook-connected" style="display: none;">
+          <div class="facebook-status-success">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4BB543" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <p style="color: #4BB543; font-weight: 600; margin: 16px 0 8px 0;">Facebook Connected</p>
+          </div>
+          <div id="facebook-data-summary">
+            <p><strong>Ad Accounts:</strong> <span id="fb-ad-accounts-count">0</span></p>
+            <p><strong>Pages:</strong> <span id="fb-pages-count">0</span></p>
+            <p><strong>Businesses:</strong> <span id="fb-businesses-count">0</span></p>
+          </div>
+          <div style="margin-top: 20px; display: flex; gap: 10px;">
+            <button id="facebook-sync-btn" class="secondary-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="margin-right: 6px;">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Sync Data
+            </button>
+            <button id="facebook-disconnect-btn" class="danger-btn">Disconnect</button>
+          </div>
+        </div>
+        <div id="facebook-loading" style="display: none; text-align: center; padding: 40px 20px;">
+          <p>Loading...</p>
+        </div>
       </div>
     </div>
   </div>

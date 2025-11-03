@@ -1,0 +1,134 @@
+/* Facebook Modal Styles */
+.modal {
+  display: flex;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #fff;
+}
+
+.modal-header .close {
+  font-size: 28px;
+  font-weight: bold;
+  color: #999;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.modal-header .close:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 30px 20px;
+}
+
+.facebook-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.facebook-status-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.facebook-data-summary {
+  background: #2a2a2a;
+  padding: 20px;
+  border-radius: 6px;
+  margin: 20px 0;
+}
+
+.facebook-data-summary p {
+  margin: 10px 0;
+  color: #ccc;
+  font-size: 15px;
+}
+
+.facebook-data-summary strong {
+  color: #fff;
+}
+
+.facebook-not-connected p {
+  color: #ccc;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-btn {
+  background: #1877f2;
+  color: white;
+  width: 100%;
+}
+
+.primary-btn:hover {
+  background: #166fe5;
+}
+
+.secondary-btn {
+  background: #333;
+  color: white;
+  flex: 1;
+}
+
+.secondary-btn:hover {
+  background: #444;
+}
+
+.danger-btn {
+  background: #dc3545;
+  color: white;
+  flex: 1;
+}
+
+.danger-btn:hover {
+  background: #c82333;
+}

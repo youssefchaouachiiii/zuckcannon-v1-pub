@@ -1,0 +1,48 @@
+# ========== DEPENDENCIES ==========
+node_modules/
+
+# ========== BUILD OUTPUT ==========
+dist/
+.vite/
+
+# ========== ENVIRONMENT VARIABLES ==========
+.env
+.env.local
+.env.production
+.env.lock
+
+# ========== EDITOR & IDE ==========
+.vscode/
+.vscode/extensions/
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.backup
+
+# ========== OS FILES ==========
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========== LOGS ==========
+*.log
+npm-debug.log*
+
+# ========== TESTING & COVERAGE ==========
+coverage/
+.jest/
+.jest-cache/
+
+# ========== CACHING ==========
+.eslintcache
+.prettierignore.log
+
+# ========== NODE.JS ==========
+.node_repl_history
+*.tgz
+
+# ========== CACHE DIRECTORIES ==========
+.cache/

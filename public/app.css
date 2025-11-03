@@ -2042,3 +2042,158 @@ h2 {
   border-color: #103dee;
   color: #103dee;
 }
+
+/* Facebook Connection Styles */
+.facebook-connect-btn {
+  background-color: #1877f2;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+}
+
+.facebook-connect-btn:hover {
+  background-color: #166fe5;
+}
+
+.facebook-connect-btn.connected {
+  background-color: #42b72a;
+}
+
+.facebook-connect-btn.connected:hover {
+  background-color: #36a420;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  z-index: 10000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background-color: #fefefe;
+  margin: auto;
+  padding: 0;
+  border: 1px solid #888;
+  width: 90%;
+  max-width: 500px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e5e5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.close {
+  color: #aaa;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.close:hover,
+.close:focus {
+  color: #000;
+}
+
+.primary-btn {
+  background-color: #1877f2;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.primary-btn:hover {
+  background-color: #166fe5;
+}
+
+.secondary-btn {
+  background-color: #e4e6eb;
+  color: #050505;
+  border: 1px solid #ccd0d5;
+  padding: 10px 20px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.secondary-btn:hover {
+  background-color: #d8dadf;
+}
+
+.danger-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.danger-btn:hover {
+  background-color: #c0392b;
+}
+
+.facebook-status-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+#facebook-data-summary {
+  background-color: #f7f7f7;
+  padding: 16px;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+#facebook-data-summary p {
+  margin: 8px 0;
+  font-size: 13px;
+}

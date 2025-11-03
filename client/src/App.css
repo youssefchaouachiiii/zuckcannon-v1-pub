@@ -1,0 +1,156 @@
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+/* Header */
+.app-header {
+  padding: 20px 40px;
+  border-bottom: 1px solid #e5e5e5;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.app-header h1 {
+  color: #103dee;
+  font-size: 24px;
+  font-weight: 600;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.h1-version {
+  font-size: 11px;
+  margin-left: 2px;
+  margin-bottom: 5px;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.refresh-data-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  vertical-align: middle;
+}
+
+.refresh-data-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #333;
+}
+
+.refresh-data-btn:active {
+  transform: scale(0.95);
+}
+
+.refresh-data-btn.refreshing {
+  animation: spin 1s linear infinite;
+  color: #1a73e8;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+#username-display {
+  font-size: 12px;
+  color: #666;
+}
+
+.facebook-connect-btn {
+  background-color: #1877f2;
+  color: white;
+  border: 1px solid #1877f2;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.facebook-connect-btn:hover {
+  background-color: #166fe5;
+  border-color: #166fe5;
+}
+
+.facebook-connect-btn.connected {
+  background-color: #42b72a;
+  border-color: #42b72a;
+}
+
+.facebook-connect-btn.connected:hover {
+  background-color: #36a420;
+  border-color: #36a420;
+}
+
+.facebook-connect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.logout-btn {
+  background-color: #f0f2f5;
+  color: #333;
+  border: 1px solid #dddfe2;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 4px;
+}
+
+.logout-btn:hover {
+  background-color: #e4e6eb;
+  border-color: #bcc0c4;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 20px;
+}
+
+.columns-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 461px;
+  min-height: calc(100vh - 80px);
+}
+
+.columns-container > div {
+  border-right: 1px solid #e5e5e5;
+  padding: 20px;
+}
+
+.columns-container > div:last-child {
+  border-right: none;
+}
