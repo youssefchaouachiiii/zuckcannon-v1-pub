@@ -1,0 +1,272 @@
+/* Upload Column */
+.upload-column {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+/* Ad Set Configuration */
+.adset-config h2 {
+  font-size: 16px;
+  color: #103dee;
+  border-bottom: 1px solid #103dee;
+  padding-bottom: 5px;
+  margin-bottom: 20px;
+}
+
+.adset-form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.adset-config input,
+.adset-config select {
+  padding: 12px 16px;
+  border: 1px solid #e5e5e5;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.adset-config input:focus,
+.adset-config select:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+}
+
+.adset-config input::placeholder {
+  color: #999;
+}
+
+.adset-config .preselect {
+  background-color: #f0f0f0;
+  color: #999;
+}
+
+.budget-input-wrapper {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e5e5e5;
+  background-color: white;
+}
+
+.budget-input-wrapper:focus-within {
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+}
+
+.budget-input-wrapper input {
+  border: none;
+  flex: 1;
+  padding: 12px 8px;
+  min-width: 0;
+}
+
+.budget-input-wrapper input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.currency-prefix {
+  padding: 0 8px 0 12px;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.currency-suffix {
+  padding: 0 12px 0 8px;
+  color: #999;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.targeting-age {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.create-adset-btn {
+  padding: 12px 24px;
+  background-color: #e5e5e5;
+  color: #999;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: not-allowed;
+  margin-bottom: 20px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.create-adset-btn.active {
+  background-color: #103dee;
+  color: white;
+  cursor: pointer;
+}
+
+.create-adset-btn.active:hover {
+  background-color: #0e35c7;
+}
+
+/* Creative Upload */
+.creative-upload h2 {
+  font-size: 16px;
+  color: #103dee;
+  border-bottom: 1px solid #103dee;
+  padding-bottom: 5px;
+  margin-bottom: 20px;
+}
+
+.file-drop-zone {
+  border: 1px dashed #d0d0d0;
+  padding: 40px 20px;
+  margin-top: 20px;
+  text-align: center;
+  background-color: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.file-drop-zone:hover {
+  border-color: #103dee;
+  background-color: #f0f6ff;
+}
+
+.drop-zone-text {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.browse-btn {
+  padding: 12px 24px;
+  background-color: #103dee;
+  color: white;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-block;
+}
+
+.browse-btn:hover {
+  background-color: #3f65ff;
+}
+
+.gdrive-input-container {
+  margin-top: 15px;
+}
+
+.gdrive-link-input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #d0d0d0;
+  font-family: inherit;
+}
+
+.gdrive-link-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+}
+
+.gdrive-fetch-btn {
+  padding: 8px 12px;
+  background: #103dee;
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.gdrive-fetch-btn:hover {
+  background: #3f65ff;
+}
+
+.creative-library-link-container {
+  margin-top: 15px;
+}
+
+.open-library-btn {
+  padding: 10px 20px;
+  background: #28a745;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.open-library-btn:hover {
+  background: #218838;
+}
+
+/* Uploaded Files List */
+.uploaded-files-list {
+  border: 1px solid #e5e5e5;
+  padding: 20px;
+  margin-top: 20px;
+  background-color: #f8f9fa;
+}
+
+.uploaded-files-list h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.uploaded-files-list ul {
+  list-style: none;
+  margin-bottom: 20px;
+}
+
+.uploaded-files-list li {
+  font-size: 14px;
+  padding: 8px 0;
+  color: #333;
+}
+
+.upload-btn {
+  padding: 12px 24px;
+  background-color: #103dee;
+  color: white;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.upload-btn:hover {
+  background-color: #3f65ff;
+}
+
+.back-btn {
+  padding: 8px 16px;
+  background-color: #f8f9fa;
+  color: #666;
+  border: 1px solid #e5e5e5;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.back-btn:hover {
+  background-color: #e5e5e5;
+  color: #333;
+}

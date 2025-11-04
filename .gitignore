@@ -1,2 +1,84 @@
-node_modules
+# ========== DEPENDENCIES ==========
+node_modules/
+package-lock.json
+
+# ========== ENVIRONMENT ==========
 .env
+.env.local
+.env.*.local
+.env.lock
+
+# ========== DATA & UPLOADS ==========
+data/
+uploads/
+creative-library/
+
+# ========== LOGS ==========
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========== RUNTIME & PROCESSES ==========
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ========== TESTING & COVERAGE ==========
+coverage/
+.nyc_output/
+.jest/
+.jest-cache/
+
+# ========== BUILD OUTPUTS ==========
+dist/
+build/
+.vite/
+
+# ========== CACHING ==========
+.eslintignore
+.eslintrc.js
+.prettierignore
+.prettierrc
+
+# ========== GIT HOOKS ==========
+.husky/
+.github/
+
+# ========== OS FILES ==========
+.DS_Store
+desktop.ini
+Thumbs.db
+.windows/
+
+# ========== EDITOR TEMP FILES ==========
+*.swp
+*.swo
+*.swp.lock
+*~
+*.tmp
+*.bak
+*.backup
+
+# ========== IDE/EDITOR SPECIFIC ==========
+.vscode/
+.vscode/extensions/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.cache/
+
+# ========== NODE.JS SPECIFIC ==========
+.node_repl_history
+*.tgz
+
+# ========== PM2 ==========
+.pm2/
+ecosystem.config.js.backup
+
+# ========== PROJECT SPECIFIC ==========
+personal-docs/
+
+__tests__

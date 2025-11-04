@@ -6,61 +6,112 @@ let campaignSelectGroup = null; // Store the SingleSelectGroup instance for camp
 // Check authentication status on page load
 async function checkAuthStatus() {
   try {
-    const response = await fetch('/api/auth/status');
+    const response = await fetch("/api/auth/status");
 
     if (!response.ok) {
-      throw new Error('Failed to check authentication status');
+      throw new Error("Failed to check authentication status");
     }
 
     const data = await response.json();
 
-    const authMessage = document.getElementById('auth-message');
-    const mainContainer = document.getElementById('main-container');
-    const headerControls = document.querySelector('.header-controls');
+    const authMessage = document.getElementById("auth-message");
+    const mainContainer = document.getElementById("main-container");
+    const headerControls = document.querySelector(".header-controls");
 
     if (data.authenticated && data.user) {
       // User is authenticated
-      document.getElementById('username-display').textContent = data.user.username;
-      authMessage.style.display = 'none';
-      mainContainer.style.display = 'grid';
-      headerControls.style.display = 'flex';
+      document.getElementById("username-display").textContent = data.user.username;
+      authMessage.style.display = "none";
+      mainContainer.style.display = "grid";
+      headerControls.style.display = "flex";
 
       // Load the app data
       init();
     } else {
       // User is not authenticated
-      authMessage.style.display = 'block';
-      mainContainer.style.display = 'none';
-      headerControls.style.display = 'none';
+      authMessage.style.display = "block";
+      mainContainer.style.display = "none";
+      headerControls.style.display = "none";
     }
   } catch (error) {
-    console.error('Error checking auth status:', error);
-    showError('Failed to verify authentication. Please refresh the page.');
+    console.error("Error checking auth status:", error);
+    showError("Failed to verify authentication. Please refresh the page.");
   }
 }
 
 // Setup logout functionality
 function setupLogout() {
-  const logoutBtn = document.getElementById('logout-btn');
+  const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
+    logoutBtn.addEventListener("click", async () => {
       try {
-        const response = await fetch('/logout', { method: 'POST' });
+        const response = await fetch("/logout", { method: "POST" });
         if (response.ok || response.redirected) {
-          window.location.href = '/login.html';
+          window.location.href = "/login.html";
         }
       } catch (error) {
-        console.error('Logout error:', error);
+        console.error("Logout error:", error);
       }
     });
   }
 }
 
 // Initialize auth on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   checkAuthStatus();
   setupLogout();
+  setupFacebookEventListeners();
+
+  // Check for Facebook OAuth callback
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("facebook_connected") === "true") {
+    if (window.showSuccess) {
+      window.showSuccess("Facebook account connected successfully!", 4000);
+    }
+    // Clean up URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Update button status
+    checkFacebookConnectionStatus();
+  } else if (urlParams.get("facebook_error") === "true") {
+    if (window.showError) {
+      window.showError("Failed to connect Facebook account. Please try again.", 5000);
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 });
+
+// Setup Facebook event listeners
+function setupFacebookEventListeners() {
+  // Main Facebook connect button
+  const fbConnectBtn = document.getElementById("facebook-connect-btn");
+  if (fbConnectBtn) {
+    fbConnectBtn.addEventListener("click", openFacebookModal);
+  }
+
+  // Modal close button
+  const modalCloseBtn = document.getElementById("facebook-modal-close");
+  if (modalCloseBtn) {
+    modalCloseBtn.addEventListener("click", closeFacebookModal);
+  }
+
+  // Connect action button
+  const connectActionBtn = document.getElementById("facebook-connect-action-btn");
+  if (connectActionBtn) {
+    connectActionBtn.addEventListener("click", connectFacebook);
+  }
+
+  // Sync button
+  const syncBtn = document.getElementById("facebook-sync-btn");
+  if (syncBtn) {
+    syncBtn.addEventListener("click", syncFacebookData);
+  }
+
+  // Disconnect button
+  const disconnectBtn = document.getElementById("facebook-disconnect-btn");
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener("click", disconnectFacebook);
+  }
+}
 
 class AppStateManager {
   constructor() {
@@ -75,431 +126,603 @@ class AppStateManager {
       createAds: [],
       fbLocationsData: null,
       selectedCountries: [],
-      selectedRegions: []
-    }
+      selectedRegions: [],
+      uploadInProgress: false, // Track active upload state
+    };
+
+    // Set up upload protection
+    this.setupUploadProtection();
   }
 
   updateState(key, value) {
-    this.state[key] = value
+    this.state[key] = value;
   }
 
   addUploadedAsset(asset) {
-    this.state.uploadedAssets.push(asset)
+    this.state.uploadedAssets.push(asset);
   }
 
   getState() {
-    return this.state
+    return this.state;
+  }
+
+  setUploadInProgress(inProgress) {
+    this.state.uploadInProgress = inProgress;
+  }
+
+  isUploadInProgress() {
+    return this.state.uploadInProgress;
+  }
+
+  setupUploadProtection() {
+    // Prevent page unload during uploads
+    window.addEventListener("beforeunload", (e) => {
+      if (this.state.uploadInProgress) {
+        e.preventDefault();
+        e.returnValue = "Upload in progress. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    });
+
+    // Prevent navigation during uploads (for single-page navigation)
+    this.navigationGuard = (targetStep) => {
+      if (this.state.uploadInProgress) {
+        const confirmed = confirm("Upload in progress. Navigating away will cancel the upload.\n\n" + "Are you sure you want to continue?");
+        return confirmed;
+      }
+      return true;
+    };
   }
 }
 
-const appState = new AppStateManager()
+const appState = new AppStateManager();
 
 async function fetchMetaData(forceRefresh = false) {
   try {
-    const url = forceRefresh ? '/api/fetch-meta-data?refresh=true' : '/api/fetch-meta-data'
-    const response = await fetch(url)
+    const url = forceRefresh ? "/api/fetch-meta-data?refresh=true" : "/api/fetch-meta-data";
+    const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch Meta data: ${response.status}`)
+      throw new Error(`Failed to fetch Meta data: ${response.status}`);
     }
 
-    const data = await response.json()
+    const data = await response.json();
 
     if (data.fromCache && !forceRefresh) {
-      showCacheNotification(data.cacheAge)
+      showCacheNotification(data.cacheAge);
     }
 
-    return data
+    return data;
   } catch (err) {
-    console.error('Error fetching meta data:', err)
-    showError('Failed to load Meta data. Please refresh the page or contact admin.')
-    throw err
+    console.error("Error fetching meta data:", err);
+    showError("Failed to load Meta data. Please refresh the page or contact admin.");
+    throw err;
   }
 }
 
 // Fetch FB Locations Data
 async function fetchFBLocationsData() {
   try {
-    const response = await fetch('/data/fb-locations.json')
+    const response = await fetch("/data/fb-locations.json");
     if (!response.ok) {
-      console.error('Failed to fetch FB locations data')
-      return null
+      console.error("Failed to fetch FB locations data");
+      return null;
     }
-    const data = await response.json()
-    appState.updateState('fbLocationsData', data)
-    return data
+    const data = await response.json();
+    appState.updateState("fbLocationsData", data);
+    return data;
   } catch (err) {
-    console.error('Error fetching FB locations data:', err)
-    return null
+    console.error("Error fetching FB locations data:", err);
+    return null;
   }
 }
 
 function populateAdAccounts(ad_accounts) {
-  const adAccList = document.querySelector('#ad-acc-list')
+  const adAccList = document.querySelector("#ad-acc-list");
 
   for (ad_account of ad_accounts) {
     adAccList.innerHTML += `<li><a href="#" class="account" data-next-column=".campaign-column" data-campaign-id="${ad_account.account_id}"
-            data-col-id="1">${ad_account.name}</a></li>`
+            data-col-id="1">${ad_account.name}</a></li>`;
   }
-  new SingleSelectGroup('.account')
-
+  new SingleSelectGroup(".account");
 }
 
 function populateCampaigns(campaigns) {
-  const campaignColumn = document.querySelector('.campaign-column')
-  campaignColumn.innerHTML += `<div class="campaign-selection"></div>`
-  const campaignSelection = document.querySelector('.campaign-selection')
+  const campaignColumn = document.querySelector(".campaign-column");
+  campaignColumn.innerHTML += `<div class="campaign-selection"></div>`;
+  const campaignSelection = document.querySelector(".campaign-selection");
 
   // Sort campaigns: ACTIVE first, then by created_time (most recent first)
   const sortedCampaigns = campaigns.sort((a, b) => {
     // Sort by status (ACTIVE comes before other statuses)
-    if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1
-    if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1
+    if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
+    if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
 
     // If same status, sort by created_time (most recent first)
-    const dateA = new Date(a.created_time)
-    const dateB = new Date(b.created_time)
-    return dateB - dateA
-  })
+    const dateA = new Date(a.created_time);
+    const dateB = new Date(b.created_time);
+    return dateB - dateA;
+  });
 
   for (const campaign of sortedCampaigns) {
-
     let classlist;
-    if (campaign.status === 'ACTIVE') {
-      classlist = 'campaign active'
+    if (campaign.status === "ACTIVE") {
+      classlist = "campaign active";
     } else {
-      classlist = 'campaign'
+      classlist = "campaign";
     }
 
     if (campaign.adsets && campaign.adsets.data) {
-      campaignAdSets[campaign.id] = campaign.adsets.data
+      campaignAdSets[campaign.id] = campaign.adsets.data;
     }
 
     if (campaign.insights) {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${campaign.id}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
+          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${campaign.id}" data-special-ad-categories='${JSON.stringify(
+        campaign.special_ad_categories
+      )}'>
           <h3>${campaign.name}</h3>
           <ul>
             <li>${campaign.status}</li>
             <li>Spend: ${campaign.insights.data[0].spend}</li>
             <li>Clicks: ${campaign.insights.data[0].clicks}</li>
           </ul>
-        </div>`
-    }
-
-    else {
+        </div>`;
+    } else {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
+        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-special-ad-categories='${JSON.stringify(
+        campaign.special_ad_categories
+      )}'>
         <h3>${campaign.name}</h3>
         <ul>
           <li>${campaign.status}</li>
           <li>Spend: N/A</li>
           <li>Clicks: N/A</li>
         </ul>
-      </div>`
+      </div>`;
     }
 
     // Clean up existing campaign select group before creating new one
     if (campaignSelectGroup) {
-      campaignSelectGroup.cleanup()
+      campaignSelectGroup.cleanup();
     }
-    campaignSelectGroup = new SingleSelectGroup('.campaign')
-    campaignList = document.querySelectorAll('.campaign')
+    campaignSelectGroup = new SingleSelectGroup(".campaign");
+    campaignList = document.querySelectorAll(".campaign");
   }
 }
 
 function populatePixels(pixels) {
-  const pixelDropdownOptions = document.querySelector('.dropdown-options.pixel')
+  const pixelDropdownOptions = document.querySelector(".dropdown-options.pixel");
 
   if (pixelDropdownOptions) {
-    pixelDropdownOptions.innerHTML = ''
+    pixelDropdownOptions.innerHTML = "";
 
     for (const pixel of pixels) {
       const pixelData = {
         acc_id: pixel.account_id,
         data: pixel.adspixels.data,
-      }
+      };
 
       for (const data of pixelData.data) {
         pixelDropdownOptions.innerHTML += `
                 <li class="pixel-option" data-pixel-id="${data.id}" data-pixel-account-id="${pixelData.acc_id}">${data.name}</li>
-        `
+        `;
       }
     }
   }
-  pixelList = document.querySelectorAll('.pixel-option')
+  pixelList = document.querySelectorAll(".pixel-option");
 }
 
 function populatePages(pages) {
-  const pagesDropdownOptions = document.querySelectorAll('.dropdown-options.pages')
+  const pagesDropdownOptions = document.querySelectorAll(".dropdown-options.pages");
 
-  pagesDropdownOptions.forEach(dropdown => {
-    dropdown.innerHTML = ''
+  pagesDropdownOptions.forEach((dropdown) => {
+    dropdown.innerHTML = "";
     for (const page of pages) {
       dropdown.innerHTML += `
                 <li data-page-id="${page.id}">${page.name}</li>
-        `
+        `;
     }
-  })
+  });
 }
 
 // Main app initialization
 async function init() {
   try {
-    const [metaResponse, locationsData] = await Promise.all([fetchMetaData(), fetchFBLocationsData()])
+    const [metaResponse, locationsData] = await Promise.all([fetchMetaData(), fetchFBLocationsData()]);
 
-    populateAdAccounts(metaResponse.adAccounts)
-    populateCampaigns(metaResponse.campaigns)
-    populatePixels(metaResponse.pixels)
-    populatePages(metaResponse.pages)
+    populateAdAccounts(metaResponse.adAccounts);
+    populateCampaigns(metaResponse.campaigns);
+    populatePixels(metaResponse.pixels);
+    populatePages(metaResponse.pages);
 
-    initializeCampaignSearch()
-    initializeGeoSelection()
-    initializeEventTypeSelection()
+    initializeCampaignSearch();
+    initializeGeoSelection();
+    initializeEventTypeSelection();
 
-    setupMetaDataUpdates()
-    
+    setupMetaDataUpdates();
+
     // Setup ad set form validation AFTER app is initialized
-    setupAdSetFormValidation()
+    setupAdSetFormValidation();
 
+    // Check Facebook connection status and update button
+    await checkFacebookConnectionStatus();
   } catch (err) {
-    console.log('There was an error initializing the app:', err)
+    console.log("There was an error initializing the app:", err);
+  }
+}
+
+// Facebook OAuth Functions
+async function checkFacebookConnectionStatus() {
+  try {
+    const response = await fetch("/api/facebook/status");
+    if (!response.ok) throw new Error("Failed to check Facebook status");
+
+    const data = await response.json();
+    updateFacebookButton(data.connected);
+
+    return data.connected;
+  } catch (error) {
+    console.error("Error checking Facebook status:", error);
+    return false;
+  }
+}
+
+function updateFacebookButton(isConnected) {
+  const btn = document.getElementById("facebook-connect-btn");
+  const statusText = document.getElementById("facebook-status-text");
+
+  if (!btn || !statusText) return;
+
+  if (isConnected) {
+    btn.classList.add("connected");
+    statusText.textContent = "Facebook Connected";
+  } else {
+    btn.classList.remove("connected");
+    statusText.textContent = "Connect Facebook";
+  }
+}
+
+async function openFacebookModal() {
+  const modal = document.getElementById("facebook-modal");
+  const loading = document.getElementById("facebook-loading");
+  const connected = document.getElementById("facebook-connected");
+  const notConnected = document.getElementById("facebook-not-connected");
+
+  modal.style.display = "flex";
+  loading.style.display = "block";
+  connected.style.display = "none";
+  notConnected.style.display = "none";
+
+  try {
+    const response = await fetch("/api/facebook/data");
+    if (!response.ok) throw new Error("Failed to fetch Facebook data");
+
+    const data = await response.json();
+    loading.style.display = "none";
+
+    if (data.connected) {
+      connected.style.display = "block";
+      document.getElementById("fb-ad-accounts-count").textContent = data.adAccounts.length;
+      document.getElementById("fb-pages-count").textContent = data.pages.length;
+      document.getElementById("fb-businesses-count").textContent = data.businesses.length;
+    } else {
+      notConnected.style.display = "block";
+    }
+  } catch (error) {
+    console.error("Error loading Facebook modal:", error);
+    loading.style.display = "none";
+    notConnected.style.display = "block";
+  }
+}
+
+function closeFacebookModal() {
+  document.getElementById("facebook-modal").style.display = "none";
+}
+
+// Close modal when clicking outside
+window.onclick = function (event) {
+  const modal = document.getElementById("facebook-modal");
+  if (event.target === modal) {
+    closeFacebookModal();
+  }
+};
+
+function connectFacebook() {
+  // Redirect to Facebook OAuth
+  window.location.href = "/auth/facebook";
+}
+
+async function syncFacebookData() {
+  const loading = document.getElementById("facebook-loading");
+  const connected = document.getElementById("facebook-connected");
+
+  loading.style.display = "block";
+  connected.style.display = "none";
+
+  try {
+    const response = await fetch("/api/facebook/sync", { method: "POST" });
+    if (!response.ok) throw new Error("Failed to sync Facebook data");
+
+    const result = await response.json();
+
+    // Update counts
+    document.getElementById("fb-ad-accounts-count").textContent = result.data.adAccounts.length;
+    document.getElementById("fb-pages-count").textContent = result.data.pages.length;
+    document.getElementById("fb-businesses-count").textContent = result.data.businesses.length;
+
+    loading.style.display = "none";
+    connected.style.display = "block";
+
+    showSuccess("Facebook data synced successfully!");
+
+    // Refresh the main app data
+    await fetchMetaData(true);
+  } catch (error) {
+    console.error("Error syncing Facebook data:", error);
+    showError("Failed to sync Facebook data");
+    loading.style.display = "none";
+    connected.style.display = "block";
+  }
+}
+
+async function disconnectFacebook() {
+  if (!confirm("Are you sure you want to disconnect your Facebook account?")) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/facebook/disconnect", { method: "POST" });
+    if (!response.ok) throw new Error("Failed to disconnect Facebook");
+
+    updateFacebookButton(false);
+    closeFacebookModal();
+    showSuccess("Facebook account disconnected");
+
+    // Refresh the page to clear cached data
+    window.location.reload();
+  } catch (error) {
+    console.error("Error disconnecting Facebook:", error);
+    showError("Failed to disconnect Facebook account");
   }
 }
 
 function clearAdSetForm() {
-  const adsetNameInput = document.querySelector('.config-adset-name')
+  const adsetNameInput = document.querySelector(".config-adset-name");
   if (adsetNameInput) {
-    adsetNameInput.value = ''
+    adsetNameInput.value = "";
   }
 
-  const pixelDisplay = document.querySelector('.dropdown-selected[data-dropdown="pixel"] .dropdown-display')
+  const pixelDisplay = document.querySelector('.dropdown-selected[data-dropdown="pixel"] .dropdown-display');
   if (pixelDisplay) {
-    pixelDisplay.textContent = 'Pixel*'
-    pixelDisplay.classList.add('placeholder')
-    delete pixelDisplay.dataset.pixelid
-    delete pixelDisplay.dataset.pixelAccountId
+    pixelDisplay.textContent = "Pixel*";
+    pixelDisplay.classList.add("placeholder");
+    delete pixelDisplay.dataset.pixelid;
+    delete pixelDisplay.dataset.pixelAccountId;
   }
 
-  const statusDisplay = document.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display')
+  const statusDisplay = document.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display');
   if (statusDisplay) {
-    statusDisplay.textContent = 'Status*'
-    statusDisplay.classList.add('placeholder')
-    delete statusDisplay.dataset.value
+    statusDisplay.textContent = "Status*";
+    statusDisplay.classList.add("placeholder");
+    delete statusDisplay.dataset.value;
   }
 
-  const dropdownOptions = document.querySelectorAll('.adset-config .dropdown-options li')
-  dropdownOptions.forEach(opt => opt.classList.remove('selected'))
+  const dropdownOptions = document.querySelectorAll(".adset-config .dropdown-options li");
+  dropdownOptions.forEach((opt) => opt.classList.remove("selected"));
 
-  const eventTypeInput = document.querySelector('.config-event-type')
+  const eventTypeInput = document.querySelector(".config-event-type");
   if (eventTypeInput) {
-    eventTypeInput.value = ''
-    delete eventTypeInput.dataset.value
+    eventTypeInput.value = "";
+    delete eventTypeInput.dataset.value;
   }
 
-  const dailyBudget = document.querySelector('.config-daily-budget')
+  const dailyBudget = document.querySelector(".config-daily-budget");
   if (dailyBudget) {
-    dailyBudget.value = ''
+    dailyBudget.value = "";
   }
-  const costPerResult = document.querySelector('.config-cost-per-result-goal')
+  const costPerResult = document.querySelector(".config-cost-per-result-goal");
   if (costPerResult) {
-    costPerResult.value = ''
+    costPerResult.value = "";
   }
 
-  const minAge = document.querySelector('.min-age')
-  const maxAge = document.querySelector('.max-age')
-  if (minAge) minAge.value = ''
-  if (maxAge) maxAge.value = ''
+  const minAge = document.querySelector(".min-age");
+  const maxAge = document.querySelector(".max-age");
+  if (minAge) minAge.value = "";
+  if (maxAge) maxAge.value = "";
 
-  appState.updateState('selectedCountries', [])
-  appState.updateState('selectedRegions', [])
+  appState.updateState("selectedCountries", []);
+  appState.updateState("selectedRegions", []);
 
-  const selectedCountriesTags = document.getElementById('selected-countries')
+  const selectedCountriesTags = document.getElementById("selected-countries");
   if (selectedCountriesTags) {
-    selectedCountriesTags.innerHTML = ''
+    selectedCountriesTags.innerHTML = "";
   }
 
-  const selectedGeoItems = document.querySelectorAll('.geo-item.selected')
-  selectedGeoItems.forEach(item => {
-    item.classList.remove('selected')
-    const excludeBtn = item.querySelector('.exclude-btn')
+  const selectedGeoItems = document.querySelectorAll(".geo-item.selected");
+  selectedGeoItems.forEach((item) => {
+    item.classList.remove("selected");
+    const excludeBtn = item.querySelector(".exclude-btn");
     if (excludeBtn) {
-      excludeBtn.classList.remove('active')
+      excludeBtn.classList.remove("active");
     }
-  })
+  });
 
-  const selectedRegionsTags = document.getElementById('selected-regions')
+  const selectedRegionsTags = document.getElementById("selected-regions");
   if (selectedRegionsTags) {
-    selectedRegionsTags.innerHTML = ''
+    selectedRegionsTags.innerHTML = "";
   }
   // Reset any validation error states
-  const errorInputs = document.querySelectorAll('.adset-config .empty-input')
-  errorInputs.forEach(input => {
-    input.classList.remove('empty-input')
-  })
+  const errorInputs = document.querySelectorAll(".adset-config .empty-input");
+  errorInputs.forEach((input) => {
+    input.classList.remove("empty-input");
+  });
 
   // Reset the Create Ad Set button state
-  const createButton = document.querySelector('.adset-form-container button')
+  const createButton = document.querySelector(".adset-form-container button");
   if (createButton) {
-    createButton.classList.remove('active')
+    createButton.classList.remove("active");
   }
 }
 
 class SingleSelectGroup {
   constructor(selector) {
-    this.selector = selector
-    this.items = document.querySelectorAll(this.selector)
-    this.attachEventListeners()
+    this.selector = selector;
+    this.items = document.querySelectorAll(this.selector);
+    this.attachEventListeners();
   }
 
   attachEventListeners() {
     // Store bound event handler for cleanup
     this.clickHandler = (e) => {
+      const clickedItem = e.currentTarget;
+      const nextColumnSelector = clickedItem.dataset.nextColumn;
+      const nextColumn = nextColumnSelector ? document.querySelector(nextColumnSelector) : null;
 
-      const clickedItem = e.currentTarget
-      const nextColumnSelector = clickedItem.dataset.nextColumn
-      const nextColumn = nextColumnSelector ? document.querySelector(nextColumnSelector) : null
+      // Check if upload is in progress before allowing navigation
+      if (appState.isUploadInProgress()) {
+        const canNavigate = appState.navigationGuard(clickedItem.textContent);
+        if (!canNavigate) {
+          e.preventDefault();
+          return;
+        }
+        // User confirmed, clear upload state to allow navigation
+        appState.setUploadInProgress(false);
+      }
 
-      // 1. Check if currentTarget is already selected. 
+      // 1. Check if currentTarget is already selected.
       for (const i of this.items) {
-        if (i.classList.contains('selected') && i != clickedItem) {
-          i.classList.remove('selected')
+        if (i.classList.contains("selected") && i != clickedItem) {
+          i.classList.remove("selected");
         }
       }
 
-      // 2. Toggle 'selected' 
-      if (clickedItem.classList.contains('selected')) {
-        clickedItem.classList.remove('selected')
+      // 2. Toggle 'selected'
+      if (clickedItem.classList.contains("selected")) {
+        clickedItem.classList.remove("selected");
         if (nextColumnSelector) {
-          this.hideAndClearDownstreamColumns(clickedItem.dataset.colId)
+          this.hideAndClearDownstreamColumns(clickedItem.dataset.colId);
         }
       } else {
-        clickedItem.classList.add('selected')
+        clickedItem.classList.add("selected");
 
-        // Display nextColumn if nextColumn data attribute exists 
-        if (nextColumnSelector || clickedItem.dataset.actionType === 'duplicate-campaign') {
-
+        // Display nextColumn if nextColumn data attribute exists
+        if (nextColumnSelector || clickedItem.dataset.actionType === "duplicate-campaign") {
           // Campaign dataset filtering logic for account column
-          if (clickedItem.classList.contains('account')) {
-            this.displayNextColumn(nextColumn)
-            this.filterCampaigns(clickedItem, campaignList)
-            this.filterPixels(clickedItem, pixelList)
+          if (clickedItem.classList.contains("account")) {
+            this.displayNextColumn(nextColumn);
+            this.filterCampaigns(clickedItem, campaignList);
+            this.filterPixels(clickedItem, pixelList);
 
-            appState.updateState('selectedAccount', clickedItem.dataset.campaignId)
+            appState.updateState("selectedAccount", clickedItem.dataset.campaignId);
+          } else if (clickedItem.classList.contains("campaign")) {
+            this.displayNextColumn(nextColumn);
 
-          }
-          else if (clickedItem.classList.contains('campaign')) {
+            appState.updateState("selectedCampaign", clickedItem.dataset.campaignId);
+            appState.updateState("campaignBidStrategy", clickedItem.dataset.bidStrategy);
+            appState.updateState("campaignDailyBudget", clickedItem.dataset.dailyBudget);
 
-            this.displayNextColumn(nextColumn)
-
-            appState.updateState('selectedCampaign', clickedItem.dataset.campaignId)
-            appState.updateState('campaignBidStrategy', clickedItem.dataset.bidStrategy)
-            appState.updateState('campaignDailyBudget', clickedItem.dataset.dailyBudget)
-
-            // update campaign id in ad set config 
-            const configCampaignId = document.querySelector('.config-campaign-id')
+            // update campaign id in ad set config
+            const configCampaignId = document.querySelector(".config-campaign-id");
             if (configCampaignId) {
-              configCampaignId.value = appState.getState().selectedCampaign
+              configCampaignId.value = appState.getState().selectedCampaign;
             }
 
-            this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget)
+            this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget);
 
             // Show/hide age and geo fields based on special_ad_categories
-            const specialAdCategories = JSON.parse(clickedItem.dataset.specialAdCategories || '[]')
-            const ageContainer = document.querySelector('.targeting-age')
-            const minAgeInput = document.querySelector('.min-age')
-            const maxAgeInput = document.querySelector('.max-age')
-            const geoContainers = document.querySelectorAll('.geo-selection-container')
+            const specialAdCategories = JSON.parse(clickedItem.dataset.specialAdCategories || "[]");
+            const ageContainer = document.querySelector(".targeting-age");
+            const minAgeInput = document.querySelector(".min-age");
+            const maxAgeInput = document.querySelector(".max-age");
+            const geoContainers = document.querySelectorAll(".geo-selection-container");
 
             if (minAgeInput && maxAgeInput) {
               if (specialAdCategories.length > 0) {
-                ageContainer.style.display = 'none'
-                minAgeInput.required = false
-                maxAgeInput.required = false
+                ageContainer.style.display = "none";
+                minAgeInput.required = false;
+                maxAgeInput.required = false;
               } else {
-                ageContainer.style.display = 'flex'
-                minAgeInput.required = true
-                maxAgeInput.required = true
+                ageContainer.style.display = "flex";
+                minAgeInput.required = true;
+                maxAgeInput.required = true;
               }
             }
 
             // Show/hide geo location fields
-            geoContainers.forEach(container => {
+            geoContainers.forEach((container) => {
               if (specialAdCategories.length > 0) {
-                container.style.display = 'none'
+                container.style.display = "none";
               } else {
-                container.style.display = 'block'
+                container.style.display = "block";
               }
-            })
+            });
 
             // Clear geo selections when switching campaigns
-            appState.updateState('selectedCountries', [])
-            appState.updateState('selectedRegions', [])
+            appState.updateState("selectedCountries", []);
+            appState.updateState("selectedRegions", []);
 
             // Update the UI to reflect cleared selections
-            const selectedCountriesContainer = document.querySelector('#selected-countries')
+            const selectedCountriesContainer = document.querySelector("#selected-countries");
             if (selectedCountriesContainer) {
-              selectedCountriesContainer.innerHTML = ''
+              selectedCountriesContainer.innerHTML = "";
             }
 
             // Check if ad set list is currently visible and update it
-            const adsetListContainer = document.querySelector('.adset-list-container')
-            if (adsetListContainer && adsetListContainer.style.display !== 'none') {
-              this.populateAdSetList()
+            const adsetListContainer = document.querySelector(".adset-list-container");
+            if (adsetListContainer && adsetListContainer.style.display !== "none") {
+              this.populateAdSetList();
             }
 
             // Force a re-initialization of the form validation after visibility changes
-            if (typeof setupAdSetFormValidation === 'function') {
-              setupAdSetFormValidation()
+            if (typeof setupAdSetFormValidation === "function") {
+              setupAdSetFormValidation();
             }
-            
+
             // Trigger validation check IMMEDIATELY after changing visibility
-            if (typeof checkRequiredFields === 'function') {
-              checkRequiredFields()
+            if (typeof checkRequiredFields === "function") {
+              checkRequiredFields();
             }
-
-          }
-          else if (clickedItem.classList.contains('action')) {
+          } else if (clickedItem.classList.contains("action")) {
             // Handle different action types
-            const actionType = clickedItem.dataset.actionType
+            const actionType = clickedItem.dataset.actionType;
 
-            if (actionType === 'upload-existing') {
-              this.displayNextColumn(nextColumn)
-              this.showAdSetList()
-            } else if (actionType === 'duplicate-existing') {
-              this.displayNextColumn(nextColumn)
-              this.showAdSetListForDuplication()
-            } else if (actionType === 'duplicate-campaign') {
+            if (actionType === "upload-existing") {
+              this.displayNextColumn(nextColumn);
+              this.showAdSetList();
+            } else if (actionType === "duplicate-existing") {
+              this.displayNextColumn(nextColumn);
+              this.showAdSetListForDuplication();
+            } else if (actionType === "duplicate-campaign") {
               // Show campaign duplication dialog
-              const selectedCampaign = appState.getState().selectedCampaign
-              const selectedAccount = appState.getState().selectedAccount
+              const selectedCampaign = appState.getState().selectedCampaign;
+              const selectedAccount = appState.getState().selectedAccount;
               if (selectedCampaign) {
-                const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`)
+                const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
                 if (campaignElement) {
                   const campaignData = {
                     id: selectedCampaign,
-                    name: campaignElement.querySelector('h3').textContent,
-                    account_id: selectedAccount
-                  }
-                  this.showDuplicateCampaignDialog(campaignData)
+                    name: campaignElement.querySelector("h3").textContent,
+                    account_id: selectedAccount,
+                  };
+                  this.showDuplicateCampaignDialog(campaignData);
                 }
               }
             } else {
-              this.displayNextColumn(nextColumn)
-              this.showAdSetConfig()
+              this.displayNextColumn(nextColumn);
+              this.showAdSetConfig();
             }
-          }
-          else {
+          } else {
             // Display other columns
-            this.displayNextColumn(nextColumn)
+            this.displayNextColumn(nextColumn);
           }
         }
       }
-    }
+    };
 
     // Add the event handler to each item
     for (const item of this.items) {
-      item.addEventListener('click', this.clickHandler)
+      item.addEventListener("click", this.clickHandler);
     }
   }
 
@@ -507,72 +730,69 @@ class SingleSelectGroup {
   cleanup() {
     if (this.clickHandler) {
       for (const item of this.items) {
-        item.removeEventListener('click', this.clickHandler)
+        item.removeEventListener("click", this.clickHandler);
       }
     }
   }
 
   adjustConfigSettings(bidStrategy, campaignDailyBudget) {
-    const dailyBudget = document.querySelector('.config-daily-budget')
-    const dailyBudgetWrapper = document.querySelector('.budget-input-wrapper.daily-budget')
-    const configBidStrategy = document.querySelector('.config-bid-strategy')
-    const costPerResultGoal = document.querySelector('.config-cost-per-result-goal')
-    const costPerResultWrapper = document.querySelector('.budget-input-wrapper.cost-per-result')
+    const dailyBudget = document.querySelector(".config-daily-budget");
+    const dailyBudgetWrapper = document.querySelector(".budget-input-wrapper.daily-budget");
+    const configBidStrategy = document.querySelector(".config-bid-strategy");
+    const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
+    const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
 
-    if (campaignDailyBudget === 'undefined' && bidStrategy === 'undefined') {
-      configBidStrategy.value = 'LOWEST_COST_WITHOUT_CAP'
+    if (campaignDailyBudget === "undefined" && bidStrategy === "undefined") {
+      configBidStrategy.value = "LOWEST_COST_WITHOUT_CAP";
 
-      dailyBudgetWrapper.style.display = 'flex'
-      dailyBudget.setAttribute('required', '')
+      dailyBudgetWrapper.style.display = "flex";
+      dailyBudget.setAttribute("required", "");
 
-      costPerResultWrapper.style.display = 'none'
-      costPerResultGoal.removeAttribute('required')
-    }
+      costPerResultWrapper.style.display = "none";
+      costPerResultGoal.removeAttribute("required");
+    } else if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
+      configBidStrategy.value = bidStrategy;
 
-    else if (bidStrategy === 'COST_CAP' || bidStrategy === 'LOWEST_COST_WITH_BID_CAP') {
-      configBidStrategy.value = bidStrategy
+      dailyBudgetWrapper.style.display = "none";
+      dailyBudget.removeAttribute("required");
 
-      dailyBudgetWrapper.style.display = 'none'
-      dailyBudget.removeAttribute('required')
-
-      costPerResultWrapper.style.display = 'flex'
-      costPerResultGoal.setAttribute('required', '')
+      costPerResultWrapper.style.display = "flex";
+      costPerResultGoal.setAttribute("required", "");
     }
 
     // handle max conversion CBO
-    else if (campaignDailyBudget !== 'undefined' && bidStrategy === 'LOWEST_COST_WITHOUT_CAP') {
+    else if (campaignDailyBudget !== "undefined" && bidStrategy === "LOWEST_COST_WITHOUT_CAP") {
+      configBidStrategy.value = bidStrategy;
 
-      configBidStrategy.value = bidStrategy
+      dailyBudgetWrapper.style.display = "none";
+      dailyBudget.removeAttribute("required");
 
-      dailyBudgetWrapper.style.display = 'none'
-      dailyBudget.removeAttribute('required')
-
-      costPerResultWrapper.style.display = 'none'
-      costPerResultGoal.removeAttribute('required')
+      costPerResultWrapper.style.display = "none";
+      costPerResultGoal.removeAttribute("required");
     }
 
     // Trigger validation check after adjusting settings
-    if (typeof checkRequiredFields === 'function') {
-      checkRequiredFields()
+    if (typeof checkRequiredFields === "function") {
+      checkRequiredFields();
     }
   }
 
   hideAndClearDownstreamColumns(currentColId) {
-    const currentColNum = parseInt(currentColId)
+    const currentColNum = parseInt(currentColId);
 
     for (let colId = currentColNum + 1; colId <= 4; colId++) {
-      const colElement = document.querySelector(`#col-${colId}`)
+      const colElement = document.querySelector(`#col-${colId}`);
 
       if (colElement) {
-        colElement.style.display = 'none'
+        colElement.style.display = "none";
 
-        colElement.querySelectorAll('.selected').forEach(item => {
-          item.classList.remove('selected')
-        })
+        colElement.querySelectorAll(".selected").forEach((item) => {
+          item.classList.remove("selected");
+        });
 
         // If we're hiding column 4 (upload column), clear all its sections
         if (colId === 4) {
-          this.clearUploadColumn()
+          this.clearUploadColumn();
         }
       }
     }
@@ -580,713 +800,701 @@ class SingleSelectGroup {
 
   displayNextColumn(nextColumn) {
     if (nextColumn) {
-      nextColumn.style.display = 'block'
+      nextColumn.style.display = "block";
     }
   }
 
   filterCampaigns(adAccount, campaignList) {
     for (const camp of campaignList) {
-      const accCampId = adAccount.dataset.campaignId
-      const campId = camp.dataset.accCampaignId
+      const accCampId = adAccount.dataset.campaignId;
+      const campId = camp.dataset.accCampaignId;
 
       if (accCampId === campId) {
-        camp.style.display = 'block'
-      }
-      else {
-        camp.style.display = 'none'
+        camp.style.display = "block";
+      } else {
+        camp.style.display = "none";
       }
     }
   }
 
   filterPixels(adAccount, pixelList) {
     for (const pixel of pixelList) {
-      const accCampId = adAccount.dataset.campaignId
-      const pixelId = pixel.dataset.pixelAccountId
+      const accCampId = adAccount.dataset.campaignId;
+      const pixelId = pixel.dataset.pixelAccountId;
 
       if (accCampId === pixelId) {
-        pixel.style.display = 'block'
-      }
-      else {
-        pixel.style.display = 'none'
+        pixel.style.display = "block";
+      } else {
+        pixel.style.display = "none";
       }
     }
-
   }
 
   clearUploadColumn() {
-    const sections = [
-      '.adset-config',
-      '.adset-list-container',
-      '.creative-upload',
-      '.ad-copy-container',
-      '.create-ads-container',
-      '.success-wrapper'
-    ]
+    const sections = [".adset-config", ".adset-list-container", ".creative-upload", ".ad-copy-container", ".create-ads-container", ".success-wrapper"];
 
-    sections.forEach(selector => {
-      const element = document.querySelector(selector)
-      if (element) element.style.display = 'none'
-    })
+    sections.forEach((selector) => {
+      const element = document.querySelector(selector);
+      if (element) element.style.display = "none";
+    });
 
     // Also reset the file upload sections
-    const uploadSteps = document.querySelectorAll('.upload-step')
-    uploadSteps.forEach(step => {
-      step.style.display = 'none'
-    })
+    const uploadSteps = document.querySelectorAll(".upload-step");
+    uploadSteps.forEach((step) => {
+      step.style.display = "none";
+    });
 
     // Show step 2 by default for next upload
-    const step2 = document.querySelector('[data-step="2"]')
-    if (step2) step2.style.display = 'block'
+    const step2 = document.querySelector('[data-step="2"]');
+    if (step2) step2.style.display = "block";
   }
 
   showAdSetList() {
     // Clear all sections first
-    this.clearUploadColumn()
+    this.clearUploadColumn();
 
     // Show ad set list
-    const adsetListContainer = document.querySelector('.adset-list-container')
+    const adsetListContainer = document.querySelector(".adset-list-container");
     if (adsetListContainer) {
-      adsetListContainer.style.display = 'block'
-      this.populateAdSetList()
+      adsetListContainer.style.display = "block";
+      this.populateAdSetList();
     }
   }
 
   showAdSetConfig() {
-    this.clearUploadColumn()
+    this.clearUploadColumn();
 
     // Always clear the form when showing ad set config
-    clearAdSetForm()
+    clearAdSetForm();
 
     // Reset the Create Ad Set button state
-    const createButton = document.querySelector('.adset-form-container button')
+    const createButton = document.querySelector(".adset-form-container button");
     if (createButton) {
-      createButton.classList.remove('active')
+      createButton.classList.remove("active");
       // Ensure button is not disabled
-      createButton.disabled = false
+      createButton.disabled = false;
     }
 
-    const existingConfig = appState.getState().adSetConfig
+    const existingConfig = appState.getState().adSetConfig;
     if (existingConfig && existingConfig.id) {
-      const dropdowns = document.querySelectorAll('.adset-config .custom-dropdown')
+      const dropdowns = document.querySelectorAll(".adset-config .custom-dropdown");
 
-      dropdowns.forEach(dropdown => {
-        const clonedDropdown = dropdown.cloneNode(true)
-        dropdown.parentNode.replaceChild(clonedDropdown, dropdown)
-      })
+      dropdowns.forEach((dropdown) => {
+        const clonedDropdown = dropdown.cloneNode(true);
+        dropdown.parentNode.replaceChild(clonedDropdown, dropdown);
+      });
     }
 
-    const adsetConfig = document.querySelector('.adset-config')
+    const adsetConfig = document.querySelector(".adset-config");
     if (adsetConfig) {
-      adsetConfig.style.display = 'block'
+      adsetConfig.style.display = "block";
 
-      console.log('Initializing dropdowns for ad set config')
-      new CustomDropdown('.adset-config .custom-dropdown')
-      
+      console.log("Initializing dropdowns for ad set config");
+      new CustomDropdown(".adset-config .custom-dropdown");
+
       // Apply the current campaign's special ad category settings
-      const selectedCampaign = document.querySelector('.campaign.selected')
-      const ageContainer = document.querySelector('.targeting-age')
-      const minAgeInput = document.querySelector('.min-age')
-      const maxAgeInput = document.querySelector('.max-age')
-      const geoContainers = document.querySelectorAll('.geo-selection-container')
-      
+      const selectedCampaign = document.querySelector(".campaign.selected");
+      const ageContainer = document.querySelector(".targeting-age");
+      const minAgeInput = document.querySelector(".min-age");
+      const maxAgeInput = document.querySelector(".max-age");
+      const geoContainers = document.querySelectorAll(".geo-selection-container");
+
       if (selectedCampaign) {
-        const specialAdCategories = JSON.parse(selectedCampaign.dataset.specialAdCategories || '[]')
-        
+        const specialAdCategories = JSON.parse(selectedCampaign.dataset.specialAdCategories || "[]");
+
         if (specialAdCategories.length > 0) {
-          if (ageContainer) ageContainer.style.display = 'none'
-          if (minAgeInput) minAgeInput.required = false
-          if (maxAgeInput) maxAgeInput.required = false
-          geoContainers.forEach(container => container.style.display = 'none')
+          if (ageContainer) ageContainer.style.display = "none";
+          if (minAgeInput) minAgeInput.required = false;
+          if (maxAgeInput) maxAgeInput.required = false;
+          geoContainers.forEach((container) => (container.style.display = "none"));
         } else {
-          if (ageContainer) ageContainer.style.display = 'flex'
-          if (minAgeInput) minAgeInput.required = true
-          if (maxAgeInput) maxAgeInput.required = true
-          geoContainers.forEach(container => container.style.display = 'block')
+          if (ageContainer) ageContainer.style.display = "flex";
+          if (minAgeInput) minAgeInput.required = true;
+          if (maxAgeInput) maxAgeInput.required = true;
+          geoContainers.forEach((container) => (container.style.display = "block"));
         }
       } else {
         // No campaign selected yet - show all fields by default
-        if (ageContainer) ageContainer.style.display = 'flex'
-        if (minAgeInput) minAgeInput.required = true
-        if (maxAgeInput) maxAgeInput.required = true
-        geoContainers.forEach(container => container.style.display = 'block')
+        if (ageContainer) ageContainer.style.display = "flex";
+        if (minAgeInput) minAgeInput.required = true;
+        if (maxAgeInput) maxAgeInput.required = true;
+        geoContainers.forEach((container) => (container.style.display = "block"));
       }
 
       // Force validation to run multiple times to catch any timing issues
       // Run immediately
-      if (typeof checkRequiredFields === 'function') {
-        checkRequiredFields()
+      if (typeof checkRequiredFields === "function") {
+        checkRequiredFields();
       }
-      
+
       // Run after a short delay
       setTimeout(() => {
-        if (typeof checkRequiredFields === 'function') {
-          checkRequiredFields()
+        if (typeof checkRequiredFields === "function") {
+          checkRequiredFields();
         }
-      }, 50)
-      
+      }, 50);
+
       // Run after a longer delay to catch any late DOM updates
       setTimeout(() => {
-        if (typeof checkRequiredFields === 'function') {
-          checkRequiredFields()
+        if (typeof checkRequiredFields === "function") {
+          checkRequiredFields();
         }
-      }, 200)
+      }, 200);
     }
   }
 
   populateAdSetList() {
-    const selectedCampaignId = appState.getState().selectedCampaign
-    const adSetList = document.querySelector('.adset-list')
+    const selectedCampaignId = appState.getState().selectedCampaign;
+    const adSetList = document.querySelector(".adset-list");
 
     if (!selectedCampaignId || !campaignAdSets[selectedCampaignId]) {
-      adSetList.innerHTML = '<p style="color: #666; padding: 16px;">No ad sets found for this campaign.</p>'
-      return
+      adSetList.innerHTML = '<p style="color: #666; padding: 16px;">No ad sets found for this campaign.</p>';
+      return;
     }
 
-    const adSets = campaignAdSets[selectedCampaignId]
-    adSetList.innerHTML = ''
+    const adSets = campaignAdSets[selectedCampaignId];
+    adSetList.innerHTML = "";
 
-    adSets.forEach(adSet => {
-      const adSetElement = document.createElement('div')
-      adSetElement.className = 'adset-item'
-      adSetElement.dataset.adsetId = adSet.id
-      adSetElement.dataset.adsetName = adSet.name
+    adSets.forEach((adSet) => {
+      const adSetElement = document.createElement("div");
+      adSetElement.className = "adset-item";
+      adSetElement.dataset.adsetId = adSet.id;
+      adSetElement.dataset.adsetName = adSet.name;
       adSetElement.innerHTML = `
         <h4>${adSet.name}</h4>
         <p>ID: ${adSet.id}</p>
-      `
+      `;
 
-      adSetElement.addEventListener('click', () => {
-        this.selectExistingAdSet(adSet)
-      })
+      adSetElement.addEventListener("click", () => {
+        this.selectExistingAdSet(adSet);
+      });
 
-      adSetList.appendChild(adSetElement)
-    })
+      adSetList.appendChild(adSetElement);
+    });
   }
 
   selectExistingAdSet(adSet) {
-    this.clearUploadColumn()
+    this.clearUploadColumn();
 
-    const creativeUpload = document.querySelector('.creative-upload')
-    const creativeUploadTitle = document.querySelector('.creative-upload h2')
+    const creativeUpload = document.querySelector(".creative-upload");
+    const creativeUploadTitle = document.querySelector(".creative-upload h2");
 
     if (creativeUpload && creativeUploadTitle) {
-      creativeUploadTitle.textContent = `Creative Upload for Ad Set ${adSet.name}`
-      creativeUpload.dataset.adsetId = adSet.id
-      creativeUpload.style.display = 'block'
+      creativeUploadTitle.textContent = `Creative Upload for Ad Set ${adSet.name}`;
+      creativeUpload.dataset.adsetId = adSet.id;
+      creativeUpload.style.display = "block";
 
-      appState.updateState('adSetConfig', {
+      appState.updateState("adSetConfig", {
         id: adSet.id,
         adset_name: adSet.name,
         account_id: appState.getState().selectedAccount,
-        campaign_id: appState.getState().selectedCampaign
-      })
+        campaign_id: appState.getState().selectedCampaign,
+      });
 
-      window.fileUploadHandler.showStep(2)
+      window.fileUploadHandler.showStep(2);
     }
   }
 
   showAdSetListForDuplication() {
-    this.clearUploadColumn()
+    this.clearUploadColumn();
 
-    const adsetListContainer = document.querySelector('.adset-list-container')
+    const adsetListContainer = document.querySelector(".adset-list-container");
     if (adsetListContainer) {
-      adsetListContainer.style.display = 'block'
-      this.populateAdSetListForDuplication()
+      adsetListContainer.style.display = "block";
+      this.populateAdSetListForDuplication();
     }
   }
 
   populateAdSetListForDuplication() {
-    const selectedCampaignId = appState.getState().selectedCampaign
-    const adSetList = document.querySelector('.adset-list')
+    const selectedCampaignId = appState.getState().selectedCampaign;
+    const adSetList = document.querySelector(".adset-list");
 
     if (!selectedCampaignId || !campaignAdSets[selectedCampaignId]) {
-      adSetList.innerHTML = '<p style="color: #666; padding: 16px;">No ad sets found for this campaign.</p>'
-      return
+      adSetList.innerHTML = '<p style="color: #666; padding: 16px;">No ad sets found for this campaign.</p>';
+      return;
     }
 
-    const adSets = campaignAdSets[selectedCampaignId]
-    adSetList.innerHTML = ''
+    const adSets = campaignAdSets[selectedCampaignId];
+    adSetList.innerHTML = "";
 
-    adSets.forEach(adSet => {
-      const adSetElement = document.createElement('div')
-      adSetElement.className = 'adset-item'
-      adSetElement.dataset.adsetId = adSet.id
-      adSetElement.dataset.adsetName = adSet.name
+    adSets.forEach((adSet) => {
+      const adSetElement = document.createElement("div");
+      adSetElement.className = "adset-item";
+      adSetElement.dataset.adsetId = adSet.id;
+      adSetElement.dataset.adsetName = adSet.name;
       adSetElement.innerHTML = `
         <h4>${adSet.name}</h4>
         <p>ID: ${adSet.id}</p>
-      `
+      `;
 
-      adSetElement.addEventListener('click', () => {
-        this.showDuplicateDialog(adSet)
-      })
+      adSetElement.addEventListener("click", () => {
+        this.showDuplicateDialog(adSet);
+      });
 
-      adSetList.appendChild(adSetElement)
-    })
+      adSetList.appendChild(adSetElement);
+    });
   }
 
   showDuplicateDialog(adSet) {
-    const dialog = document.querySelector('.duplicate-adset-dialog')
-    const step1 = dialog.querySelector('[data-step="1"]')
-    const step2 = dialog.querySelector('[data-step="2"]')
-    const nameInput = dialog.querySelector('#duplicate-adset-name')
-    const proceedBtn = dialog.querySelector('.duplicate-proceed')
+    const dialog = document.querySelector(".duplicate-adset-dialog");
+    const step1 = dialog.querySelector('[data-step="1"]');
+    const step2 = dialog.querySelector('[data-step="2"]');
+    const nameInput = dialog.querySelector("#duplicate-adset-name");
+    const proceedBtn = dialog.querySelector(".duplicate-proceed");
 
     // Store ad set info
-    dialog.dataset.adsetId = adSet.id
-    dialog.dataset.adsetName = adSet.name
+    dialog.dataset.adsetId = adSet.id;
+    dialog.dataset.adsetName = adSet.name;
 
     // Reset dialog
-    step1.style.display = 'block'
-    step2.style.display = 'none'
-    nameInput.value = adSet.name + ' - Copy'
-    proceedBtn.disabled = false
+    step1.style.display = "block";
+    step2.style.display = "none";
+    nameInput.value = adSet.name + " - Copy";
+    proceedBtn.disabled = false;
 
     // Show dialog
-    dialog.style.display = 'flex'
+    dialog.style.display = "flex";
 
     // Setup event handlers
-    const deepCopyButtons = dialog.querySelectorAll('[data-deep-copy]')
-    deepCopyButtons.forEach(btn => {
+    const deepCopyButtons = dialog.querySelectorAll("[data-deep-copy]");
+    deepCopyButtons.forEach((btn) => {
       btn.onclick = () => {
-        const deepCopy = btn.dataset.deepCopy === 'true'
-        dialog.dataset.deepCopy = deepCopy
+        const deepCopy = btn.dataset.deepCopy === "true";
+        dialog.dataset.deepCopy = deepCopy;
 
         // Move to step 2
-        step1.style.display = 'none'
-        step2.style.display = 'block'
-        nameInput.focus()
-      }
-    })
+        step1.style.display = "none";
+        step2.style.display = "block";
+        nameInput.focus();
+      };
+    });
 
     // Back button
-    const backBtn = dialog.querySelector('.duplicate-back')
+    const backBtn = dialog.querySelector(".duplicate-back");
     backBtn.onclick = () => {
-      step2.style.display = 'none'
-      step1.style.display = 'block'
-    }
+      step2.style.display = "none";
+      step1.style.display = "block";
+    };
 
     // Name input validation
     nameInput.oninput = () => {
-      proceedBtn.disabled = !nameInput.value.trim()
-    }
+      proceedBtn.disabled = !nameInput.value.trim();
+    };
 
     // Proceed button
     proceedBtn.onclick = () => {
-      this.duplicateAdSet(adSet.id, nameInput.value.trim(), dialog.dataset.deepCopy === 'true')
-    }
+      this.duplicateAdSet(adSet.id, nameInput.value.trim(), dialog.dataset.deepCopy === "true");
+    };
 
     // Close dialog on background click or close button click
     dialog.onclick = (e) => {
       if (e.target === dialog) {
-        dialog.style.display = 'none'
+        dialog.style.display = "none";
       }
-    }
+    };
 
     // Close button functionality
-    const closeBtn = dialog.querySelector('.dialog-close-btn')
+    const closeBtn = dialog.querySelector(".dialog-close-btn");
     closeBtn.onclick = () => {
-      dialog.style.display = 'none'
-    }
+      dialog.style.display = "none";
+    };
   }
 
   async duplicateAdSet(adSetId, newName, deepCopy) {
-    const dialog = document.querySelector('.duplicate-adset-dialog')
-    const proceedBtn = dialog.querySelector('.duplicate-proceed')
+    const dialog = document.querySelector(".duplicate-adset-dialog");
+    const proceedBtn = dialog.querySelector(".duplicate-proceed");
 
     // Show loading state
-    proceedBtn.disabled = true
-    proceedBtn.textContent = 'Duplicating...'
+    proceedBtn.disabled = true;
+    proceedBtn.textContent = "Duplicating...";
 
     try {
-      const response = await fetch('/api/duplicate-ad-set', {
-        method: 'POST',
+      const response = await fetch("/api/duplicate-ad-set", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           ad_set_id: adSetId,
           deep_copy: deepCopy,
-          status_option: 'INHERITED_FROM_SOURCE',
+          status_option: "INHERITED_FROM_SOURCE",
           name: newName,
           campaign_id: appState.getState().selectedCampaign,
-          account_id: appState.getState().selectedAccount
-        })
-      })
+          account_id: appState.getState().selectedAccount,
+        }),
+      });
 
       if (!response.ok) {
-        throw new Error('Failed to duplicate ad set')
+        throw new Error("Failed to duplicate ad set");
       }
 
-      const data = await response.json()
+      const data = await response.json();
 
       // Hide dialog
-      dialog.style.display = 'none'
+      dialog.style.display = "none";
 
       // Add the new ad set to the campaign ad sets
-      const selectedCampaignId = appState.getState().selectedCampaign
+      const selectedCampaignId = appState.getState().selectedCampaign;
       if (!campaignAdSets[selectedCampaignId]) {
-        campaignAdSets[selectedCampaignId] = []
+        campaignAdSets[selectedCampaignId] = [];
       }
       campaignAdSets[selectedCampaignId].push({
         id: data.id,
         name: newName,
         account_id: appState.getState().selectedAccount,
-        campaign_id: selectedCampaignId
-      })
+        campaign_id: selectedCampaignId,
+      });
 
       // Update ad set state
-      appState.updateState('adSetConfig', {
+      appState.updateState("adSetConfig", {
         id: data.id,
         adset_name: newName,
         account_id: appState.getState().selectedAccount,
-        campaign_id: selectedCampaignId
-      })
+        campaign_id: selectedCampaignId,
+      });
 
       // Show creative upload
-      this.clearUploadColumn()
-      const creativeUpload = document.querySelector('.creative-upload')
+      this.clearUploadColumn();
+      const creativeUpload = document.querySelector(".creative-upload");
       if (creativeUpload) {
-        creativeUpload.style.display = 'block'
-        const uploadTitle = creativeUpload.querySelector('h2')
+        creativeUpload.style.display = "block";
+        const uploadTitle = creativeUpload.querySelector("h2");
         if (uploadTitle) {
-          uploadTitle.textContent = `Creative Upload for Ad Set: ${newName}`
+          uploadTitle.textContent = `Creative Upload for Ad Set: ${newName}`;
         }
       }
-      window.fileUploadHandler.showStep(2)
+      window.fileUploadHandler.showStep(2);
 
       // Trigger background refresh to update cache without disrupting UI
-      fetch('/api/refresh-meta-cache', { method: 'POST' })
-        .then(response => response.json())
-        .then(result => {
-          console.log('Background refresh triggered after ad set duplication:', result)
+      fetch("/api/refresh-meta-cache", { method: "POST" })
+        .then((response) => response.json())
+        .then((result) => {
+          console.log("Background refresh triggered after ad set duplication:", result);
         })
-        .catch(err => console.error('Failed to trigger refresh:', err))
-
+        .catch((err) => console.error("Failed to trigger refresh:", err));
     } catch (error) {
-      console.error('Error duplicating ad set:', error)
-      alert('Failed to duplicate ad set. Please try again.')
+      console.error("Error duplicating ad set:", error);
+      alert("Failed to duplicate ad set. Please try again.");
 
       // Reset button
-      proceedBtn.disabled = false
-      proceedBtn.textContent = 'Proceed'
+      proceedBtn.disabled = false;
+      proceedBtn.textContent = "Proceed";
     }
   }
 }
 
 class CustomDropdown {
   constructor(selector) {
-    console.log('CustomDropdown constructor called with selector:', selector)
-    this.dropdowns = document.querySelectorAll(selector)
-    console.log('Found dropdowns:', this.dropdowns.length)
-    this.init()
+    console.log("CustomDropdown constructor called with selector:", selector);
+    this.dropdowns = document.querySelectorAll(selector);
+    console.log("Found dropdowns:", this.dropdowns.length);
+    this.init();
   }
 
   init() {
-    this.dropdowns.forEach(dropdown => {
-      const selected = dropdown.querySelector('.dropdown-selected')
-      const options = dropdown.querySelector('.dropdown-options')
-      const display = selected.querySelector('.dropdown-display')
-      const optionItems = options.querySelectorAll('li')
-      const dropdownType = selected.dataset.dropdown
-      console.log('Initializing dropdown:', dropdownType, 'Selected element:', selected)
+    this.dropdowns.forEach((dropdown) => {
+      const selected = dropdown.querySelector(".dropdown-selected");
+      const options = dropdown.querySelector(".dropdown-options");
+      const display = selected.querySelector(".dropdown-display");
+      const optionItems = options.querySelectorAll("li");
+      const dropdownType = selected.dataset.dropdown;
+      console.log("Initializing dropdown:", dropdownType, "Selected element:", selected);
 
       // Check for preselected option
-      const preselectedOption = options.querySelector('li.selected')
+      const preselectedOption = options.querySelector("li.selected");
       if (preselectedOption) {
-        display.textContent = preselectedOption.textContent
-        this.setDropdownData(display, preselectedOption, dropdownType)
+        display.textContent = preselectedOption.textContent;
+        this.setDropdownData(display, preselectedOption, dropdownType);
       } else {
         // Set initial placeholder state only if no option is preselected
-        display.classList.add('placeholder')
+        display.classList.add("placeholder");
       }
 
       // Toggle dropdown
-      selected.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const isOpen = options.classList.contains('show')
+      selected.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = options.classList.contains("show");
 
-        this.closeAllDropdowns()
+        this.closeAllDropdowns();
 
         if (!isOpen) {
-          this.openDropdown(dropdown)
+          this.openDropdown(dropdown);
         }
-      })
+      });
 
       // Handle option selection
-      optionItems.forEach(option => {
-        option.addEventListener('click', (e) => {
-          e.stopPropagation()
-          const text = option.textContent
+      optionItems.forEach((option) => {
+        option.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const text = option.textContent;
 
           // Update selected display
-          display.textContent = text
-          display.classList.remove('placeholder')
-          this.setDropdownData(display, option, dropdownType)
+          display.textContent = text;
+          display.classList.remove("placeholder");
+          this.setDropdownData(display, option, dropdownType);
 
           // Update selected state
-          optionItems.forEach(opt => opt.classList.remove('selected'))
-          option.classList.add('selected')
+          optionItems.forEach((opt) => opt.classList.remove("selected"));
+          option.classList.add("selected");
 
           // Close dropdown
-          this.closeDropdown(dropdown)
+          this.closeDropdown(dropdown);
 
-          // Remove empty input here instead of form validation classlist 
-          display.parentElement.classList.remove('empty-input')
-          console.log(`Selected ${dropdownType}:`, text)
+          // Remove empty input here instead of form validation classlist
+          display.parentElement.classList.remove("empty-input");
+          console.log(`Selected ${dropdownType}:`, text);
 
           // Trigger validation check after dropdown selection
-          if (typeof checkRequiredFields === 'function') {
-            checkRequiredFields()
+          if (typeof checkRequiredFields === "function") {
+            checkRequiredFields();
           }
-        })
-      })
+        });
+      });
 
       // Handle keyboard navigation
-      selected.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          const isOpen = options.classList.contains('show')
+      selected.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          const isOpen = options.classList.contains("show");
           if (isOpen) {
-            this.closeDropdown(dropdown)
+            this.closeDropdown(dropdown);
           } else {
-            this.closeAllDropdowns()
-            this.openDropdown(dropdown)
+            this.closeAllDropdowns();
+            this.openDropdown(dropdown);
           }
         }
-      })
-    })
+      });
+    });
 
     // Close dropdowns when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.custom-dropdown')) {
-        this.closeAllDropdowns()
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".custom-dropdown")) {
+        this.closeAllDropdowns();
       }
-    })
+    });
   }
 
   setDropdownData(display, option, dropdownType) {
     switch (dropdownType) {
-      case 'pixel':
-        display.dataset.pixelid = option.dataset.pixelId || ''
-        break
-      case 'page':
-        display.dataset.pageid = option.dataset.pageId || ''
-        break
-      case 'status':
-        display.dataset.value = option.dataset.value || option.textContent
-        break
-      case 'cta':
-        display.dataset.value = option.dataset.value || ''
-        break
+      case "pixel":
+        display.dataset.pixelid = option.dataset.pixelId || "";
+        break;
+      case "page":
+        display.dataset.pageid = option.dataset.pageId || "";
+        break;
+      case "status":
+        display.dataset.value = option.dataset.value || option.textContent;
+        break;
+      case "cta":
+        display.dataset.value = option.dataset.value || "";
+        break;
       default:
         // Generic fallback
         if (option.dataset.value) {
-          display.dataset.value = option.dataset.value
+          display.dataset.value = option.dataset.value;
         }
     }
   }
 
   openDropdown(dropdown) {
-    const selected = dropdown.querySelector('.dropdown-selected')
-    const options = dropdown.querySelector('.dropdown-options')
+    const selected = dropdown.querySelector(".dropdown-selected");
+    const options = dropdown.querySelector(".dropdown-options");
 
-    options.classList.add('show')
-    selected.classList.add('open', 'focused')
-    selected.setAttribute('tabindex', '0')
+    options.classList.add("show");
+    selected.classList.add("open", "focused");
+    selected.setAttribute("tabindex", "0");
   }
 
   closeDropdown(dropdown) {
-    const selected = dropdown.querySelector('.dropdown-selected')
-    const options = dropdown.querySelector('.dropdown-options')
+    const selected = dropdown.querySelector(".dropdown-selected");
+    const options = dropdown.querySelector(".dropdown-options");
 
-    options.classList.remove('show')
-    selected.classList.remove('open', 'focused')
+    options.classList.remove("show");
+    selected.classList.remove("open", "focused");
   }
 
   closeAllDropdowns() {
-    this.dropdowns.forEach(dropdown => {
-      this.closeDropdown(dropdown)
-    })
+    this.dropdowns.forEach((dropdown) => {
+      this.closeDropdown(dropdown);
+    });
   }
 }
 
 class UploadForm {
   constructor(selector) {
-    this.selector = selector
-    this.element = document.querySelector(this.selector)
-    this.currentStep = 1
-    this.uploadedFiles = []
-    this.selectedUploadType = null
+    this.selector = selector;
+    this.element = document.querySelector(this.selector);
+    this.currentStep = 1;
+    this.uploadedFiles = [];
+    this.selectedUploadType = null;
   }
 
   handleSubmit() {
-    this.element.addEventListener('click', (e) => {
-      if (e.target.type === 'submit' || e.target.classList.contains('continue-btn')) {
-        e.preventDefault()
+    this.element.addEventListener("click", (e) => {
+      if (e.target.type === "submit" || e.target.classList.contains("continue-btn")) {
+        e.preventDefault();
 
-        if (e.target.textContent === 'Create Ad Set') {
+        if (e.target.textContent === "Create Ad Set") {
           // Only proceed if button is active
-          if (e.target.classList.contains('active')) {
-            this.validateAndCreateAdSet()
+          if (e.target.classList.contains("active")) {
+            this.validateAndCreateAdSet();
           }
         }
       }
-    })
+    });
   }
 
   async validateAndCreateAdSet() {
     if (this.checkIfInputsAreValid()) {
-      const pixelDropdown = document.querySelector('.dropdown-selected[data-dropdown="pixel"] .dropdown-display')
-      const statusDropdown = document.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display')
+      const pixelDropdown = document.querySelector('.dropdown-selected[data-dropdown="pixel"] .dropdown-display');
+      const statusDropdown = document.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display');
 
       // Check if geo fields are visible (not special ad category)
-      const geoContainers = document.querySelectorAll('.geo-selection-container')
-      const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== 'none'
+      const geoContainers = document.querySelectorAll(".geo-selection-container");
+      const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
 
       const payload = {
-        account_id: document.querySelector('.account.selected').dataset.campaignId,
-        campaign_id: document.querySelector('.config-campaign-id').value,
-        destination_type: document.querySelector('.config-destination-type').value,
-        optimization_goal: document.querySelector('.config-optimization-goal').value,
-        billing_event: document.querySelector('.config-billing-event').value,
-        bid_strategy: document.querySelector('.config-bid-strategy').value,
-        name: document.querySelector('.config-adset-name').value, // Add 'name' for validation
-        adset_name: document.querySelector('.config-adset-name').value, // Keep for server processing
-        pixel_id: pixelDropdown ? pixelDropdown.dataset.pixelid : '',
-        event_type: document.querySelector('.config-event-type').dataset.value || document.querySelector('.config-event-type').value,
-        status: statusDropdown ? statusDropdown.dataset.value : 'ACTIVE'
-      }
+        account_id: document.querySelector(".account.selected").dataset.campaignId,
+        campaign_id: document.querySelector(".config-campaign-id").value,
+        destination_type: document.querySelector(".config-destination-type").value,
+        optimization_goal: document.querySelector(".config-optimization-goal").value,
+        billing_event: document.querySelector(".config-billing-event").value,
+        bid_strategy: document.querySelector(".config-bid-strategy").value,
+        name: document.querySelector(".config-adset-name").value, // Add 'name' for validation
+        adset_name: document.querySelector(".config-adset-name").value, // Keep for server processing
+        pixel_id: pixelDropdown ? pixelDropdown.dataset.pixelid : "",
+        event_type: document.querySelector(".config-event-type").dataset.value || document.querySelector(".config-event-type").value,
+        status: statusDropdown ? statusDropdown.dataset.value : "ACTIVE",
+      };
 
       // Only add geo_locations if fields are visible
       if (geoFieldsVisible) {
-        const selectedCountries = appState.getState().selectedCountries
-        const selectedRegions = appState.getState().selectedRegions
+        const selectedCountries = appState.getState().selectedCountries;
+        const selectedRegions = appState.getState().selectedRegions;
 
         // Separate included and excluded regions
-        const includedRegions = selectedRegions.filter(r => !r.excluded)
-        const excludedRegions = selectedRegions.filter(r => r.excluded)
+        const includedRegions = selectedRegions.filter((r) => !r.excluded);
+        const excludedRegions = selectedRegions.filter((r) => r.excluded);
 
         payload.geo_locations = {
-          countries: selectedCountries.map(c => c.key),
-          regions: includedRegions.map(r => ({ key: r.key }))
-        }
+          countries: selectedCountries.map((c) => c.key),
+          regions: includedRegions.map((r) => ({ key: r.key })),
+        };
 
         // Add excluded regions if any
         if (excludedRegions.length > 0) {
           payload.excluded_geo_locations = {
-            regions: excludedRegions.map(r => ({ key: r.key }))
-          }
+            regions: excludedRegions.map((r) => ({ key: r.key })),
+          };
         }
       }
 
-      const bid_amount = document.querySelector('.config-cost-per-result-goal')
-      const daily_budget = document.querySelector('.config-daily-budget').value
+      const bid_amount = document.querySelector(".config-cost-per-result-goal");
+      const daily_budget = document.querySelector(".config-daily-budget").value;
 
       if (bid_amount.required) {
         // Convert dollars to cents for Facebook API
-        payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100)
+        payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100);
       } else {
         // Convert dollars to cents for Facebook API
-        payload.daily_budget = Math.round(parseFloat(daily_budget) * 100)
+        payload.daily_budget = Math.round(parseFloat(daily_budget) * 100);
       }
 
       // Include age fields only if they're visible (no special ad categories)
-      const minAgeInput = document.querySelector('.min-age')
-      const maxAgeInput = document.querySelector('.max-age')
-      const ageContainer = document.querySelector('.targeting-age')
+      const minAgeInput = document.querySelector(".min-age");
+      const maxAgeInput = document.querySelector(".max-age");
+      const ageContainer = document.querySelector(".targeting-age");
 
-      if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== 'none') {
-        payload.min_age = parseInt(minAgeInput.value)
-        payload.max_age = parseInt(maxAgeInput.value)
+      if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== "none") {
+        payload.min_age = parseInt(minAgeInput.value);
+        payload.max_age = parseInt(maxAgeInput.value);
       }
 
-      this.showLoadingState()
+      this.showLoadingState();
 
       try {
-        const response = await fetch('/api/create-ad-set', {
-          method: 'POST',
+        const response = await fetch("/api/create-ad-set", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json'
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify(payload)
-        })
+          body: JSON.stringify(payload),
+        });
 
         // Read response body once
-        const responseText = await response.text()
+        const responseText = await response.text();
         let data;
 
         try {
-          data = JSON.parse(responseText)
+          data = JSON.parse(responseText);
         } catch (e) {
           // If response is not JSON, use the text as is
-          data = { error: responseText }
+          data = { error: responseText };
         }
 
         if (!response.ok) {
-          console.log('Create ad set api response not ok.')
-          throw new Error(data.error || data.message || `Failed to create ad set: ${responseText}`)
+          console.log("Create ad set api response not ok.");
+          throw new Error(data.error || data.message || `Failed to create ad set: ${responseText}`);
         }
 
-        console.log('Successfully posted to create ad set api.')
-        appState.updateState('adSetConfig', payload)
-        this.hideLoadingState()
+        console.log("Successfully posted to create ad set api.");
+        appState.updateState("adSetConfig", payload);
+        this.hideLoadingState();
 
-        const adsetConfig = document.querySelector('.adset-config')
-        adsetConfig.style.display = 'none'
+        const adsetConfig = document.querySelector(".adset-config");
+        adsetConfig.style.display = "none";
 
-        const creativeUploadTitle = document.querySelector('.creative-upload')
-        creativeUploadTitle.children[0].textContent = `Creative Upload for Ad Set ${payload.adset_name}`
+        const creativeUploadTitle = document.querySelector(".creative-upload");
+        creativeUploadTitle.children[0].textContent = `Creative Upload for Ad Set ${payload.adset_name}`;
 
-        appState.updateState('adSetConfig', { ...payload, id: data.id })
+        appState.updateState("adSetConfig", { ...payload, id: data.id });
 
-        creativeUploadTitle.dataset.adsetId = data.id
+        creativeUploadTitle.dataset.adsetId = data.id;
 
         // Add the newly created ad set to the existing ad sets list
-        const selectedCampaignId = appState.getState().selectedCampaign
+        const selectedCampaignId = appState.getState().selectedCampaign;
         if (!campaignAdSets[selectedCampaignId]) {
-          campaignAdSets[selectedCampaignId] = []
+          campaignAdSets[selectedCampaignId] = [];
         }
         campaignAdSets[selectedCampaignId].push({
           id: data.id,
           name: payload.adset_name,
           account_id: payload.account_id,
-          campaign_id: payload.campaign_id
-        })
+          campaign_id: payload.campaign_id,
+        });
 
-        this.showNextSection('creative-upload')
+        this.showNextSection("creative-upload");
 
-        window.fileUploadHandler.showStep(2)
-
+        window.fileUploadHandler.showStep(2);
       } catch (err) {
-        console.log('There was an error posting to create ad set API', err)
-        this.hideLoadingState(true) // Pass true for error
+        console.log("There was an error posting to create ad set API", err);
+        this.hideLoadingState(true); // Pass true for error
 
         // Show error message to user
         if (window.showError) {
-          window.showError(`Failed to create ad set: ${err.message}`, 5000)
+          window.showError(`Failed to create ad set: ${err.message}`, 5000);
         }
       }
     }
   }
 
   checkIfInputsAreValid() {
-    let isValid = true
-    const allInputs = document.getElementsByTagName('input')
-    const dropdownInputs = document.querySelectorAll('.adset-form-container .dropdown-display')
+    let isValid = true;
+    const allInputs = document.getElementsByTagName("input");
+    const dropdownInputs = document.querySelectorAll(".adset-form-container .dropdown-display");
 
-    // Validate required text inputs 
+    // Validate required text inputs
     for (const input of allInputs) {
       if (input.required && input.dataset.container === this.element.classList.value) {
-        if (input.value === '' || input.value === undefined) {
-          this.emptyInputError(input)
-          isValid = false
+        if (input.value === "" || input.value === undefined) {
+          this.emptyInputError(input);
+          isValid = false;
         } else {
-          input.classList.remove('empty-input')
+          input.classList.remove("empty-input");
           // Also remove error from budget wrapper if exists
-          const wrapper = input.closest('.budget-input-wrapper')
+          const wrapper = input.closest(".budget-input-wrapper");
           if (wrapper) {
-            wrapper.classList.remove('empty-input')
+            wrapper.classList.remove("empty-input");
           }
         }
       }
@@ -1294,443 +1502,458 @@ class UploadForm {
 
     // Validate dropdowns
     for (const dropdownInput of dropdownInputs) {
-      if (dropdownInput.classList.contains('placeholder')) {
-        this.emptyDropdownError(dropdownInput)
-        isValid = false
+      if (dropdownInput.classList.contains("placeholder")) {
+        this.emptyDropdownError(dropdownInput);
+        isValid = false;
       }
     }
 
     // Validate age inputs
-    const minAgeInput = document.querySelector('.min-age')
-    const maxAgeInput = document.querySelector('.max-age')
-    const ageContainer = document.querySelector('.targeting-age')
+    const minAgeInput = document.querySelector(".min-age");
+    const maxAgeInput = document.querySelector(".max-age");
+    const ageContainer = document.querySelector(".targeting-age");
 
-    if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== 'none') {
-      isValid = this.validateAgeInputs(minAgeInput, maxAgeInput) && isValid
+    if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== "none") {
+      isValid = this.validateAgeInputs(minAgeInput, maxAgeInput) && isValid;
     }
 
-    const budgetInput = document.querySelector('.config-daily-budget')
+    const budgetInput = document.querySelector(".config-daily-budget");
     if (budgetInput && budgetInput.required) {
-      isValid = this.validateBudgetInput(budgetInput) && isValid
+      isValid = this.validateBudgetInput(budgetInput) && isValid;
     }
 
     // Validate countries selection (only if geo fields are visible)
-    const geoContainers = document.querySelectorAll('.geo-selection-container')
-    const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== 'none'
+    const geoContainers = document.querySelectorAll(".geo-selection-container");
+    const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
 
     if (geoFieldsVisible) {
-      const selectedCountries = appState.getState().selectedCountries
-      const countryContainer = document.querySelector('.selected-countries-container')
+      const selectedCountries = appState.getState().selectedCountries;
+      const countryContainer = document.querySelector(".selected-countries-container");
       if (selectedCountries.length === 0) {
         if (countryContainer) {
-          countryContainer.classList.add('empty-input')
+          countryContainer.classList.add("empty-input");
         }
-        isValid = false
+        isValid = false;
       } else {
         if (countryContainer) {
-          countryContainer.classList.remove('empty-input')
+          countryContainer.classList.remove("empty-input");
         }
       }
     }
 
-    return isValid
+    return isValid;
   }
 
   validateAgeInputs(minAge, maxAge) {
-    let isValid = true
+    let isValid = true;
 
-    const minVal = parseInt(minAge.value)
-    const maxVal = parseInt(maxAge.value)
+    const minVal = parseInt(minAge.value);
+    const maxVal = parseInt(maxAge.value);
 
     if (minVal < 18 || minVal > 65 || isNaN(minVal)) {
-      this.emptyInputError(minAge)
-      isValid = false
+      this.emptyInputError(minAge);
+      isValid = false;
     }
 
     if (maxVal < 18 || maxVal > 65 || isNaN(maxVal)) {
-      this.emptyInputError(maxAge)
-      isValid = false
+      this.emptyInputError(maxAge);
+      isValid = false;
     }
 
     if (minVal >= maxVal) {
-      this.emptyInputError(minAge)
-      this.emptyInputError(maxAge)
-      isValid = false
+      this.emptyInputError(minAge);
+      this.emptyInputError(maxAge);
+      isValid = false;
     }
 
-    return isValid
+    return isValid;
   }
 
   validateBudgetInput(budgetInput) {
-    const value = parseFloat(budgetInput.value)
+    const value = parseFloat(budgetInput.value);
 
     if (isNaN(value) || value <= 0) {
-      this.emptyInputError(budgetInput)
-      return false
+      this.emptyInputError(budgetInput);
+      return false;
     }
 
-    return true
+    return true;
   }
 
   showLoadingState() {
-    const button = document.querySelector('.adset-form-container button')
-    button.disabled = true
-    button.style.opacity = '0.6'
-    animatedEllipsis.start(button, 'Creating Ad Set')
+    const button = document.querySelector(".adset-form-container button");
+    button.disabled = true;
+    button.style.opacity = "0.6";
+    animatedEllipsis.start(button, "Creating Ad Set");
   }
 
   hideLoadingState() {
-    const button = document.querySelector('.adset-form-container button')
-    animatedEllipsis.stop(button)
-    button.textContent = 'Create Ad Set'
-    button.disabled = false
-    button.style.opacity = '1'
+    const button = document.querySelector(".adset-form-container button");
+    animatedEllipsis.stop(button);
+    button.textContent = "Create Ad Set";
+    button.disabled = false;
+    button.style.opacity = "1";
   }
 
   showNextSection(sectionClass) {
-    const nextSection = document.querySelector(`.${sectionClass}`)
+    const nextSection = document.querySelector(`.${sectionClass}`);
     if (nextSection) {
-      nextSection.style.display = 'block'
+      nextSection.style.display = "block";
 
-      const uploadColumn = document.getElementById('col-4')
-      const columnTop = uploadColumn.getBoundingClientRect().top + window.pageYOffset
+      const uploadColumn = document.getElementById("col-4");
+      const columnTop = uploadColumn.getBoundingClientRect().top + window.pageYOffset;
 
       window.scrollTo({
         top: columnTop,
-        behavior: 'smooth'
-      })
+        behavior: "smooth",
+      });
 
       // Clear geo selections for next ad set creation
-      appState.updateState('selectedCountries', [])
-      appState.updateState('selectedRegions', [])
+      appState.updateState("selectedCountries", []);
+      appState.updateState("selectedRegions", []);
     }
   }
 
   emptyInputError(input) {
     // Check if input is inside a budget wrapper
-    const wrapper = input.closest('.budget-input-wrapper')
+    const wrapper = input.closest(".budget-input-wrapper");
     if (wrapper) {
-      wrapper.classList.add('empty-input')
-      input.addEventListener('input', () => {
-        wrapper.classList.remove('empty-input')
-      }, { once: true })
+      wrapper.classList.add("empty-input");
+      input.addEventListener(
+        "input",
+        () => {
+          wrapper.classList.remove("empty-input");
+        },
+        { once: true }
+      );
     } else {
-      input.classList.add('empty-input')
-      input.addEventListener('input', () => {
-        input.classList.remove('empty-input')
-      }, { once: true })
+      input.classList.add("empty-input");
+      input.addEventListener(
+        "input",
+        () => {
+          input.classList.remove("empty-input");
+        },
+        { once: true }
+      );
     }
   }
 
   emptyDropdownError(input) {
-    input.parentElement.classList.add('empty-input')
+    input.parentElement.classList.add("empty-input");
   }
 }
 
 class UploadProgressTracker {
   constructor() {
-    this.eventSource = null
-    this.sessionId = null
-    this.errors = []
-    this.fileProgressMap = new Map()
+    this.eventSource = null;
+    this.sessionId = null;
+    this.errors = [];
+    this.fileProgressMap = new Map();
   }
 
   connectToSSE(sessionId) {
-    this.sessionId = sessionId
-    this.eventSource = new EventSource(`/api/upload-progress/${sessionId}`)
+    this.sessionId = sessionId;
+    this.eventSource = new EventSource(`/api/upload-progress/${sessionId}`);
 
-    console.log('Connecting to SSE:', sessionId)
+    console.log("Connecting to SSE:", sessionId);
 
     // Debug: log all events
     this.eventSource.onmessage = (event) => {
-      console.log('SSE message received:', event)
-    }
+      console.log("SSE message received:", event);
+    };
 
     // Set up event listeners
-    this.eventSource.addEventListener('connected', (event) => {
-      console.log('Connected to upload progress:', JSON.parse(event.data))
-    })
+    this.eventSource.addEventListener("connected", (event) => {
+      console.log("Connected to upload progress:", JSON.parse(event.data));
+    });
 
-    this.eventSource.addEventListener('session-start', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('Upload session started:', data.totalFiles, 'files')
-    })
+    this.eventSource.addEventListener("session-start", (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Upload session started:", data.totalFiles, "files");
+      // Mark upload as in progress
+      appState.setUploadInProgress(true);
+    });
 
-    this.eventSource.addEventListener('file-start', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('File start event:', data)
-      this.startFileProgress(data.fileIndex, data.fileName)
-    })
+    this.eventSource.addEventListener("file-start", (event) => {
+      const data = JSON.parse(event.data);
+      console.log("File start event:", data);
+      this.startFileProgress(data.fileIndex, data.fileName);
+    });
 
-    this.eventSource.addEventListener('file-progress', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('File progress event:', data)
-      this.updateFileProgress(data.fileIndex, data.progress, data.stage)
-    })
+    this.eventSource.addEventListener("file-progress", (event) => {
+      const data = JSON.parse(event.data);
+      console.log("File progress event:", data);
+      this.updateFileProgress(data.fileIndex, data.progress, data.stage);
+    });
 
-    this.eventSource.addEventListener('file-complete', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('File complete event:', data)
-      this.completeFileProgress(data.fileIndex, data.fileName)
-    })
+    this.eventSource.addEventListener("file-complete", (event) => {
+      const data = JSON.parse(event.data);
+      console.log("File complete event:", data);
+      this.completeFileProgress(data.fileIndex, data.fileName);
+    });
 
-    this.eventSource.addEventListener('file-error', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('File error event:', data)
-      this.showFileError(data.fileIndex, data.fileName, data.error)
-    })
+    this.eventSource.addEventListener("file-error", (event) => {
+      const data = JSON.parse(event.data);
+      console.log("File error event:", data);
+      this.showFileError(data.fileIndex, data.fileName, data.error);
+    });
 
-    this.eventSource.addEventListener('session-complete', (event) => {
-      console.log('Upload session completed', event)
-      const data = JSON.parse(event.data)
+    this.eventSource.addEventListener("session-complete", (event) => {
+      console.log("Upload session completed", event);
+      const data = JSON.parse(event.data);
 
       // Check if there are errors
-      const hasErrors = this.errors.length > 0
+      const hasErrors = this.errors.length > 0;
 
-      this.disconnect()
+      // Clear upload in progress state
+      appState.setUploadInProgress(false);
+
+      this.disconnect();
 
       // Trigger completion callback if set
       if (this.onComplete) {
-        this.onComplete(hasErrors, this.errors)
+        this.onComplete(hasErrors, this.errors);
       }
-    })
+    });
 
     this.eventSource.onerror = (error) => {
-      console.error('SSE error:', error)
-      this.disconnect()
-    }
+      console.error("SSE error:", error);
+      // Clear upload state on error
+      appState.setUploadInProgress(false);
+      this.disconnect();
+    };
   }
 
   startFileProgress(fileIndex, fileName) {
     // Find the progress bar for this file
-    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`)
+    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`);
     if (progressFill) {
-      progressFill.style.width = '0%'
-      progressFill.classList.add('loading')
-      this.fileProgressMap.set(fileIndex, { fileName, progress: 0 })
+      progressFill.style.width = "0%";
+      progressFill.classList.add("loading");
+      this.fileProgressMap.set(fileIndex, { fileName, progress: 0 });
     }
   }
 
   updateFileProgress(fileIndex, progress, stage) {
-    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`)
+    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`);
     if (progressFill) {
-      progressFill.style.width = `${progress}%`
-      progressFill.classList.remove('loading')
+      progressFill.style.width = `${progress}%`;
+      progressFill.classList.remove("loading");
 
       // Update map
-      const fileData = this.fileProgressMap.get(fileIndex) || {}
-      fileData.progress = progress
-      fileData.stage = stage
-      this.fileProgressMap.set(fileIndex, fileData)
+      const fileData = this.fileProgressMap.get(fileIndex) || {};
+      fileData.progress = progress;
+      fileData.stage = stage;
+      this.fileProgressMap.set(fileIndex, fileData);
     }
   }
 
   completeFileProgress(fileIndex, fileName) {
-    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`)
+    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`);
     if (progressFill) {
-      progressFill.style.width = '100%'
-      progressFill.classList.remove('loading', 'error')
+      progressFill.style.width = "100%";
+      progressFill.classList.remove("loading", "error");
 
       // Remove from map after a delay
       setTimeout(() => {
-        this.fileProgressMap.delete(fileIndex)
-      }, 1000)
+        this.fileProgressMap.delete(fileIndex);
+      }, 1000);
     }
   }
 
   showFileError(fileIndex, fileName, error) {
-    this.errors.push({ fileName, error })
+    this.errors.push({ fileName, error });
 
-    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`)
+    const progressFill = document.querySelector(`.file-progress-fill[data-fileIndex="${fileIndex}"]`);
     if (progressFill) {
-      progressFill.style.width = '100%'
-      progressFill.classList.remove('loading')
-      progressFill.classList.add('error')
+      progressFill.style.width = "100%";
+      progressFill.classList.remove("loading");
+      progressFill.classList.add("error");
     }
 
     // Show error message
-    alert(`Error uploading ${fileName}: ${error}`)
+    alert(`Error uploading ${fileName}: ${error}`);
   }
 
   disconnect() {
     if (this.eventSource) {
-      this.eventSource.close()
-      this.eventSource = null
+      this.eventSource.close();
+      this.eventSource = null;
     }
   }
 
   reset() {
-    this.disconnect()
-    this.errors = []
-    this.fileProgressMap.clear()
+    this.disconnect();
+    this.errors = [];
+    this.fileProgressMap.clear();
 
     // Reset all progress bars
-    document.querySelectorAll('.file-progress-fill').forEach(fill => {
-      fill.style.width = '0%'
-      fill.classList.remove('loading', 'error')
-    })
+    document.querySelectorAll(".file-progress-fill").forEach((fill) => {
+      fill.style.width = "0%";
+      fill.classList.remove("loading", "error");
+    });
   }
 }
 
 // Helper for animated ellipsis
 class AnimatedEllipsis {
   constructor() {
-    this.intervals = new Map()
+    this.intervals = new Map();
   }
 
   start(button, baseText) {
     // Clear any existing animation for this button
-    this.stop(button)
+    this.stop(button);
 
-    let dots = 0
+    let dots = 0;
     const interval = setInterval(() => {
-      dots = (dots + 1) % 4
-      button.textContent = baseText + '.'.repeat(dots)
-    }, 500)
+      dots = (dots + 1) % 4;
+      button.textContent = baseText + ".".repeat(dots);
+    }, 500);
 
-    this.intervals.set(button, interval)
+    this.intervals.set(button, interval);
   }
 
   stop(button) {
-    const interval = this.intervals.get(button)
+    const interval = this.intervals.get(button);
     if (interval) {
-      clearInterval(interval)
-      this.intervals.delete(button)
+      clearInterval(interval);
+      this.intervals.delete(button);
     }
   }
 
   stopAll() {
-    this.intervals.forEach(interval => clearInterval(interval))
-    this.intervals.clear()
+    this.intervals.forEach((interval) => clearInterval(interval));
+    this.intervals.clear();
   }
 }
 
-const animatedEllipsis = new AnimatedEllipsis()
+const animatedEllipsis = new AnimatedEllipsis();
 
 // Add campaign duplication methods to SingleSelectGroup prototype
 SingleSelectGroup.prototype.showDuplicateCampaignDialog = function (campaign) {
-  const dialog = document.querySelector('.duplicate-campaign-dialog')
-  const step1 = dialog.querySelector('[data-step="1"]')
-  const step2 = dialog.querySelector('[data-step="2"]')
-  const nameInput = dialog.querySelector('#duplicate-campaign-name')
-  const proceedBtn = dialog.querySelector('.duplicate-proceed')
+  const dialog = document.querySelector(".duplicate-campaign-dialog");
+  const step1 = dialog.querySelector('[data-step="1"]');
+  const step2 = dialog.querySelector('[data-step="2"]');
+  const nameInput = dialog.querySelector("#duplicate-campaign-name");
+  const proceedBtn = dialog.querySelector(".duplicate-proceed");
 
   // Store campaign info
-  dialog.dataset.campaignId = campaign.id
-  dialog.dataset.campaignName = campaign.name
-  dialog.dataset.accountId = campaign.account_id
+  dialog.dataset.campaignId = campaign.id;
+  dialog.dataset.campaignName = campaign.name;
+  dialog.dataset.accountId = campaign.account_id;
 
   // Reset dialog
-  step1.style.display = 'block'
-  step2.style.display = 'none'
-  nameInput.value = `${campaign.name} - Copy`
-  proceedBtn.disabled = false
-  proceedBtn.textContent = 'Proceed'
-  dialog.dataset.deepCopy = 'false'
+  step1.style.display = "block";
+  step2.style.display = "none";
+  nameInput.value = `${campaign.name} - Copy`;
+  proceedBtn.disabled = false;
+  proceedBtn.textContent = "Proceed";
+  dialog.dataset.deepCopy = "false";
 
   // Show dialog
-  dialog.style.display = 'flex'
+  dialog.style.display = "flex";
 
   // Step 1 buttons
-  const step1Buttons = step1.querySelectorAll('button[data-deep-copy]')
-  step1Buttons.forEach(btn => {
+  const step1Buttons = step1.querySelectorAll("button[data-deep-copy]");
+  step1Buttons.forEach((btn) => {
     btn.onclick = () => {
-      dialog.dataset.deepCopy = btn.dataset.deepCopy
-      step1.style.display = 'none'
-      step2.style.display = 'block'
-      nameInput.focus()
+      dialog.dataset.deepCopy = btn.dataset.deepCopy;
+      step1.style.display = "none";
+      step2.style.display = "block";
+      nameInput.focus();
       // Enable/disable proceed button based on name input
-      proceedBtn.disabled = !nameInput.value.trim()
-    }
-  })
+      proceedBtn.disabled = !nameInput.value.trim();
+    };
+  });
 
   // Name input validation
   nameInput.oninput = () => {
-    proceedBtn.disabled = !nameInput.value.trim()
-  }
+    proceedBtn.disabled = !nameInput.value.trim();
+  };
 
   // Back button
-  const backBtn = dialog.querySelector('.duplicate-back')
+  const backBtn = dialog.querySelector(".duplicate-back");
   backBtn.onclick = () => {
-    step2.style.display = 'none'
-    step1.style.display = 'block'
-  }
+    step2.style.display = "none";
+    step1.style.display = "block";
+  };
 
   // Proceed button
   proceedBtn.onclick = () => {
-    this.duplicateCampaign(campaign.id, nameInput.value.trim(), dialog.dataset.deepCopy === 'true', campaign.account_id)
-  }
+    this.duplicateCampaign(campaign.id, nameInput.value.trim(), dialog.dataset.deepCopy === "true", campaign.account_id);
+  };
 
   // Close dialog on background click or close button click
   dialog.onclick = (e) => {
     if (e.target === dialog) {
-      dialog.style.display = 'none'
+      dialog.style.display = "none";
     }
-  }
-  const closeBtn = dialog.querySelector('.dialog-close-btn')
+  };
+  const closeBtn = dialog.querySelector(".dialog-close-btn");
   closeBtn.onclick = () => {
-    dialog.style.display = 'none'
-  }
+    dialog.style.display = "none";
+  };
 
   // Prevent clicks on dialog content from closing
-  dialog.querySelector('.dialog-content').onclick = (e) => {
-    e.stopPropagation()
-  }
-}
+  dialog.querySelector(".dialog-content").onclick = (e) => {
+    e.stopPropagation();
+  };
+};
 
 SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newName, deepCopy, accountId) {
-  const dialog = document.querySelector('.duplicate-campaign-dialog')
-  const proceedBtn = dialog.querySelector('.duplicate-proceed')
+  const dialog = document.querySelector(".duplicate-campaign-dialog");
+  const proceedBtn = dialog.querySelector(".duplicate-proceed");
 
   // Show loading state
-  proceedBtn.disabled = true
-  proceedBtn.textContent = 'Duplicating...'
+  proceedBtn.disabled = true;
+  proceedBtn.textContent = "Duplicating...";
 
   try {
-    const response = await fetch('/api/duplicate-campaign', {
-      method: 'POST',
+    const response = await fetch("/api/duplicate-campaign", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         campaign_id: campaignId,
         name: newName,
         deep_copy: deepCopy,
-        status_option: 'PAUSED',
-        account_id: accountId
-      })
-    })
+        status_option: "PAUSED",
+        account_id: accountId,
+      }),
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to duplicate campaign')
+      throw new Error("Failed to duplicate campaign");
     }
 
-    const data = await response.json()
+    const data = await response.json();
 
     // Hide dialog
-    dialog.style.display = 'none'
+    dialog.style.display = "none";
 
     // Add the new campaign to the list
-    const newCampaignId = data.id
+    const newCampaignId = data.id;
 
     // Create a new campaign element
-    const campaignSelection = document.querySelector('.campaign-selection')
+    const campaignSelection = document.querySelector(".campaign-selection");
     if (!campaignSelection) {
-      console.error('Campaign selection container not found')
-      alert('Campaign duplicated successfully but could not update the display. Please refresh the page.')
-      return
+      console.error("Campaign selection container not found");
+      alert("Campaign duplicated successfully but could not update the display. Please refresh the page.");
+      return;
     }
 
-    const newCampaignElement = document.createElement('div')
-    newCampaignElement.className = 'campaign'
-    newCampaignElement.setAttribute('data-next-column', '.action-column')
-    newCampaignElement.setAttribute('data-col-id', '2')
-    newCampaignElement.setAttribute('data-acc-campaign-id', accountId)
-    newCampaignElement.setAttribute('data-campaign-id', newCampaignId)
-    newCampaignElement.setAttribute('data-daily-budget', '')
-    newCampaignElement.setAttribute('data-bid-strategy', '')
-    newCampaignElement.setAttribute('data-special-ad-categories', '[]')
-    newCampaignElement.style.display = 'none' // Match the display style of other campaigns
+    const newCampaignElement = document.createElement("div");
+    newCampaignElement.className = "campaign";
+    newCampaignElement.setAttribute("data-next-column", ".action-column");
+    newCampaignElement.setAttribute("data-col-id", "2");
+    newCampaignElement.setAttribute("data-acc-campaign-id", accountId);
+    newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
+    newCampaignElement.setAttribute("data-daily-budget", "");
+    newCampaignElement.setAttribute("data-bid-strategy", "");
+    newCampaignElement.setAttribute("data-special-ad-categories", "[]");
+    newCampaignElement.style.display = "none"; // Match the display style of other campaigns
 
     newCampaignElement.innerHTML = `
       <h3>${newName}</h3>
@@ -1739,248 +1962,245 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
         <li>Spend: N/A</li>
         <li>Clicks: N/A</li>
       </ul>
-    `
+    `;
 
     // Insert the new campaign at the top of the list
-    const firstCampaign = campaignSelection.querySelector('.campaign')
+    const firstCampaign = campaignSelection.querySelector(".campaign");
     if (firstCampaign) {
-      campaignSelection.insertBefore(newCampaignElement, firstCampaign)
+      campaignSelection.insertBefore(newCampaignElement, firstCampaign);
     } else {
-      campaignSelection.appendChild(newCampaignElement)
+      campaignSelection.appendChild(newCampaignElement);
     }
 
     // Reinitialize the single select group to include the new campaign
     // Clean up existing campaign select group before creating new one
     if (campaignSelectGroup) {
-      campaignSelectGroup.cleanup()
+      campaignSelectGroup.cleanup();
     }
-    campaignSelectGroup = new SingleSelectGroup('.campaign')
+    campaignSelectGroup = new SingleSelectGroup(".campaign");
 
     // Show success message
     if (window.showSuccess) {
-      window.showSuccess(`Campaign "${newName}" has been successfully duplicated!`, 4000)
+      window.showSuccess(`Campaign "${newName}" has been successfully duplicated!`, 4000);
     }
 
     // Trigger background refresh to update cache without page reload
-    fetch('/api/refresh-meta-cache', { method: 'POST' })
-      .then(response => response.json())
-      .then(result => {
-        console.log('Background refresh triggered:', result)
+    fetch("/api/refresh-meta-cache", { method: "POST" })
+      .then((response) => response.json())
+      .then((result) => {
+        console.log("Background refresh triggered:", result);
       })
-      .catch(err => console.error('Failed to trigger refresh:', err))
-
+      .catch((err) => console.error("Failed to trigger refresh:", err));
   } catch (error) {
-    console.error('Error duplicating campaign:', error)
+    console.error("Error duplicating campaign:", error);
     if (window.showError) {
-      window.showError('Failed to duplicate campaign. Please try again.', 5000)
+      window.showError("Failed to duplicate campaign. Please try again.", 5000);
     } else {
-      alert('Failed to duplicate campaign. Please try again.')
+      alert("Failed to duplicate campaign. Please try again.");
     }
 
     // Reset button
-    proceedBtn.disabled = false
-    proceedBtn.textContent = 'Proceed'
+    proceedBtn.disabled = false;
+    proceedBtn.textContent = "Proceed";
   }
-}
+};
 
 class FileUploadHandler {
   constructor() {
-    this.uploadedFiles = []
-    this.selectedUploadType = null
-    this.initialUploadComplete = false
-    this.additionalFilesToUpload = []
-    this.googleDriveFiles = [] // Track Google Drive files separately
-    this.progressTracker = new UploadProgressTracker()
-    this.init()
+    this.uploadedFiles = [];
+    this.selectedUploadType = null;
+    this.initialUploadComplete = false;
+    this.additionalFilesToUpload = [];
+    this.googleDriveFiles = []; // Track Google Drive files separately
+    this.progressTracker = new UploadProgressTracker();
+    this.init();
   }
 
   init() {
-    this.handleUploadTypeSelection()
-    this.handleFileUpload()
-    this.handleBackButton()
-    this.handleGoogleDriveInput()
+    this.handleUploadTypeSelection();
+    this.handleFileUpload();
+    this.handleBackButton();
+    this.handleGoogleDriveInput();
   }
 
   handleUploadTypeSelection() {
-    this.showStep(2)
+    this.showStep(2);
 
-    const dropZoneText = document.querySelector('.drop-zone-text')
+    const dropZoneText = document.querySelector(".drop-zone-text");
     if (dropZoneText) {
-      dropZoneText.innerHTML = `Drag & drop <strong>images and videos</strong> here <br /><br />or`
+      dropZoneText.innerHTML = `Drag & drop <strong>images and videos</strong> here <br /><br />or`;
     }
 
-    const fileInput = document.querySelector('.file-drop-zone input[type="file"]')
+    const fileInput = document.querySelector('.file-drop-zone input[type="file"]');
     if (fileInput) {
-      fileInput.accept = 'image/*,video/*'
+      fileInput.accept = "image/*,video/*";
     }
   }
 
   handleFileUpload() {
-    const fileInput = document.querySelector('.file-drop-zone input[type="file"]')
-    const dropZone = document.querySelector('.file-drop-zone')
-    const browseBtn = document.querySelector('.file-drop-zone .continue-btn')
+    const fileInput = document.querySelector('.file-drop-zone input[type="file"]');
+    const dropZone = document.querySelector(".file-drop-zone");
+    const browseBtn = document.querySelector(".file-drop-zone .continue-btn");
 
     // Browse button click
-    browseBtn.addEventListener('click', () => {
-      fileInput.click()
-    })
+    browseBtn.addEventListener("click", () => {
+      fileInput.click();
+    });
 
     // File input change
-    fileInput.addEventListener('change', (e) => {
-      this.handleFiles(e.target.files)
-    })
+    fileInput.addEventListener("change", (e) => {
+      this.handleFiles(e.target.files);
+    });
 
     // Drag and drop functionality
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault()
-      dropZone.style.backgroundColor = '#e3f2fd'
-      dropZone.style.borderColor = '#103dee'
-    })
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.style.backgroundColor = "#e3f2fd";
+      dropZone.style.borderColor = "#103dee";
+    });
 
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.style.backgroundColor = '#f8f9fa'
-      dropZone.style.borderColor = '#d0d0d0'
-    })
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.style.backgroundColor = "#f8f9fa";
+      dropZone.style.borderColor = "#d0d0d0";
+    });
 
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault()
-      dropZone.style.backgroundColor = '#f8f9fa'
-      dropZone.style.borderColor = '#d0d0d0'
-      this.handleFiles(e.dataTransfer.files)
-    })
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.style.backgroundColor = "#f8f9fa";
+      dropZone.style.borderColor = "#d0d0d0";
+      this.handleFiles(e.dataTransfer.files);
+    });
   }
 
   handleBackButton() {
-    const backBtns = document.querySelectorAll('.back-btn')
-    backBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.selectedUploadType = null
-        this.uploadedFiles = []
+    const backBtns = document.querySelectorAll(".back-btn");
+    backBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.selectedUploadType = null;
+        this.uploadedFiles = [];
 
         // Reset progress tracker
-        this.progressTracker.reset()
+        this.progressTracker.reset();
 
-        const fileInput = document.querySelector('.file-drop-zone input[type="file"]')
+        const fileInput = document.querySelector('.file-drop-zone input[type="file"]');
         if (fileInput) {
-          fileInput.value = ''
+          fileInput.value = "";
         }
 
-        const filesList = document.querySelector('.uploaded-files-list')
+        const filesList = document.querySelector(".uploaded-files-list");
         if (filesList) {
-          filesList.innerHTML = ''
+          filesList.innerHTML = "";
         }
 
-        this.showStep(2)
-      })
-    })
+        this.showStep(2);
+      });
+    });
   }
 
   handleFiles(files) {
-    const validFiles = Array.from(files).filter(file => {
-      return file.type.startsWith('image/') || file.type.startsWith('video/')
-    })
+    const validFiles = Array.from(files).filter((file) => {
+      return file.type.startsWith("image/") || file.type.startsWith("video/");
+    });
 
     // If we're already showing uploaded files, append instead of replace
     if (this.uploadedFiles.length > 0) {
       // Check for duplicates based on file name and size
-      const newFiles = validFiles.filter(newFile => {
-        return !this.uploadedFiles.some(existingFile =>
-          existingFile.name === newFile.name && existingFile.size === newFile.size
-        )
-      })
-      this.uploadedFiles.push(...newFiles)
+      const newFiles = validFiles.filter((newFile) => {
+        return !this.uploadedFiles.some((existingFile) => existingFile.name === newFile.name && existingFile.size === newFile.size);
+      });
+      this.uploadedFiles.push(...newFiles);
 
       // Track additional files if initial upload is complete
       if (this.initialUploadComplete && newFiles.length > 0) {
-        this.additionalFilesToUpload.push(...newFiles)
-        this.updateUploadButtonForAdditionalFiles()
+        this.additionalFilesToUpload.push(...newFiles);
+        this.updateUploadButtonForAdditionalFiles();
       }
     } else {
-      this.uploadedFiles = validFiles
+      this.uploadedFiles = validFiles;
     }
 
     // Determine upload type based on all files
-    const allImageFiles = this.uploadedFiles.filter(file => file.type.startsWith('image/'))
-    const allVideoFiles = this.uploadedFiles.filter(file => file.type.startsWith('video/'))
+    const allImageFiles = this.uploadedFiles.filter((file) => file.type.startsWith("image/"));
+    const allVideoFiles = this.uploadedFiles.filter((file) => file.type.startsWith("video/"));
 
     if (allImageFiles.length > 0 && allVideoFiles.length > 0) {
-      this.selectedUploadType = 'mixed'
+      this.selectedUploadType = "mixed";
     } else if (allImageFiles.length > 0) {
-      this.selectedUploadType = 'image'
+      this.selectedUploadType = "image";
     } else if (allVideoFiles.length > 0) {
-      this.selectedUploadType = 'video'
+      this.selectedUploadType = "video";
     }
 
     if (this.uploadedFiles.length > 0) {
-      this.displayUploadedFiles()
-      this.showStep(3)
+      this.displayUploadedFiles();
+      this.showStep(3);
     }
   }
 
   showLoadingState() {
-    const button = document.querySelector('[data-step="3"] .continue-btn')
-    button.disabled = true
-    button.style.opacity = '0.6'
-    animatedEllipsis.start(button, 'Uploading Creatives')
+    const button = document.querySelector('[data-step="3"] .continue-btn');
+    button.disabled = true;
+    button.style.opacity = "0.6";
+    animatedEllipsis.start(button, "Uploading Creatives");
   }
 
   hideLoadingState(hasErrors = false) {
-    const button = document.querySelector('[data-step="3"] .continue-btn')
-    animatedEllipsis.stop(button)
+    const button = document.querySelector('[data-step="3"] .continue-btn');
+    animatedEllipsis.stop(button);
 
     if (hasErrors) {
       // Reset button to allow retry
-      button.textContent = 'Upload Creatives'
-      button.style.backgroundColor = ''
-      button.style.cursor = 'pointer'
-      button.disabled = false
-      button.style.opacity = '1'
-      button.classList.remove('upload-complete')
+      button.textContent = "Upload Creatives";
+      button.style.backgroundColor = "";
+      button.style.cursor = "pointer";
+      button.disabled = false;
+      button.style.opacity = "1";
+      button.classList.remove("upload-complete");
     } else {
-      let fileTypeText
-      if (this.selectedUploadType === 'mixed') {
-        fileTypeText = 'Files'
-      } else if (this.selectedUploadType === 'image') {
-        fileTypeText = 'Images'
+      let fileTypeText;
+      if (this.selectedUploadType === "mixed") {
+        fileTypeText = "Files";
+      } else if (this.selectedUploadType === "image") {
+        fileTypeText = "Images";
       } else {
-        fileTypeText = 'Videos'
+        fileTypeText = "Videos";
       }
-      button.textContent = `✓ ${fileTypeText} Uploaded`
-      button.style.backgroundColor = '#28a745'
-      button.style.cursor = 'default'
-      button.disabled = true
-      button.style.opacity = '1'
+      button.textContent = `✓ ${fileTypeText} Uploaded`;
+      button.style.backgroundColor = "#28a745";
+      button.style.cursor = "default";
+      button.disabled = true;
+      button.style.opacity = "1";
 
-      button.classList.add('upload-complete')
-      this.initialUploadComplete = true
+      button.classList.add("upload-complete");
+      this.initialUploadComplete = true;
     }
 
     // Show additional upload options
-    const additionalOptions = document.querySelector('.additional-upload-options')
+    const additionalOptions = document.querySelector(".additional-upload-options");
     if (additionalOptions) {
-      additionalOptions.style.display = 'block'
+      additionalOptions.style.display = "block";
     }
   }
 
   displayUploadedFiles() {
-    const filesList = document.querySelector('.uploaded-files-list')
-    const isCollapsed = this.uploadedFiles.length > 3
+    const filesList = document.querySelector(".uploaded-files-list");
+    const isCollapsed = this.uploadedFiles.length > 3;
 
     if (isCollapsed) {
-      filesList.classList.add('collapsed')
+      filesList.classList.add("collapsed");
     } else {
-      filesList.classList.remove('collapsed')
+      filesList.classList.remove("collapsed");
     }
 
     filesList.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
         <h4 style="color: #333; margin: 0;">Uploaded Files (${this.uploadedFiles.length})</h4>
         <button type="button" class="toggle-files-btn" style="background: none; border: none; color: #103dee; cursor: pointer; font-size: 14px; padding: 4px 8px;">
-          ${isCollapsed ? 'Show All ▼' : 'Collapse ▲'}
+          ${isCollapsed ? "Show All ▼" : "Collapse ▲"}
         </button>
       </div>
       <div class="files-wrapper" style="position: relative;">
-        <div class="files-container" style="${isCollapsed ? 'max-height: 250px; overflow-y: auto;' : ''}">
+        <div class="files-container" style="${isCollapsed ? "max-height: 250px; overflow-y: auto;" : ""}">
         </div>
       </div>
       <button type="button" class="browse-more-btn" style="width: 100%; margin-top: 10px; padding: 8px 16px; background: #f8f9fa; border: 1px solid #d0d0d0; color: #333; cursor: pointer; font-size: 14px;">
@@ -1998,291 +2218,289 @@ class FileUploadHandler {
           </button>
         </div>
       </div>
-    `
+    `;
 
-    const filesContainer = filesList.querySelector('.files-container')
-    const toggleBtn = filesList.querySelector('.toggle-files-btn')
-    const browseMoreBtn = filesList.querySelector('.browse-more-btn')
+    const filesContainer = filesList.querySelector(".files-container");
+    const toggleBtn = filesList.querySelector(".toggle-files-btn");
+    const browseMoreBtn = filesList.querySelector(".browse-more-btn");
 
     this.uploadedFiles.forEach((file, index) => {
-      const fileDiv = document.createElement('div')
-      fileDiv.style.cssText = 'display: flex; align-items: center; gap: 12px; padding: 8px; background: white; border: 1px solid #e5e5e5; margin-bottom: 8px; margin-right: 5px; min-width: 0; position: relative; overflow: hidden;'
-      fileDiv.dataset.fileIndex = index
-      fileDiv.dataset.fileName = file.name
+      const fileDiv = document.createElement("div");
+      fileDiv.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 8px; background: white; border: 1px solid #e5e5e5; margin-bottom: 8px; margin-right: 5px; min-width: 0; position: relative; overflow: hidden;";
+      fileDiv.dataset.fileIndex = index;
+      fileDiv.dataset.fileName = file.name;
 
       // Handle file preview based on source
-      if (file.source === 'gdrive') {
+      if (file.source === "gdrive") {
         // Google Drive files - show placeholder
-        if (file.type.startsWith('image/')) {
-          const imgPlaceholder = document.createElement('div')
-          imgPlaceholder.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-          imgPlaceholder.textContent = 'IMG'
-          fileDiv.appendChild(imgPlaceholder)
-        } else if (file.type.startsWith('video/')) {
-          const videoIcon = document.createElement('div')
-          videoIcon.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-          videoIcon.textContent = 'VID'
-          fileDiv.appendChild(videoIcon)
+        if (file.type.startsWith("image/")) {
+          const imgPlaceholder = document.createElement("div");
+          imgPlaceholder.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+          imgPlaceholder.textContent = "IMG";
+          fileDiv.appendChild(imgPlaceholder);
+        } else if (file.type.startsWith("video/")) {
+          const videoIcon = document.createElement("div");
+          videoIcon.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+          videoIcon.textContent = "VID";
+          fileDiv.appendChild(videoIcon);
         }
       } else if (file.isFromLibrary) {
         // Library files - use thumbnailUrl or fileUrl
-        if (file.type.startsWith('image/')) {
-          const img = document.createElement('img')
-          img.style.cssText = 'width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;'
-          img.src = file.thumbnailUrl || file.fileUrl
-          fileDiv.appendChild(img)
-        } else if (file.type.startsWith('video/')) {
+        if (file.type.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.style.cssText = "width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;";
+          img.src = file.thumbnailUrl || file.fileUrl;
+          fileDiv.appendChild(img);
+        } else if (file.type.startsWith("video/")) {
           if (file.thumbnailUrl) {
-            const img = document.createElement('img')
-            img.style.cssText = 'width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;'
-            img.src = file.thumbnailUrl
-            fileDiv.appendChild(img)
+            const img = document.createElement("img");
+            img.style.cssText = "width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;";
+            img.src = file.thumbnailUrl;
+            fileDiv.appendChild(img);
           } else {
-            const videoIcon = document.createElement('div')
-            videoIcon.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-            videoIcon.textContent = 'VID'
-            fileDiv.appendChild(videoIcon)
+            const videoIcon = document.createElement("div");
+            videoIcon.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+            videoIcon.textContent = "VID";
+            fileDiv.appendChild(videoIcon);
           }
         }
       } else {
         // Local files - show actual preview
-        if (file.type.startsWith('image/')) {
-          const img = document.createElement('img')
-          img.style.cssText = 'width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;'
-          img.src = URL.createObjectURL(file)
-          fileDiv.appendChild(img)
-        } else if (file.type.startsWith('video/')) {
-          const videoIcon = document.createElement('div')
-          videoIcon.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-          videoIcon.textContent = 'VID'
-          fileDiv.appendChild(videoIcon)
+        if (file.type.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.style.cssText = "width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;";
+          img.src = URL.createObjectURL(file);
+          fileDiv.appendChild(img);
+        } else if (file.type.startsWith("video/")) {
+          const videoIcon = document.createElement("div");
+          videoIcon.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+          videoIcon.textContent = "VID";
+          fileDiv.appendChild(videoIcon);
         }
       }
 
-      const fileName = document.createElement('p')
-      fileName.style.cssText = 'font-size: 12px; color: #666; margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;'
-      fileName.textContent = file.name
+      const fileName = document.createElement("p");
+      fileName.style.cssText = "font-size: 12px; color: #666; margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;";
+      fileName.textContent = file.name;
 
-      const fileSize = document.createElement('span')
-      fileSize.style.cssText = 'font-size: 11px; color: #999; flex-shrink: 0; margin-left: 8px;'
-      fileSize.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`
+      const fileSize = document.createElement("span");
+      fileSize.style.cssText = "font-size: 11px; color: #999; flex-shrink: 0; margin-left: 8px;";
+      fileSize.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
       // Add Google Drive icon if from Drive
-      if (file.source === 'gdrive') {
-        const driveIcon = document.createElement('img')
-        driveIcon.src = 'icons/drive-icon.svg'
-        driveIcon.style.cssText = 'width: 16px; height: 16px; margin-left: 4px; flex-shrink: 0;'
-        driveIcon.title = 'Google Drive file'
-        fileDiv.appendChild(fileName)
-        fileDiv.appendChild(fileSize)
-        fileDiv.appendChild(driveIcon)
+      if (file.source === "gdrive") {
+        const driveIcon = document.createElement("img");
+        driveIcon.src = "icons/drive-icon.svg";
+        driveIcon.style.cssText = "width: 16px; height: 16px; margin-left: 4px; flex-shrink: 0;";
+        driveIcon.title = "Google Drive file";
+        fileDiv.appendChild(fileName);
+        fileDiv.appendChild(fileSize);
+        fileDiv.appendChild(driveIcon);
       } else {
-        fileDiv.appendChild(fileName)
-        fileDiv.appendChild(fileSize)
+        fileDiv.appendChild(fileName);
+        fileDiv.appendChild(fileSize);
       }
 
-      const removeBtn = document.createElement('button')
-      removeBtn.style.cssText = 'border: none; background: none; color: #666; cursor: pointer; font-size: 18px; font-weight: 400; padding: 0 4px; margin-left: 8px; flex-shrink: 0; transition: color 0.2s;'
-      removeBtn.textContent = '×'
-      removeBtn.onmouseover = () => removeBtn.style.color = '#333'
-      removeBtn.onmouseout = () => removeBtn.style.color = '#666'
-      removeBtn.onclick = () => this.removeFile(index)
+      const removeBtn = document.createElement("button");
+      removeBtn.style.cssText = "border: none; background: none; color: #666; cursor: pointer; font-size: 18px; font-weight: 400; padding: 0 4px; margin-left: 8px; flex-shrink: 0; transition: color 0.2s;";
+      removeBtn.textContent = "×";
+      removeBtn.onmouseover = () => (removeBtn.style.color = "#333");
+      removeBtn.onmouseout = () => (removeBtn.style.color = "#666");
+      removeBtn.onclick = () => this.removeFile(index);
 
-      fileDiv.appendChild(removeBtn)
+      fileDiv.appendChild(removeBtn);
 
       // Add progress bar
-      const progressBar = document.createElement('div')
-      progressBar.className = 'file-progress-bar'
-      const progressFill = document.createElement('div')
-      progressFill.className = 'file-progress-fill'
-      progressFill.setAttribute('data-fileIndex', index)
-      progressBar.appendChild(progressFill)
-      fileDiv.appendChild(progressBar)
+      const progressBar = document.createElement("div");
+      progressBar.className = "file-progress-bar";
+      const progressFill = document.createElement("div");
+      progressFill.className = "file-progress-fill";
+      progressFill.setAttribute("data-fileIndex", index);
+      progressBar.appendChild(progressFill);
+      fileDiv.appendChild(progressBar);
 
-      filesContainer.appendChild(fileDiv)
-    })
+      filesContainer.appendChild(fileDiv);
+    });
 
     // Add toggle functionality
-    toggleBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const isCurrentlyCollapsed = filesContainer.style.maxHeight === '250px'
+    toggleBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isCurrentlyCollapsed = filesContainer.style.maxHeight === "250px";
       if (isCurrentlyCollapsed) {
-        filesContainer.style.maxHeight = 'none'
-        filesContainer.style.overflowY = 'visible'
-        filesList.classList.remove('collapsed')
-        toggleBtn.textContent = 'Collapse ▲'
+        filesContainer.style.maxHeight = "none";
+        filesContainer.style.overflowY = "visible";
+        filesList.classList.remove("collapsed");
+        toggleBtn.textContent = "Collapse ▲";
       } else {
-        filesContainer.style.maxHeight = '250px'
-        filesContainer.style.overflowY = 'auto'
-        filesList.classList.add('collapsed')
-        toggleBtn.textContent = 'Show All ▼'
+        filesContainer.style.maxHeight = "250px";
+        filesContainer.style.overflowY = "auto";
+        filesList.classList.add("collapsed");
+        toggleBtn.textContent = "Show All ▼";
       }
-    })
+    });
 
     // Add browse more functionality
-    browseMoreBtn.addEventListener('click', () => {
-      const fileInput = document.querySelector('.file-drop-zone input[type="file"]')
+    browseMoreBtn.addEventListener("click", () => {
+      const fileInput = document.querySelector('.file-drop-zone input[type="file"]');
       if (fileInput) {
-        fileInput.click()
+        fileInput.click();
       }
-    })
+    });
 
     // Re-add event listeners for additional Google Drive input
-    const fetchBtnAdditional = filesList.querySelector('.gdrive-fetch-btn-additional')
-    const gdriveInputAdditional = filesList.querySelector('.gdrive-link-input-additional')
+    const fetchBtnAdditional = filesList.querySelector(".gdrive-fetch-btn-additional");
+    const gdriveInputAdditional = filesList.querySelector(".gdrive-link-input-additional");
 
     if (fetchBtnAdditional && gdriveInputAdditional) {
-      fetchBtnAdditional.addEventListener('click', () => {
-        const driveLink = gdriveInputAdditional.value.trim()
+      fetchBtnAdditional.addEventListener("click", () => {
+        const driveLink = gdriveInputAdditional.value.trim();
         if (driveLink) {
-          this.fetchGoogleDriveFiles(driveLink, true)
-          gdriveInputAdditional.value = ''
+          this.fetchGoogleDriveFiles(driveLink, true);
+          gdriveInputAdditional.value = "";
         }
-      })
+      });
 
-      gdriveInputAdditional.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          const driveLink = gdriveInputAdditional.value.trim()
+      gdriveInputAdditional.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          const driveLink = gdriveInputAdditional.value.trim();
           if (driveLink) {
-            this.fetchGoogleDriveFiles(driveLink, true)
-            gdriveInputAdditional.value = ''
+            this.fetchGoogleDriveFiles(driveLink, true);
+            gdriveInputAdditional.value = "";
           }
         }
-      })
+      });
     }
 
-    const continueBtn = document.querySelector('[data-step="3"] .continue-btn')
-    const account_id = document.querySelector('.account.selected').dataset.campaignId
+    const continueBtn = document.querySelector('[data-step="3"] .continue-btn');
+    const account_id = document.querySelector(".account.selected").dataset.campaignId;
     continueBtn.onclick = () => {
       // Hide back button when upload starts
-      const backBtn = document.querySelector('[data-step="3"] .back-btn')
+      const backBtn = document.querySelector('[data-step="3"] .back-btn');
       if (backBtn) {
-        backBtn.style.display = 'none'
+        backBtn.style.display = "none";
       }
 
       // Handle additional files upload
       if (this.initialUploadComplete && this.additionalFilesToUpload.length > 0) {
-        this.uploadAdditionalFiles(this.additionalFilesToUpload, account_id)
+        this.uploadAdditionalFiles(this.additionalFilesToUpload, account_id);
       } else {
-        this.uploadFiles(this.uploadedFiles, account_id)
+        this.uploadFiles(this.uploadedFiles, account_id);
       }
-    }
+    };
 
     // Add drag and drop to the files list area
-    const uploadStep3 = document.querySelector('[data-step="3"]')
+    const uploadStep3 = document.querySelector('[data-step="3"]');
     if (uploadStep3) {
-      uploadStep3.addEventListener('dragover', (e) => {
-        e.preventDefault()
-        filesList.style.backgroundColor = '#e3f2fd'
-      })
+      uploadStep3.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        filesList.style.backgroundColor = "#e3f2fd";
+      });
 
-      uploadStep3.addEventListener('dragleave', () => {
-        filesList.style.backgroundColor = 'transparent'
-      })
+      uploadStep3.addEventListener("dragleave", () => {
+        filesList.style.backgroundColor = "transparent";
+      });
 
-      uploadStep3.addEventListener('drop', (e) => {
-        e.preventDefault()
-        filesList.style.backgroundColor = 'transparent'
-        this.handleFiles(e.dataTransfer.files)
-      })
+      uploadStep3.addEventListener("drop", (e) => {
+        e.preventDefault();
+        filesList.style.backgroundColor = "transparent";
+        this.handleFiles(e.dataTransfer.files);
+      });
     }
   }
 
   removeFile(index) {
-    const removedFile = this.uploadedFiles[index]
-    this.uploadedFiles.splice(index, 1)
+    const removedFile = this.uploadedFiles[index];
+    this.uploadedFiles.splice(index, 1);
 
     // Also remove from additional files if it's there
     if (this.additionalFilesToUpload.length > 0) {
-      const additionalIndex = this.additionalFilesToUpload.findIndex(file =>
-        file.name === removedFile.name && file.size === removedFile.size
-      )
+      const additionalIndex = this.additionalFilesToUpload.findIndex((file) => file.name === removedFile.name && file.size === removedFile.size);
       if (additionalIndex !== -1) {
-        this.additionalFilesToUpload.splice(additionalIndex, 1)
+        this.additionalFilesToUpload.splice(additionalIndex, 1);
       }
     }
 
     if (this.uploadedFiles.length === 0) {
       // If no files left, go back to file upload step
-      this.showStep(2)
-      this.initialUploadComplete = false
-      this.additionalFilesToUpload = []
+      this.showStep(2);
+      this.initialUploadComplete = false;
+      this.additionalFilesToUpload = [];
     } else {
       // Re-render the file list
-      this.displayUploadedFiles()
+      this.displayUploadedFiles();
 
       // Update button if we still have additional files to upload
       if (this.initialUploadComplete && this.additionalFilesToUpload.length > 0) {
-        this.updateUploadButtonForAdditionalFiles()
+        this.updateUploadButtonForAdditionalFiles();
       }
     }
   }
 
   updateUploadButtonForAdditionalFiles() {
-    const button = document.querySelector('[data-step="3"] .continue-btn')
-    const additionalCount = this.additionalFilesToUpload.length
+    const button = document.querySelector('[data-step="3"] .continue-btn');
+    const additionalCount = this.additionalFilesToUpload.length;
 
-    button.textContent = `Upload ${additionalCount} More ${additionalCount === 1 ? 'File' : 'Files'}`
-    button.style.backgroundColor = '#103dee'
-    button.style.cursor = 'pointer'
-    button.disabled = false
-    button.style.opacity = '1'
-    button.classList.remove('upload-complete')
+    button.textContent = `Upload ${additionalCount} More ${additionalCount === 1 ? "File" : "Files"}`;
+    button.style.backgroundColor = "#103dee";
+    button.style.cursor = "pointer";
+    button.disabled = false;
+    button.style.opacity = "1";
+    button.classList.remove("upload-complete");
 
     // Show back button again
-    const backBtn = document.querySelector('[data-step="3"] .back-btn')
+    const backBtn = document.querySelector('[data-step="3"] .back-btn');
     if (backBtn) {
-      backBtn.style.display = 'inline-block'
+      backBtn.style.display = "inline-block";
     }
   }
 
   async uploadFiles(files, account_id) {
-    this.showLoadingState()
+    this.showLoadingState();
 
     // Separate files by type
-    const gdriveFiles = files.filter(file => file.source === 'gdrive')
-    const libraryFiles = files.filter(file => file.isFromLibrary)
-    const localFiles = files.filter(file => !file.source && !file.isFromLibrary)
+    const gdriveFiles = files.filter((file) => file.source === "gdrive");
+    const libraryFiles = files.filter((file) => file.isFromLibrary);
+    const localFiles = files.filter((file) => !file.source && !file.isFromLibrary);
 
     // Initialize uploadPromises array early
-    const uploadPromises = []
+    const uploadPromises = [];
 
-    const button = document.querySelector('[data-step="3"] .continue-btn')
+    const button = document.querySelector('[data-step="3"] .continue-btn');
 
     // Update button text to show total files being processed
-    const totalFiles = gdriveFiles.length + localFiles.length + libraryFiles.length
-    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? 's' : ''}`)
+    const totalFiles = gdriveFiles.length + localFiles.length + libraryFiles.length;
+    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? "s" : ""}`);
 
     // Reset progress tracker for new upload
-    this.progressTracker.reset()
+    this.progressTracker.reset();
 
     // Create session first and connect to SSE
-    let sessionId = null
+    let sessionId = null;
 
     // For video files, we need to create a session and connect to SSE first
-    const hasVideos = localFiles.some(file => file.type && file.type.startsWith('video/'))
+    const hasVideos = localFiles.some((file) => file.type && file.type.startsWith("video/"));
     if (hasVideos || gdriveFiles.length > 0) {
       // Create a session by calling a simple endpoint first
       try {
-        const sessionResponse = await fetch('/api/create-upload-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ totalFiles })
-        })
+        const sessionResponse = await fetch("/api/create-upload-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ totalFiles }),
+        });
 
         if (sessionResponse.ok) {
-          const sessionData = await sessionResponse.json()
-          sessionId = sessionData.sessionId
+          const sessionData = await sessionResponse.json();
+          sessionId = sessionData.sessionId;
 
           // Connect to SSE immediately
-          this.progressTracker.connectToSSE(sessionId)
+          this.progressTracker.connectToSSE(sessionId);
 
           // Give SSE more time to properly connect
-          await new Promise(resolve => setTimeout(resolve, 500))
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       } catch (err) {
-        console.warn('Could not create upload session:', err)
+        console.warn("Could not create upload session:", err);
       }
     }
 
@@ -2291,199 +2509,206 @@ class FileUploadHandler {
       const gdrivePromise = (async () => {
         try {
           // Extract file IDs from Google Drive files
-          const fileIds = gdriveFiles.map(file => file.gdrive_id)
+          const fileIds = gdriveFiles.map((file) => file.gdrive_id);
 
-          console.log('Processing Google Drive files:', fileIds)
+          console.log("Processing Google Drive files:", fileIds);
 
           // Call the new combined download and upload endpoint
-          const downloadResponse = await fetch('/api/download-and-upload-google-files', {
-            method: 'POST',
+          const downloadResponse = await fetch("/api/download-and-upload-google-files", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json'
+              "Content-Type": "application/json",
             },
-            body: JSON.stringify({ fileIds, account_id, sessionId })
-          })
+            body: JSON.stringify({ fileIds, account_id, sessionId }),
+          });
 
           if (!downloadResponse.ok) {
-            const errorData = await downloadResponse.json()
-            console.error('Google Drive upload failed:', errorData)
-            throw new Error(errorData.error || 'Failed to process Google Drive files')
+            const errorData = await downloadResponse.json();
+            console.error("Google Drive upload failed:", errorData);
+            throw new Error(errorData.error || "Failed to process Google Drive files");
           }
 
-          const gdriveResponse = await downloadResponse.json()
-          console.log('Google Drive upload response:', gdriveResponse)
+          const gdriveResponse = await downloadResponse.json();
+          console.log("Google Drive upload response:", gdriveResponse);
 
-          const gdriveResults = gdriveResponse.results || gdriveResponse
+          const gdriveResults = gdriveResponse.results || gdriveResponse;
 
           // Process results and add to normalized assets
-          const skippedFiles = []
-          const gdriveAssets = []
+          const skippedFiles = [];
+          const gdriveAssets = [];
 
           for (const result of gdriveResults) {
-            if (result.status === 'success') {
+            if (result.status === "success") {
               // Format the result to match expected asset structure
-              if (result.type === 'image') {
+              if (result.type === "image") {
                 gdriveAssets.push({
-                  type: 'image',
+                  type: "image",
                   file: result.file,
                   imageHash: result.imageHash,
-                  status: 'success'
-                })
-              } else if (result.type === 'video') {
+                  status: "success",
+                });
+              } else if (result.type === "video") {
                 gdriveAssets.push({
-                  type: 'video',
+                  type: "video",
                   file: result.file,
                   data: result.data,
-                  status: 'success'
-                })
+                  status: "success",
+                });
               }
-            } else if (result.status === 'skipped') {
-              skippedFiles.push(result)
+            } else if (result.status === "skipped") {
+              skippedFiles.push(result);
             }
           }
 
           // Show warning if files were skipped
           if (skippedFiles.length > 0) {
-            const skippedNames = skippedFiles.slice(0, 3).map(f => f.fileName || f.file).join(', ')
-            const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : ''
-            alert(`Warning: Some files were skipped (only images and videos are supported): ${skippedNames}${moreText}`)
+            const skippedNames = skippedFiles
+              .slice(0, 3)
+              .map((f) => f.fileName || f.file)
+              .join(", ");
+            const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : "";
+            alert(`Warning: Some files were skipped (only images and videos are supported): ${skippedNames}${moreText}`);
           }
 
           // Return formatted results
           if (gdriveAssets.length > 0) {
-            return gdriveAssets.map(asset => ({
-              status: 'fulfilled',
-              value: asset
-            }))
+            return gdriveAssets.map((asset) => ({
+              status: "fulfilled",
+              value: asset,
+            }));
           }
-          return []
-
+          return [];
         } catch (error) {
-          console.error('Error processing Google Drive files:', error)
-          alert('Failed to process Google Drive files. Please try again.')
-          throw error
+          console.error("Error processing Google Drive files:", error);
+          alert("Failed to process Google Drive files. Please try again.");
+          throw error;
         }
-      })()
+      })();
 
-      uploadPromises.push(gdrivePromise)
+      uploadPromises.push(gdrivePromise);
     }
-    const imageFiles = localFiles.filter(file => file.type && file.type.startsWith('image/'))
-    const videoFiles = localFiles.filter(file => file.type && file.type.startsWith('video/'))
+    const imageFiles = localFiles.filter((file) => file.type && file.type.startsWith("image/"));
+    const videoFiles = localFiles.filter((file) => file.type && file.type.startsWith("video/"));
 
     if (imageFiles.length > 0) {
-      const imageFormData = new FormData()
-      imageFiles.forEach(file => imageFormData.append('file', file))
-      imageFormData.append('account_id', account_id)
+      const imageFormData = new FormData();
+      imageFiles.forEach((file) => imageFormData.append("file", file));
+      imageFormData.append("account_id", account_id);
 
       uploadPromises.push(
-        fetch('/api/upload-images', {
+        fetch("/api/upload-images", {
           body: imageFormData,
-          method: 'POST'
-        }).then(res => res.json())
-      )
+          method: "POST",
+        }).then((res) => res.json())
+      );
     }
 
     if (videoFiles.length > 0) {
-      const videoFormData = new FormData()
-      videoFiles.forEach(file => videoFormData.append('file', file))
-      videoFormData.append('account_id', account_id)
+      const videoFormData = new FormData();
+      videoFiles.forEach((file) => videoFormData.append("file", file));
+      videoFormData.append("account_id", account_id);
       if (sessionId) {
-        videoFormData.append('sessionId', sessionId)
+        videoFormData.append("sessionId", sessionId);
       }
 
       uploadPromises.push(
-        fetch('/api/upload-videos', {
+        fetch("/api/upload-videos", {
           body: videoFormData,
-          method: 'POST'
-        }).then(res => res.json())
-      )
+          method: "POST",
+        }).then((res) => res.json())
+      );
     }
 
     try {
-      const results = await Promise.all(uploadPromises)
-      const normalizedAssets = []
-      const failedUploads = []
+      const results = await Promise.all(uploadPromises);
+      const normalizedAssets = [];
+      const failedUploads = [];
 
       // No need to check for sessionId in results since we connected earlier
 
-      results.forEach(result => {
+      results.forEach((result) => {
         // Handle results that might have sessionId wrapper
-        const items = result && result.results ? result.results : result
+        const items = result && result.results ? result.results : result;
 
         if (Array.isArray(items)) {
-          items.forEach(item => {
-            if (item.status === 'fulfilled') {
+          items.forEach((item) => {
+            if (item.status === "fulfilled") {
               // Check if the upload actually succeeded
-              if (item.value.status === 'failed') {
+              if (item.value.status === "failed") {
                 failedUploads.push({
                   file: item.value.file,
-                  error: item.value.error || 'Upload failed'
-                })
-              } else if (item.value.type === 'image') {
-                normalizedAssets.push(item.value)
-              } else if (item.value.type === 'video') {
+                  error: item.value.error || "Upload failed",
+                });
+              } else if (item.value.type === "image") {
+                normalizedAssets.push(item.value);
+              } else if (item.value.type === "video") {
                 normalizedAssets.push({
-                  type: 'video',
+                  type: "video",
                   file: item.value.file,
                   data: item.value.data,
-                  status: 'success'
-                })
+                  status: "success",
+                });
               }
-            } else if (item.status === 'rejected') {
+            } else if (item.status === "rejected") {
               failedUploads.push({
-                file: 'Unknown file',
-                error: item.reason || 'Upload failed'
-              })
+                file: "Unknown file",
+                error: item.reason || "Upload failed",
+              });
             }
-          })
+          });
         } else if (result) {
           // Handle single result objects
-          result.forEach(item => {
-            if (item.status === 'fulfilled') {
-              if (item.value.status === 'failed') {
+          result.forEach((item) => {
+            if (item.status === "fulfilled") {
+              if (item.value.status === "failed") {
                 failedUploads.push({
                   file: item.value.file,
-                  error: item.value.error || 'Upload failed'
-                })
-              } else if (item.value.type === 'image') {
-                normalizedAssets.push(item.value)
-              } else if (item.value.type === 'video') {
+                  error: item.value.error || "Upload failed",
+                });
+              } else if (item.value.type === "image") {
+                normalizedAssets.push(item.value);
+              } else if (item.value.type === "video") {
                 normalizedAssets.push({
-                  type: 'video',
+                  type: "video",
                   file: item.value.file,
                   data: item.value.data,
-                  status: 'success'
-                })
+                  status: "success",
+                });
               }
-            } else if (item.status === 'rejected') {
+            } else if (item.status === "rejected") {
               failedUploads.push({
-                file: 'Unknown file',
-                error: item.reason || 'Upload failed'
-              })
+                file: "Unknown file",
+                error: item.reason || "Upload failed",
+              });
             }
-          })
+          });
         }
-      })
+      });
 
       // Check if all uploads failed
       if (normalizedAssets.length === 0 && failedUploads.length > 0) {
         // All uploads failed
         if (this.progressTracker.eventSource) {
-          this.progressTracker.eventSource.close()
+          this.progressTracker.eventSource.close();
         }
-        this.hideLoadingState(true) // Pass true to indicate errors
+        // Clear upload state on failure
+        appState.setUploadInProgress(false);
+        this.hideLoadingState(true); // Pass true to indicate errors
 
         // Show error message
-        const errorMsg = failedUploads.map(f => `${f.file}: ${f.error}`).join('\n')
-        alert(`All uploads failed:\n\n${errorMsg}\n\nPlease try again.`)
+        const errorMsg = failedUploads.map((f) => `${f.file}: ${f.error}`).join("\n");
+        alert(`All uploads failed:\n\n${errorMsg}\n\nPlease try again.`);
 
         // Keep user on upload screen
-        return
+        return;
       } else if (failedUploads.length > 0) {
         // Some uploads failed
-        const failedNames = failedUploads.slice(0, 3).map(f => f.file).join(', ')
-        const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : ''
-        alert(`Warning: Some uploads failed: ${failedNames}${moreText}\n\nYou can continue with the successful uploads or go back and try again.`)
+        const failedNames = failedUploads
+          .slice(0, 3)
+          .map((f) => f.file)
+          .join(", ");
+        const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
+        alert(`Warning: Some uploads failed: ${failedNames}${moreText}\n\nYou can continue with the successful uploads or go back and try again.`);
       }
 
       // Set up completion handler only if we have successful uploads
@@ -2491,525 +2716,538 @@ class FileUploadHandler {
         if (this.progressTracker.eventSource) {
           this.progressTracker.onComplete = (hasErrors, errors) => {
             // Even if SSE reports errors, we have some successful uploads
-            this.hideLoadingState(false) // Pass false for success
-            this.showAdCopySection()
-          }
+            this.hideLoadingState(false); // Pass false for success
+            this.showAdCopySection();
+          };
         } else {
           // No SSE connection, complete immediately
-          this.hideLoadingState(false) // Pass false for success
-          this.showAdCopySection()
+          this.hideLoadingState(false); // Pass false for success
+          this.showAdCopySection();
         }
 
-        appState.updateState('uploadedAssets', normalizedAssets)
+        appState.updateState("uploadedAssets", normalizedAssets);
       } else {
         // No successful uploads
-        this.hideLoadingState(true) // Pass true to indicate errors
+        this.hideLoadingState(true); // Pass true to indicate errors
       }
-
     } catch (err) {
-      console.log('There was an error uploading files to meta.', err)
-      this.hideLoadingState(true) // Pass true to indicate errors
-      alert('An error occurred during upload. Please try again.')
-      return err
+      console.log("There was an error uploading files to meta.", err);
+      // Clear upload state on error
+      appState.setUploadInProgress(false);
+      this.hideLoadingState(true); // Pass true to indicate errors
+      alert("An error occurred during upload. Please try again.");
+      return err;
     }
   }
 
   async uploadAdditionalFiles(files, account_id) {
-    this.showLoadingState()
+    this.showLoadingState();
 
     // Separate Google Drive files from local files
-    const gdriveFiles = files.filter(file => file.source === 'gdrive')
-    const localFiles = files.filter(file => !file.source || file.source !== 'gdrive')
+    const gdriveFiles = files.filter((file) => file.source === "gdrive");
+    const localFiles = files.filter((file) => !file.source || file.source !== "gdrive");
 
     // Initialize uploadPromises array
-    const uploadPromises = []
+    const uploadPromises = [];
 
-    const button = document.querySelector('[data-step="3"] .continue-btn')
+    const button = document.querySelector('[data-step="3"] .continue-btn');
 
     // Update button text to show total files being processed
-    const totalFiles = gdriveFiles.length + localFiles.length
-    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? 's' : ''}`)
+    const totalFiles = gdriveFiles.length + localFiles.length;
+    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? "s" : ""}`);
 
     // Handle Google Drive files as a promise (non-blocking)
     if (gdriveFiles.length > 0) {
       const gdrivePromise = (async () => {
         try {
           // Extract file IDs from Google Drive files
-          const fileIds = gdriveFiles.map(file => file.gdrive_id)
+          const fileIds = gdriveFiles.map((file) => file.gdrive_id);
 
-          console.log('Processing Google Drive files:', fileIds)
+          console.log("Processing Google Drive files:", fileIds);
 
           // Call the new combined download and upload endpoint
-          const downloadResponse = await fetch('/api/download-and-upload-google-files', {
-            method: 'POST',
+          const downloadResponse = await fetch("/api/download-and-upload-google-files", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json'
+              "Content-Type": "application/json",
             },
-            body: JSON.stringify({ fileIds, account_id })
-          })
+            body: JSON.stringify({ fileIds, account_id }),
+          });
 
           if (!downloadResponse.ok) {
-            const errorData = await downloadResponse.json()
-            console.error('Google Drive upload failed:', errorData)
-            throw new Error(errorData.error || 'Failed to process Google Drive files')
+            const errorData = await downloadResponse.json();
+            console.error("Google Drive upload failed:", errorData);
+            throw new Error(errorData.error || "Failed to process Google Drive files");
           }
 
-          const gdriveResponse = await downloadResponse.json()
-          console.log('Google Drive upload response:', gdriveResponse)
+          const gdriveResponse = await downloadResponse.json();
+          console.log("Google Drive upload response:", gdriveResponse);
 
-          const gdriveResults = gdriveResponse.results || gdriveResponse
+          const gdriveResults = gdriveResponse.results || gdriveResponse;
 
           // Process results and add to normalized assets
-          const skippedFiles = []
-          const gdriveAssets = []
+          const skippedFiles = [];
+          const gdriveAssets = [];
 
           for (const result of gdriveResults) {
-            if (result.status === 'success') {
+            if (result.status === "success") {
               // Format the result to match expected asset structure
-              if (result.type === 'image') {
+              if (result.type === "image") {
                 gdriveAssets.push({
-                  type: 'image',
+                  type: "image",
                   file: result.file,
                   imageHash: result.imageHash,
-                  status: 'success'
-                })
-              } else if (result.type === 'video') {
+                  status: "success",
+                });
+              } else if (result.type === "video") {
                 gdriveAssets.push({
-                  type: 'video',
+                  type: "video",
                   file: result.file,
                   data: result.data,
-                  status: 'success'
-                })
+                  status: "success",
+                });
               }
-            } else if (result.status === 'skipped') {
-              skippedFiles.push(result)
+            } else if (result.status === "skipped") {
+              skippedFiles.push(result);
             }
           }
 
           // Show warning if files were skipped
           if (skippedFiles.length > 0) {
-            const skippedNames = skippedFiles.slice(0, 3).map(f => f.fileName || f.file).join(', ')
-            const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : ''
-            alert(`Warning: Some files were skipped (only images and videos are supported): ${skippedNames}${moreText}`)
+            const skippedNames = skippedFiles
+              .slice(0, 3)
+              .map((f) => f.fileName || f.file)
+              .join(", ");
+            const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : "";
+            alert(`Warning: Some files were skipped (only images and videos are supported): ${skippedNames}${moreText}`);
           }
 
           // Return formatted results
           if (gdriveAssets.length > 0) {
-            return gdriveAssets.map(asset => ({
-              status: 'fulfilled',
-              value: asset
-            }))
+            return gdriveAssets.map((asset) => ({
+              status: "fulfilled",
+              value: asset,
+            }));
           }
-          return []
-
+          return [];
         } catch (error) {
-          console.error('Error processing Google Drive files:', error)
-          alert('Failed to process Google Drive files. Please try again.')
-          throw error
+          console.error("Error processing Google Drive files:", error);
+          alert("Failed to process Google Drive files. Please try again.");
+          throw error;
         }
-      })()
+      })();
 
-      uploadPromises.push(gdrivePromise)
+      uploadPromises.push(gdrivePromise);
     }
-    const imageFiles = localFiles.filter(file => file.type && file.type.startsWith('image/'))
-    const videoFiles = localFiles.filter(file => file.type && file.type.startsWith('video/'))
+    const imageFiles = localFiles.filter((file) => file.type && file.type.startsWith("image/"));
+    const videoFiles = localFiles.filter((file) => file.type && file.type.startsWith("video/"));
 
     if (imageFiles.length > 0) {
-      const imageFormData = new FormData()
-      imageFiles.forEach(file => imageFormData.append('file', file))
-      imageFormData.append('account_id', account_id)
+      const imageFormData = new FormData();
+      imageFiles.forEach((file) => imageFormData.append("file", file));
+      imageFormData.append("account_id", account_id);
 
       uploadPromises.push(
-        fetch('/api/upload-images', {
+        fetch("/api/upload-images", {
           body: imageFormData,
-          method: 'POST'
-        }).then(res => res.json())
-      )
+          method: "POST",
+        }).then((res) => res.json())
+      );
     }
 
     if (videoFiles.length > 0) {
-      const videoFormData = new FormData()
-      videoFiles.forEach(file => videoFormData.append('file', file))
-      videoFormData.append('account_id', account_id)
+      const videoFormData = new FormData();
+      videoFiles.forEach((file) => videoFormData.append("file", file));
+      videoFormData.append("account_id", account_id);
       if (sessionId) {
-        videoFormData.append('sessionId', sessionId)
+        videoFormData.append("sessionId", sessionId);
       }
 
       uploadPromises.push(
-        fetch('/api/upload-videos', {
+        fetch("/api/upload-videos", {
           body: videoFormData,
-          method: 'POST'
-        }).then(res => res.json())
-      )
+          method: "POST",
+        }).then((res) => res.json())
+      );
     }
 
     try {
-      const results = await Promise.all(uploadPromises)
-      const normalizedAssets = []
+      const results = await Promise.all(uploadPromises);
+      const normalizedAssets = [];
 
-      results.forEach(result => {
-        result.forEach(item => {
-          if (item.status === 'fulfilled') {
-            if (item.value.type === 'image') {
-              normalizedAssets.push(item.value)
-            } else if (item.value.type === 'video') {
+      results.forEach((result) => {
+        result.forEach((item) => {
+          if (item.status === "fulfilled") {
+            if (item.value.type === "image") {
+              normalizedAssets.push(item.value);
+            } else if (item.value.type === "video") {
               normalizedAssets.push({
-                type: 'video',
+                type: "video",
                 file: item.value.file,
                 data: item.value.data,
-                status: 'success'
-              })
+                status: "success",
+              });
             }
           }
-        })
-      })
+        });
+      });
 
       // Update app state with spread operator
-      const currentAssets = appState.getState().uploadedAssets
-      appState.updateState('uploadedAssets', [...currentAssets, ...normalizedAssets])
+      const currentAssets = appState.getState().uploadedAssets;
+      appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
 
       // Clear additional files array
-      this.additionalFilesToUpload = []
+      this.additionalFilesToUpload = [];
 
-      this.hideLoadingState()
+      this.hideLoadingState();
 
       // Update ad copy section title
-      this.updateAdCopySectionTitle()
-
+      this.updateAdCopySectionTitle();
     } catch (err) {
-      console.log('There was an error uploading additional files to meta.', err)
-      return err
+      console.log("There was an error uploading additional files to meta.", err);
+      return err;
     }
   }
 
   updateAdCopySectionTitle() {
-    const adCopySection = document.querySelector('.ad-copy-container')
-    if (adCopySection.style.display === 'block') {
-      const title = adCopySection.querySelector('h2')
-      let fileTypeText
-      if (this.selectedUploadType === 'mixed') {
-        fileTypeText = 'Files'
-      } else if (this.selectedUploadType === 'image') {
-        fileTypeText = 'Images'
+    const adCopySection = document.querySelector(".ad-copy-container");
+    if (adCopySection.style.display === "block") {
+      const title = adCopySection.querySelector("h2");
+      let fileTypeText;
+      if (this.selectedUploadType === "mixed") {
+        fileTypeText = "Files";
+      } else if (this.selectedUploadType === "image") {
+        fileTypeText = "Images";
       } else {
-        fileTypeText = 'Videos'
+        fileTypeText = "Videos";
       }
-      title.textContent = `Editing Ad Copy for All ${this.uploadedFiles.length} ${fileTypeText}`
+      title.textContent = `Editing Ad Copy for All ${this.uploadedFiles.length} ${fileTypeText}`;
     }
   }
 
   showAdCopySection() {
-    const adCopySection = document.querySelector('.ad-copy-container')
-    adCopySection.style.display = 'block'
+    const adCopySection = document.querySelector(".ad-copy-container");
+    adCopySection.style.display = "block";
 
-    const title = adCopySection.querySelector('h2')
-    let fileTypeText
-    if (this.selectedUploadType === 'mixed') {
-      fileTypeText = 'Files'
-    } else if (this.selectedUploadType === 'image') {
-      fileTypeText = 'Images'
+    const title = adCopySection.querySelector("h2");
+    let fileTypeText;
+    if (this.selectedUploadType === "mixed") {
+      fileTypeText = "Files";
+    } else if (this.selectedUploadType === "image") {
+      fileTypeText = "Images";
     } else {
-      fileTypeText = 'Videos'
+      fileTypeText = "Videos";
     }
-    title.textContent = `Editing Ad Copy for All ${this.uploadedFiles.length} ${fileTypeText}`
+    title.textContent = `Editing Ad Copy for All ${this.uploadedFiles.length} ${fileTypeText}`;
 
     // Populate page dropdown if we have pages data
-    const dropdowns = adCopySection.querySelectorAll('.custom-dropdown')
+    const dropdowns = adCopySection.querySelectorAll(".custom-dropdown");
     if (dropdowns.length > 0) {
-      new CustomDropdown('.ad-copy-container .custom-dropdown')
+      new CustomDropdown(".ad-copy-container .custom-dropdown");
     }
 
     adCopySection.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    })
+      behavior: "smooth",
+      block: "start",
+    });
 
-    const continueBtn = adCopySection.querySelector('button')
+    const continueBtn = adCopySection.querySelector("button");
     continueBtn.onclick = (e) => {
-      e.preventDefault()
+      e.preventDefault();
       if (this.validateAdCopyForm()) {
-        this.showReviewSection()
+        this.showReviewSection();
       }
-    }
+    };
   }
 
   validateAdCopyForm() {
-    const inputs = document.querySelectorAll('.ad-copy-container input[required], .ad-copy-container textarea[required]')
-    let isValid = true
+    const inputs = document.querySelectorAll(".ad-copy-container input[required], .ad-copy-container textarea[required]");
+    let isValid = true;
 
-    inputs.forEach(input => {
+    inputs.forEach((input) => {
       if (!input.value.trim()) {
-        input.classList.add('empty-input')
-        isValid = false
+        input.classList.add("empty-input");
+        isValid = false;
 
-        input.addEventListener('input', () => {
-          input.classList.remove('empty-input')
-        }, { once: true })
+        input.addEventListener(
+          "input",
+          () => {
+            input.classList.remove("empty-input");
+          },
+          { once: true }
+        );
       } else {
-        input.classList.remove('empty-input')
+        input.classList.remove("empty-input");
       }
-    })
+    });
 
     // Validate URL format
-    const destinationUrlInput = document.querySelector('.ad-copy-container input[placeholder="Destination URL*"]')
+    const destinationUrlInput = document.querySelector('.ad-copy-container input[placeholder="Destination URL*"]');
     if (destinationUrlInput && destinationUrlInput.value) {
       try {
         // Just check if it starts with http:// or https://
-        const urlValue = destinationUrlInput.value.trim()
-        if (!urlValue.startsWith('http://') && !urlValue.startsWith('https://')) {
-          destinationUrlInput.classList.add('empty-input')
-          isValid = false
-          alert('URL must start with http:// or https://')
+        const urlValue = destinationUrlInput.value.trim();
+        if (!urlValue.startsWith("http://") && !urlValue.startsWith("https://")) {
+          destinationUrlInput.classList.add("empty-input");
+          isValid = false;
+          alert("URL must start with http:// or https://");
         }
       } catch (error) {
-        console.error('Error validating URL:', error)
-        destinationUrlInput.classList.add('empty-input')
-        isValid = false
+        console.error("Error validating URL:", error);
+        destinationUrlInput.classList.add("empty-input");
+        isValid = false;
       }
     }
 
     // Validate Page dropdown
-    const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display')
-    if (!pageDropdownDisplay || pageDropdownDisplay.classList.contains('placeholder')) {
-      pageDropdownDisplay.parentElement.classList.add('empty-input')
-      isValid = false
+    const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
+    if (!pageDropdownDisplay || pageDropdownDisplay.classList.contains("placeholder")) {
+      pageDropdownDisplay.parentElement.classList.add("empty-input");
+      isValid = false;
     } else {
-      pageDropdownDisplay.parentElement.classList.remove('empty-input')
+      pageDropdownDisplay.parentElement.classList.remove("empty-input");
     }
 
     // Validate CTA dropdown
-    const ctaSelectedOption = document.querySelector('.ad-copy-container .dropdown-options.cta li.selected')
-    const ctaDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="cta"] .dropdown-display')
+    const ctaSelectedOption = document.querySelector(".ad-copy-container .dropdown-options.cta li.selected");
+    const ctaDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="cta"] .dropdown-display');
 
     // Check if there's a selected option OR if the dropdown has a data-value set (from initialization)
     if (!ctaSelectedOption && (!ctaDropdownDisplay || !ctaDropdownDisplay.dataset.value)) {
-      ctaDropdownDisplay.parentElement.classList.add('empty-input')
-      isValid = false
+      ctaDropdownDisplay.parentElement.classList.add("empty-input");
+      isValid = false;
     } else {
-      ctaDropdownDisplay.parentElement.classList.remove('empty-input')
+      ctaDropdownDisplay.parentElement.classList.remove("empty-input");
     }
 
     // Validate destination URL
-    const urlInput = document.querySelector('.ad-copy-container input[type="url"]')
+    const urlInput = document.querySelector('.ad-copy-container input[type="url"]');
     if (urlInput) {
-      const urlValue = urlInput.value.trim()
+      const urlValue = urlInput.value.trim();
 
       if (!urlValue) {
-        urlInput.classList.add('empty-input')
-        isValid = false
+        urlInput.classList.add("empty-input");
+        isValid = false;
       } else {
         // Use browser's built-in URL validation instead of regex
         try {
-          new URL(urlValue)
-          urlInput.classList.remove('empty-input')
+          new URL(urlValue);
+          urlInput.classList.remove("empty-input");
         } catch (e) {
           // If URL constructor fails, check if it at least starts with http/https
-          if (!urlValue.startsWith('http://') && !urlValue.startsWith('https://')) {
-            urlInput.classList.add('empty-input')
-            isValid = false
-            alert('URL must start with http:// or https://')
+          if (!urlValue.startsWith("http://") && !urlValue.startsWith("https://")) {
+            urlInput.classList.add("empty-input");
+            isValid = false;
+            alert("URL must start with http:// or https://");
           }
         }
       }
 
-      urlInput.addEventListener('input', () => {
-        urlInput.classList.remove('empty-input')
-      }, { once: true })
+      urlInput.addEventListener(
+        "input",
+        () => {
+          urlInput.classList.remove("empty-input");
+        },
+        { once: true }
+      );
     }
 
-    return isValid
+    return isValid;
   }
 
   showReviewSection() {
-    const reviewSection = document.querySelector('.create-ads-container')
-    reviewSection.style.display = 'block'
+    const reviewSection = document.querySelector(".create-ads-container");
+    reviewSection.style.display = "block";
 
     // Update review content
-    this.populateReviewData()
+    this.populateReviewData();
 
     // Scroll to position review section at top of viewport
     reviewSection.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    })
+      behavior: "smooth",
+      block: "start",
+    });
 
     // Handle final submission
-    const createBtn = reviewSection.querySelector('.create-ads-button')
+    const createBtn = reviewSection.querySelector(".create-ads-button");
     createBtn.onclick = () => {
-      this.createAds()
-    }
+      this.createAds();
+    };
   }
 
   populateReviewData() {
     // Update ad set name in review
-    const reviewTitle = document.querySelector('.review-container h3')
+    const reviewTitle = document.querySelector(".review-container h3");
 
-    const adset_name = document.querySelector('.config-adset-name').value
-    reviewTitle.textContent = `Ad Set: ${adset_name}`
+    const adset_name = document.querySelector(".config-adset-name").value;
+    reviewTitle.textContent = `Ad Set: ${adset_name}`;
 
     // Update image previews
-    const dataContainer = document.querySelector('.data-container-creatives')
-    const imagesContainer = document.querySelector('.data-container-creatives .images')
+    const dataContainer = document.querySelector(".data-container-creatives");
+    const imagesContainer = document.querySelector(".data-container-creatives .images");
     if (imagesContainer) {
-      const isCollapsed = this.uploadedFiles.length > 3
+      const isCollapsed = this.uploadedFiles.length > 3;
 
       // Add toggle button and count header
-      const containerHeader = document.createElement('div')
-      containerHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 0;'
+      const containerHeader = document.createElement("div");
+      containerHeader.style.cssText = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 0;";
       containerHeader.innerHTML = `
         <h4 style="font-size: 14px; font-weight: 600; color: #333; margin: 0;">
-          Creatives (${this.uploadedFiles.length} ${this.selectedUploadType === 'image' ? 'images' : 'videos'})
+          Creatives (${this.uploadedFiles.length} ${this.selectedUploadType === "image" ? "images" : "videos"})
         </h4>
         <button type="button" class="toggle-review-btn" style="background: none; border: none; color: #103dee; cursor: pointer; font-size: 13px; padding: 4px 8px; text-align: right;">
-          ${isCollapsed ? 'Show All ▼' : 'Collapse ▲'}
+          ${isCollapsed ? "Show All ▼" : "Collapse ▲"}
         </button>
-      `
+      `;
 
       // Clear and rebuild the container structure
-      imagesContainer.innerHTML = ''
-      imagesContainer.appendChild(containerHeader)
+      imagesContainer.innerHTML = "";
+      imagesContainer.appendChild(containerHeader);
 
       // Add wrapper for overflow control
-      const imagesWrapper = document.createElement('div')
-      imagesWrapper.className = 'images-wrapper'
-      imagesWrapper.style.cssText = isCollapsed ? 'max-height: 200px; overflow-y: auto;' : ''
+      const imagesWrapper = document.createElement("div");
+      imagesWrapper.className = "images-wrapper";
+      imagesWrapper.style.cssText = isCollapsed ? "max-height: 200px; overflow-y: auto;" : "";
 
       // Add collapsed class to container if needed
       if (isCollapsed) {
-        dataContainer.classList.add('collapsed')
+        dataContainer.classList.add("collapsed");
       } else {
-        dataContainer.classList.remove('collapsed')
+        dataContainer.classList.remove("collapsed");
       }
 
-      this.uploadedFiles.forEach(file => {
-        const creativeRow = document.createElement('div')
-        creativeRow.className = 'creative-data-row'
+      this.uploadedFiles.forEach((file) => {
+        const creativeRow = document.createElement("div");
+        creativeRow.className = "creative-data-row";
 
-        if (file.type.startsWith('image/')) {
-          if (file.source === 'gdrive') {
+        if (file.type.startsWith("image/")) {
+          if (file.source === "gdrive") {
             // Google Drive files - show placeholder
-            const imgPlaceholder = document.createElement('div')
-            imgPlaceholder.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-            imgPlaceholder.textContent = 'IMG'
-            creativeRow.appendChild(imgPlaceholder)
+            const imgPlaceholder = document.createElement("div");
+            imgPlaceholder.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+            imgPlaceholder.textContent = "IMG";
+            creativeRow.appendChild(imgPlaceholder);
           } else {
             // Local files - create object URL only if it's a valid File object
-            const img = document.createElement('img')
-            img.style.cssText = 'width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;'
+            const img = document.createElement("img");
+            img.style.cssText = "width: 40px; height: 40px; object-fit: cover; flex-shrink: 0;";
             try {
-              img.src = URL.createObjectURL(file)
+              img.src = URL.createObjectURL(file);
             } catch (error) {
               // If createObjectURL fails, show placeholder
-              const imgPlaceholder = document.createElement('div')
-              imgPlaceholder.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-              imgPlaceholder.textContent = 'IMG'
-              creativeRow.appendChild(imgPlaceholder)
-              console.log('Error creating object URL for preview:', error)
+              const imgPlaceholder = document.createElement("div");
+              imgPlaceholder.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+              imgPlaceholder.textContent = "IMG";
+              creativeRow.appendChild(imgPlaceholder);
+              console.log("Error creating object URL for preview:", error);
             }
             if (img.src) {
-              creativeRow.appendChild(img)
+              creativeRow.appendChild(img);
             }
           }
         } else {
-          const videoIcon = document.createElement('div')
-          videoIcon.style.cssText = 'width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;'
-          videoIcon.textContent = 'VID'
-          creativeRow.appendChild(videoIcon)
+          const videoIcon = document.createElement("div");
+          videoIcon.style.cssText = "width: 40px; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666; flex-shrink: 0;";
+          videoIcon.textContent = "VID";
+          creativeRow.appendChild(videoIcon);
         }
 
-        const fileName = document.createElement('p')
-        fileName.textContent = file.name
-        fileName.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin: 0; font-size: 12px; color: #666; min-width: 0;'
+        const fileName = document.createElement("p");
+        fileName.textContent = file.name;
+        fileName.style.cssText = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin: 0; font-size: 12px; color: #666; min-width: 0;";
 
-        creativeRow.appendChild(fileName)
-        imagesWrapper.appendChild(creativeRow)
-      })
+        creativeRow.appendChild(fileName);
+        imagesWrapper.appendChild(creativeRow);
+      });
 
-      imagesContainer.appendChild(imagesWrapper)
+      imagesContainer.appendChild(imagesWrapper);
 
       // Add toggle functionality for review
-      const toggleReviewBtn = dataContainer.querySelector('.toggle-review-btn')
-      toggleReviewBtn.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const isCurrentlyCollapsed = imagesWrapper.style.maxHeight === '200px'
+      const toggleReviewBtn = dataContainer.querySelector(".toggle-review-btn");
+      toggleReviewBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isCurrentlyCollapsed = imagesWrapper.style.maxHeight === "200px";
         if (isCurrentlyCollapsed) {
-          imagesWrapper.style.maxHeight = 'none'
-          imagesWrapper.style.overflowY = 'visible'
-          dataContainer.classList.remove('collapsed')
-          toggleReviewBtn.textContent = 'Collapse ▲'
+          imagesWrapper.style.maxHeight = "none";
+          imagesWrapper.style.overflowY = "visible";
+          dataContainer.classList.remove("collapsed");
+          toggleReviewBtn.textContent = "Collapse ▲";
         } else {
-          imagesWrapper.style.maxHeight = '200px'
-          imagesWrapper.style.overflowY = 'auto'
-          dataContainer.classList.add('collapsed')
-          toggleReviewBtn.textContent = 'Show All ▼'
+          imagesWrapper.style.maxHeight = "200px";
+          imagesWrapper.style.overflowY = "auto";
+          dataContainer.classList.add("collapsed");
+          toggleReviewBtn.textContent = "Show All ▼";
         }
-      })
+      });
     }
 
     // Update ad copy review
-    const primaryTextRaw = document.querySelector('.ad-copy-container textarea[placeholder="Primary Text*"]').value
+    const primaryTextRaw = document.querySelector('.ad-copy-container textarea[placeholder="Primary Text*"]').value;
     // For display: preserve original formatting
-    const primaryTextDisplay = primaryTextRaw
+    const primaryTextDisplay = primaryTextRaw;
     // For Facebook API: use double line breaks
-    const primaryText = primaryTextRaw.split('\n').map(line => line.trim()).filter(line => line).join('\n\n')
-    const headline = document.querySelector('.ad-copy-container input[placeholder="Headline*"]').value
-    const destinationUrl = document.querySelector('.ad-copy-container input[placeholder="Destination URL*"]').value
-    const description = document.querySelector('.adcopy-description').value
-    const ctaSelectedOption = document.querySelector('.ad-copy-container .dropdown-options.cta li.selected')
-    const cta = ctaSelectedOption ? ctaSelectedOption.dataset.value : ''
-    const ctaDisplayText = ctaSelectedOption ? ctaSelectedOption.textContent : ''
-    const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display')
-    const pageText = pageDropdownDisplay ? pageDropdownDisplay.textContent : ''
-    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : ''
-    const primaryTextEl = document.querySelector('.primary-text-review-container p')
-    const headlineEl = document.querySelector('.headline-review-container p')
-    const pageEl = document.querySelector('.cta-text-review-container.page p')
-    const ctaEl = document.querySelector('.cta-text-review-container.cta p')
-    const linkEl = document.querySelector('.cta-text-review-container.link p')
-    const descriptionEl = document.querySelector('.cta-text-review-container.description p')
+    const primaryText = primaryTextRaw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line)
+      .join("\n\n");
+    const headline = document.querySelector('.ad-copy-container input[placeholder="Headline*"]').value;
+    const destinationUrl = document.querySelector('.ad-copy-container input[placeholder="Destination URL*"]').value;
+    const description = document.querySelector(".adcopy-description").value;
+    const ctaSelectedOption = document.querySelector(".ad-copy-container .dropdown-options.cta li.selected");
+    const cta = ctaSelectedOption ? ctaSelectedOption.dataset.value : "";
+    const ctaDisplayText = ctaSelectedOption ? ctaSelectedOption.textContent : "";
+    const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
+    const pageText = pageDropdownDisplay ? pageDropdownDisplay.textContent : "";
+    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : "";
+    const primaryTextEl = document.querySelector(".primary-text-review-container p");
+    const headlineEl = document.querySelector(".headline-review-container p");
+    const pageEl = document.querySelector(".cta-text-review-container.page p");
+    const ctaEl = document.querySelector(".cta-text-review-container.cta p");
+    const linkEl = document.querySelector(".cta-text-review-container.link p");
+    const descriptionEl = document.querySelector(".cta-text-review-container.description p");
 
-    if (primaryTextEl) primaryTextEl.textContent = primaryTextDisplay
-    if (headlineEl) headlineEl.textContent = headline
-    if (pageEl) pageEl.textContent = pageText
-    if (ctaEl) ctaEl.textContent = ctaDisplayText || cta
+    if (primaryTextEl) primaryTextEl.textContent = primaryTextDisplay;
+    if (headlineEl) headlineEl.textContent = headline;
+    if (pageEl) pageEl.textContent = pageText;
+    if (ctaEl) ctaEl.textContent = ctaDisplayText || cta;
     if (linkEl) {
       try {
         // Safely set the URL text content
-        linkEl.textContent = destinationUrl
+        linkEl.textContent = destinationUrl;
       } catch (error) {
-        console.error('Error setting destination URL:', error)
-        linkEl.textContent = 'Invalid URL'
+        console.error("Error setting destination URL:", error);
+        linkEl.textContent = "Invalid URL";
       }
     }
-    if (descriptionEl) descriptionEl.textContent = description || 'No description provided'
+    if (descriptionEl) descriptionEl.textContent = description || "No description provided";
 
     try {
-      appState.updateState('adCopyData', { primaryText, headline, cta, destinationUrl, description, pageId })
+      appState.updateState("adCopyData", { primaryText, headline, cta, destinationUrl, description, pageId });
     } catch (error) {
-      console.error('Error updating app state with ad copy data:', error)
+      console.error("Error updating app state with ad copy data:", error);
     }
-
   }
 
   createAds() {
     // show loading state
-    const button = document.querySelector('.create-ads-button')
-    animatedEllipsis.start(button, 'Creating Ads')
-    button.disabled = true
-    button.style.opacity = '0.6'
+    const button = document.querySelector(".create-ads-button");
+    animatedEllipsis.start(button, "Creating Ads");
+    button.disabled = true;
+    button.style.opacity = "0.6";
 
     // Add file names to each asset for ad naming
-    const assetsWithNames = appState.getState().uploadedAssets.map(asset => {
+    const assetsWithNames = appState.getState().uploadedAssets.map((asset) => {
       // Extract file name without extension
-      const fileName = asset.file
-      const nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf('.')) || fileName
+      const fileName = asset.file;
+      const nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf(".")) || fileName;
 
       return {
         value: asset,
-        adName: nameWithoutExtension
-      }
-    })
+        adName: nameWithoutExtension,
+      };
+    });
 
     const payload = {
       name: appState.getState().adSetConfig.adset_name,
@@ -3021,111 +3259,109 @@ class FileUploadHandler {
       description: appState.getState().adCopyData.description,
       account_id: appState.getState().adSetConfig.account_id,
       adset_id: appState.getState().adSetConfig.id,
-      format: 'mixed',
-      assets: assetsWithNames
-    }
+      format: "mixed",
+      assets: assetsWithNames,
+    };
 
     try {
-      fetch('/api/create-ad-creative', {
-        method: 'POST',
+      fetch("/api/create-ad-creative", {
+        method: "POST",
         body: JSON.stringify(payload),
         headers: {
-          'Content-Type': 'application/json'
-        }
+          "Content-Type": "application/json",
+        },
       })
-        .then(response => {
+        .then((response) => {
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+            throw new Error(`HTTP error! status: ${response.status}`);
           }
-          return response.json()
+          return response.json();
         })
-        .then(data => {
+        .then((data) => {
           // Check the response to see if any ads failed
-          const successful = data.filter(result => result.status === 'fulfilled')
-          const failed = data.filter(result => result.status === 'rejected')
-          
+          const successful = data.filter((result) => result.status === "fulfilled");
+          const failed = data.filter((result) => result.status === "rejected");
+
           if (successful.length === 0) {
             // All ads failed - extract error messages
-            const errorMessages = failed.map(f => f.reason?.message || f.reason || 'Unknown error')
-            const uniqueErrors = [...new Set(errorMessages)]
-            const errorDetail = uniqueErrors.join('\n')
-            throw new Error(`All ad creations failed:\n\n${errorDetail}`)
+            const errorMessages = failed.map((f) => f.reason?.message || f.reason || "Unknown error");
+            const uniqueErrors = [...new Set(errorMessages)];
+            const errorDetail = uniqueErrors.join("\n");
+            throw new Error(`All ad creations failed:\n\n${errorDetail}`);
           } else if (failed.length > 0) {
             // Some ads failed
-            const successCount = successful.length
-            const failCount = failed.length
-            const totalCount = data.length
-            
+            const successCount = successful.length;
+            const failCount = failed.length;
+            const totalCount = data.length;
+
             // Extract error messages
-            const errorMessages = failed.map(f => f.reason?.message || f.reason || 'Unknown error')
-            
+            const errorMessages = failed.map((f) => f.reason?.message || f.reason || "Unknown error");
+
             // Show partial success screen with warning
-            this.showSuccessScreen(successCount, failCount, errorMessages)
-            console.warn(`Created ${successCount} ads successfully, but ${failCount} failed:`, data)
+            this.showSuccessScreen(successCount, failCount, errorMessages);
+            console.warn(`Created ${successCount} ads successfully, but ${failCount} failed:`, data);
           } else {
             // All ads succeeded
-            this.showSuccessScreen()
-            console.log('Successfully created all facebook ads!', data)
+            this.showSuccessScreen();
+            console.log("Successfully created all facebook ads!", data);
           }
         })
-        .catch(err => {
-          console.error('Error creating ads:', err)
-          animatedEllipsis.stop(button)
-          button.disabled = false
-          button.style.opacity = '1'
-          button.textContent = 'Create Ads'
-          alert(`Failed to create ads:\n\n${err.message}`)
-        })
+        .catch((err) => {
+          console.error("Error creating ads:", err);
+          animatedEllipsis.stop(button);
+          button.disabled = false;
+          button.style.opacity = "1";
+          button.textContent = "Create Ads";
+          alert(`Failed to create ads:\n\n${err.message}`);
+        });
     } catch (err) {
-      console.error('Error posting to /api/create-ad-creative.', err)
-      animatedEllipsis.stop(button)
-      button.disabled = false
-      button.style.opacity = '1'
-      button.textContent = 'Create Ads'
+      console.error("Error posting to /api/create-ad-creative.", err);
+      animatedEllipsis.stop(button);
+      button.disabled = false;
+      button.style.opacity = "1";
+      button.textContent = "Create Ads";
     }
   }
 
   showSuccessScreen(successCount = null, failCount = 0, errorMessages = []) {
     // Stop the create ads button animation
-    const createButton = document.querySelector('.create-ads-button')
+    const createButton = document.querySelector(".create-ads-button");
     if (createButton) {
-      animatedEllipsis.stop(createButton)
+      animatedEllipsis.stop(createButton);
     }
 
     // Hide all other divs in column 4
-    const uploadColumn = document.getElementById('col-4')
-    const allDivs = uploadColumn.querySelectorAll(':scope > div')
-    allDivs.forEach(div => {
-      if (!div.classList.contains('success-wrapper')) {
-        div.style.display = 'none'
+    const uploadColumn = document.getElementById("col-4");
+    const allDivs = uploadColumn.querySelectorAll(":scope > div");
+    allDivs.forEach((div) => {
+      if (!div.classList.contains("success-wrapper")) {
+        div.style.display = "none";
       }
-    })
+    });
 
-    const successSection = document.querySelector('.success-wrapper')
-    successSection.style.display = 'block'
+    const successSection = document.querySelector(".success-wrapper");
+    successSection.style.display = "block";
 
     // Update success message
-    const successMessage = successSection.querySelector('p')
-    const actualSuccessCount = successCount !== null ? successCount : this.uploadedFiles.length
-    
+    const successMessage = successSection.querySelector("p");
+    const actualSuccessCount = successCount !== null ? successCount : this.uploadedFiles.length;
+
     if (failCount > 0) {
       // Extract and format error messages
-      const errorMap = new Map()
-      errorMessages.forEach(msg => {
+      const errorMap = new Map();
+      errorMessages.forEach((msg) => {
         // Extract the main error message (remove the "Ad name:" prefix if present)
-        const mainError = msg.includes(':') ? msg.split(':').slice(1).join(':').trim() : msg
-        errorMap.set(mainError, (errorMap.get(mainError) || 0) + 1)
-      })
-      
+        const mainError = msg.includes(":") ? msg.split(":").slice(1).join(":").trim() : msg;
+        errorMap.set(mainError, (errorMap.get(mainError) || 0) + 1);
+      });
+
       // Format errors with counts
       const formattedErrors = Array.from(errorMap.entries()).map(([error, count]) => {
-        return count > 1 ? `${error} (${count} ads)` : error
-      })
-      
-      const errorSummary = formattedErrors.length > 5 
-        ? formattedErrors.slice(0, 5).join('<br>') + `<br><em>...and ${formattedErrors.length - 5} more error types</em>` 
-        : formattedErrors.join('<br>')
-      
+        return count > 1 ? `${error} (${count} ads)` : error;
+      });
+
+      const errorSummary = formattedErrors.length > 5 ? formattedErrors.slice(0, 5).join("<br>") + `<br><em>...and ${formattedErrors.length - 5} more error types</em>` : formattedErrors.join("<br>");
+
       successMessage.innerHTML = `
         <div style="text-align: center;">
           <span style="color: #4CAF50; font-size: 18px; font-weight: bold;">${actualSuccessCount} Ads Successfully Created</span><br>
@@ -3135,194 +3371,188 @@ class FileUploadHandler {
           <div style="color: #c62828; font-weight: bold; margin-bottom: 8px;">Failed Ad Details:</div>
           <div style="color: #424242; font-size: 14px; line-height: 1.5;">${errorSummary}</div>
         </div>
-      `
+      `;
     } else {
-      successMessage.textContent = `${actualSuccessCount} Ads Successfully Created`
+      successMessage.textContent = `${actualSuccessCount} Ads Successfully Created`;
     }
 
     // Update View in Ads Manager button with correct link
-    const viewAdsBtn = successSection.querySelector('button')
-    const accountId = appState.getState().adSetConfig.account_id
-    const campaignId = appState.getState().adSetConfig.campaign_id
-    const businessId = '964913537226100' // IZAK - grab from api
+    const viewAdsBtn = successSection.querySelector("button");
+    const accountId = appState.getState().adSetConfig.account_id;
+    const campaignId = appState.getState().adSetConfig.campaign_id;
+    const businessId = "964913537226100"; // IZAK - grab from api
 
-    const adsManagerUrl = `https://adsmanager.facebook.com/adsmanager/manage/adsets?act=${accountId}&business_id=${businessId}&selected_campaign_ids=${campaignId}`
+    const adsManagerUrl = `https://adsmanager.facebook.com/adsmanager/manage/adsets?act=${accountId}&business_id=${businessId}&selected_campaign_ids=${campaignId}`;
 
     viewAdsBtn.onclick = () => {
-      window.open(adsManagerUrl, '_blank')
-    }
+      window.open(adsManagerUrl, "_blank");
+    };
 
     // Scroll to position success section at top of viewport
     successSection.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    })
+      behavior: "smooth",
+      block: "start",
+    });
 
     // Handle "Create More Ads" click
-    const createMoreBtn = successSection.querySelector('h3')
+    const createMoreBtn = successSection.querySelector("h3");
     createMoreBtn.onclick = () => {
-      location.reload()
-    }
+      location.reload();
+    };
   }
   showStep(stepNumber) {
     // Hide all steps
-    document.querySelectorAll('.upload-step').forEach(step => {
-      step.style.display = 'none'
-    })
+    document.querySelectorAll(".upload-step").forEach((step) => {
+      step.style.display = "none";
+    });
 
     // Show target step
-    const targetStep = document.querySelector(`[data-step="${stepNumber}"]`)
+    const targetStep = document.querySelector(`[data-step="${stepNumber}"]`);
     if (targetStep) {
-      targetStep.style.display = 'block'
+      targetStep.style.display = "block";
     }
   }
 
   handleGoogleDriveInput() {
     // Handle initial Google Drive input
-    const fetchBtn = document.querySelector('.gdrive-fetch-btn')
-    const gdriveInput = document.querySelector('.gdrive-link-input')
+    const fetchBtn = document.querySelector(".gdrive-fetch-btn");
+    const gdriveInput = document.querySelector(".gdrive-link-input");
 
     if (fetchBtn && gdriveInput) {
-      fetchBtn.addEventListener('click', () => {
-        const driveLink = gdriveInput.value.trim()
+      fetchBtn.addEventListener("click", () => {
+        const driveLink = gdriveInput.value.trim();
         if (driveLink) {
-          this.fetchGoogleDriveFiles(driveLink)
+          this.fetchGoogleDriveFiles(driveLink);
         }
-      })
+      });
 
       // Allow Enter key to fetch
-      gdriveInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          const driveLink = gdriveInput.value.trim()
+      gdriveInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          const driveLink = gdriveInput.value.trim();
           if (driveLink) {
-            this.fetchGoogleDriveFiles(driveLink)
+            this.fetchGoogleDriveFiles(driveLink);
           }
         }
-      })
+      });
     }
   }
 
   async fetchGoogleDriveFiles(driveLink, isAdditional = false) {
     // Extract file/folder ID from Google Drive link
     // Matches both file links (/d/) and folder links (/folders/)
-    const fileIdMatch = driveLink.match(/\/(?:d|folders)\/([a-zA-Z0-9-_]+)/)
-    const fileId = fileIdMatch ? fileIdMatch[1] : null
+    const fileIdMatch = driveLink.match(/\/(?:d|folders)\/([a-zA-Z0-9-_]+)/);
+    const fileId = fileIdMatch ? fileIdMatch[1] : null;
 
     if (!fileId) {
-      alert('Invalid Google Drive link. Please paste a valid Google Drive file or folder link.')
-      return
+      alert("Invalid Google Drive link. Please paste a valid Google Drive file or folder link.");
+      return;
     }
 
     // Show loading state on the fetch button
-    const fetchBtn = isAdditional ?
-      document.querySelector('.gdrive-fetch-btn-additional') :
-      document.querySelector('.gdrive-fetch-btn')
-    const originalBtnText = fetchBtn.innerHTML
-    animatedEllipsis.start(fetchBtn, 'Fetching')
-    fetchBtn.disabled = true
-    fetchBtn.style.opacity = '0.7'
+    const fetchBtn = isAdditional ? document.querySelector(".gdrive-fetch-btn-additional") : document.querySelector(".gdrive-fetch-btn");
+    const originalBtnText = fetchBtn.innerHTML;
+    animatedEllipsis.start(fetchBtn, "Fetching");
+    fetchBtn.disabled = true;
+    fetchBtn.style.opacity = "0.7";
 
     try {
       // Call the API to fetch files from Google Drive
-      const response = await fetch(`/api/fetch-google-data?folderId=${fileId}`)
+      const response = await fetch(`/api/fetch-google-data?folderId=${fileId}`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch Google Drive files')
+        throw new Error("Failed to fetch Google Drive files");
       }
 
-      const data = await response.json()
+      const data = await response.json();
 
       // Process the files returned from the API
       if (data.files && data.files.length > 0) {
-        const mediaFiles = []
-        const skippedFiles = []
+        const mediaFiles = [];
+        const skippedFiles = [];
 
-        data.files.forEach(file => {
-          const isImage = file.mimeType && file.mimeType.startsWith('image/')
-          const isVideo = file.mimeType && file.mimeType.startsWith('video/')
+        data.files.forEach((file) => {
+          const isImage = file.mimeType && file.mimeType.startsWith("image/");
+          const isVideo = file.mimeType && file.mimeType.startsWith("video/");
 
           if (isImage || isVideo) {
             const processedFile = {
               name: file.name,
               size: file.size || 0,
-              type: file.mimeType || 'unknown',
-              source: 'gdrive',
+              type: file.mimeType || "unknown",
+              source: "gdrive",
               gdrive_id: file.id,
               gdrive_link: driveLink,
-              status: 'pending'
-            }
+              status: "pending",
+            };
 
-            mediaFiles.push(processedFile)
-            this.uploadedFiles.push(processedFile)
+            mediaFiles.push(processedFile);
+            this.uploadedFiles.push(processedFile);
 
             // If it's an additional file after initial upload
             if (isAdditional && this.initialUploadComplete) {
-              this.additionalFilesToUpload.push(processedFile)
+              this.additionalFilesToUpload.push(processedFile);
             }
           } else {
-            skippedFiles.push(file)
+            skippedFiles.push(file);
           }
-        })
+        });
 
         // Show warning if files were skipped
         if (skippedFiles.length > 0) {
-          const skippedNames = skippedFiles.slice(0, 3).map(f => f.name).join(', ')
-          const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : ''
-          alert(`Warning: Only images and videos are supported. Skipped: ${skippedNames}${moreText}`)
+          const skippedNames = skippedFiles
+            .slice(0, 3)
+            .map((f) => f.name)
+            .join(", ");
+          const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : "";
+          alert(`Warning: Only images and videos are supported. Skipped: ${skippedNames}${moreText}`);
         }
 
         if (mediaFiles.length === 0) {
-          alert('No supported media files (images or videos) found in the provided Google Drive link.')
+          alert("No supported media files (images or videos) found in the provided Google Drive link.");
         } else if (isAdditional && this.initialUploadComplete) {
-          this.updateUploadButtonForAdditionalFiles()
+          this.updateUploadButtonForAdditionalFiles();
         }
       } else {
-        alert('No files found in the provided Google Drive link.')
+        alert("No files found in the provided Google Drive link.");
       }
-
     } catch (error) {
-      console.error('Error fetching Google Drive files:', error)
-      alert('Failed to fetch files from Google Drive. Please check your credentials and try again.')
+      console.error("Error fetching Google Drive files:", error);
+      alert("Failed to fetch files from Google Drive. Please check your credentials and try again.");
     } finally {
       // Restore button state
-      animatedEllipsis.stop(fetchBtn)
-      fetchBtn.innerHTML = originalBtnText
-      fetchBtn.disabled = false
-      fetchBtn.style.opacity = '1'
+      animatedEllipsis.stop(fetchBtn);
+      fetchBtn.innerHTML = originalBtnText;
+      fetchBtn.disabled = false;
+      fetchBtn.style.opacity = "1";
     }
 
     // Update upload type
-    this.updateUploadType()
+    this.updateUploadType();
 
     // Clear input
-    const gdriveInput = isAdditional ?
-      document.querySelector('.gdrive-link-input-additional') :
-      document.querySelector('.gdrive-link-input')
+    const gdriveInput = isAdditional ? document.querySelector(".gdrive-link-input-additional") : document.querySelector(".gdrive-link-input");
     if (gdriveInput) {
-      gdriveInput.value = ''
+      gdriveInput.value = "";
     }
 
     // Display files
     if (this.uploadedFiles.length > 0) {
-      this.displayUploadedFiles()
-      this.showStep(3)
+      this.displayUploadedFiles();
+      this.showStep(3);
     }
   }
 
   updateUploadType() {
-    const imageFiles = this.uploadedFiles.filter(file =>
-      file.type && file.type.startsWith('image/')
-    )
-    const videoFiles = this.uploadedFiles.filter(file =>
-      file.type && file.type.startsWith('video/')
-    )
+    const imageFiles = this.uploadedFiles.filter((file) => file.type && file.type.startsWith("image/"));
+    const videoFiles = this.uploadedFiles.filter((file) => file.type && file.type.startsWith("video/"));
 
     if (imageFiles.length > 0 && videoFiles.length > 0) {
-      this.selectedUploadType = 'mixed'
+      this.selectedUploadType = "mixed";
     } else if (imageFiles.length > 0) {
-      this.selectedUploadType = 'image'
+      this.selectedUploadType = "image";
     } else if (videoFiles.length > 0) {
-      this.selectedUploadType = 'video'
+      this.selectedUploadType = "video";
     }
   }
 }
@@ -3330,794 +3560,780 @@ class FileUploadHandler {
 // Input Validation for Age and Budget
 class InputValidator {
   constructor() {
-    this.init()
+    this.init();
   }
 
   init() {
-    this.setupAgeValidation()
-    this.setupBudgetValidation()
+    this.setupAgeValidation();
+    this.setupBudgetValidation();
   }
 
   setupAgeValidation() {
-    const ageInputs = document.querySelectorAll('.min-age, .max-age')
+    const ageInputs = document.querySelectorAll(".min-age, .max-age");
 
-    ageInputs.forEach(input => {
-      input.addEventListener('input', (e) => {
+    ageInputs.forEach((input) => {
+      input.addEventListener("input", (e) => {
         // Remove non-numeric characters
-        e.target.value = e.target.value.replace(/[^0-9]/g, '')
+        e.target.value = e.target.value.replace(/[^0-9]/g, "");
 
         // Validate range
-        const value = parseInt(e.target.value)
+        const value = parseInt(e.target.value);
         if (value && (value < 18 || value > 65)) {
-          e.target.classList.add('empty-input')
+          e.target.classList.add("empty-input");
         } else {
-          e.target.classList.remove('empty-input')
+          e.target.classList.remove("empty-input");
         }
-      })
-    })
+      });
+    });
   }
 
   setupBudgetValidation() {
-    const budgetInputs = document.querySelectorAll('.config-daily-budget, .config-cost-per-result-goal')
+    const budgetInputs = document.querySelectorAll(".config-daily-budget, .config-cost-per-result-goal");
 
-    budgetInputs.forEach(input => {
-      input.addEventListener('input', (e) => {
+    budgetInputs.forEach((input) => {
+      input.addEventListener("input", (e) => {
         // Allow only numbers and decimal point
-        e.target.value = e.target.value.replace(/[^0-9.]/g, '')
+        e.target.value = e.target.value.replace(/[^0-9.]/g, "");
 
         // Prevent multiple decimal points
-        const parts = e.target.value.split('.')
+        const parts = e.target.value.split(".");
         if (parts.length > 2) {
-          e.target.value = parts[0] + '.' + parts.slice(1).join('')
+          e.target.value = parts[0] + "." + parts.slice(1).join("");
         }
 
         // Limit to 2 decimal places
         if (parts[1] && parts[1].length > 2) {
-          e.target.value = parts[0] + '.' + parts[1].substring(0, 2)
+          e.target.value = parts[0] + "." + parts[1].substring(0, 2);
         }
-      })
-    })
+      });
+    });
   }
 }
 
-const actions = new SingleSelectGroup('.action')
+const actions = new SingleSelectGroup(".action");
 
 // Initialize upload form with enhanced functionality
-const adSetForm = new UploadForm('.adset-form-container')
-adSetForm.handleSubmit()
+const adSetForm = new UploadForm(".adset-form-container");
+adSetForm.handleSubmit();
 
 // Initialize file upload handler
-window.fileUploadHandler = new FileUploadHandler()
-window.fileUploadHandler.handleUploadTypeSelection()
+window.fileUploadHandler = new FileUploadHandler();
+window.fileUploadHandler.handleUploadTypeSelection();
 
 // Initialize input validation
-const inputValidator = new InputValidator()
+const inputValidator = new InputValidator();
 
 // Campaign Search Functionality
 function initializeCampaignSearch() {
-  const searchIcon = document.querySelector('.search-icon-btn')
-  const searchWrapper = document.querySelector('.campaign-search-wrapper')
-  const searchInput = document.querySelector('.campaign-search-input')
-  const searchCloseBtn = document.querySelector('.search-close-btn')
-  const campaignTitleWrapper = document.querySelector('.campaign-title-wrapper')
+  const searchIcon = document.querySelector(".search-icon-btn");
+  const searchWrapper = document.querySelector(".campaign-search-wrapper");
+  const searchInput = document.querySelector(".campaign-search-input");
+  const searchCloseBtn = document.querySelector(".search-close-btn");
+  const campaignTitleWrapper = document.querySelector(".campaign-title-wrapper");
 
-  if (!searchIcon || !searchWrapper || !searchInput) return
+  if (!searchIcon || !searchWrapper || !searchInput) return;
 
   // Toggle search input visibility
-  searchIcon.addEventListener('click', (e) => {
-    e.preventDefault()
-    searchWrapper.style.display = 'flex'
-    campaignTitleWrapper.style.display = 'none'
-    searchInput.focus()
-  })
+  searchIcon.addEventListener("click", (e) => {
+    e.preventDefault();
+    searchWrapper.style.display = "flex";
+    campaignTitleWrapper.style.display = "none";
+    searchInput.focus();
+  });
 
   // Close search
-  searchCloseBtn.addEventListener('click', () => {
-    searchWrapper.style.display = 'none'
-    campaignTitleWrapper.style.display = 'flex'
-    searchInput.value = ''
+  searchCloseBtn.addEventListener("click", () => {
+    searchWrapper.style.display = "none";
+    campaignTitleWrapper.style.display = "flex";
+    searchInput.value = "";
     // Reset campaign visibility
-    filterCampaigns('')
-  })
+    filterCampaigns("");
+  });
 
   // Handle search input
-  searchInput.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase()
-    filterCampaigns(searchTerm)
-  })
+  searchInput.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    filterCampaigns(searchTerm);
+  });
 
   // Handle escape key
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      searchCloseBtn.click()
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      searchCloseBtn.click();
     }
-  })
+  });
 }
 
 function filterCampaigns(searchTerm) {
-  const campaigns = document.querySelectorAll('.campaign')
-  const selectedAccount = document.querySelector('.account.selected')
+  const campaigns = document.querySelectorAll(".campaign");
+  const selectedAccount = document.querySelector(".account.selected");
 
-  if (!selectedAccount) return
+  if (!selectedAccount) return;
 
-  const selectedAccountId = selectedAccount.dataset.campaignId
+  const selectedAccountId = selectedAccount.dataset.campaignId;
 
-  campaigns.forEach(campaign => {
-    const campaignName = campaign.querySelector('h3').textContent.toLowerCase()
-    const campaignAccountId = campaign.dataset.accCampaignId
+  campaigns.forEach((campaign) => {
+    const campaignName = campaign.querySelector("h3").textContent.toLowerCase();
+    const campaignAccountId = campaign.dataset.accCampaignId;
 
     // Check if campaign matches search term and belongs to selected account
-    const matchesSearch = searchTerm === '' || campaignName.includes(searchTerm)
-    const matchesAccount = campaignAccountId === selectedAccountId
+    const matchesSearch = searchTerm === "" || campaignName.includes(searchTerm);
+    const matchesAccount = campaignAccountId === selectedAccountId;
 
     if (matchesSearch && matchesAccount) {
-      campaign.style.display = 'block'
+      campaign.style.display = "block";
     } else {
-      campaign.style.display = 'none'
+      campaign.style.display = "none";
     }
-  })
+  });
 }
 
 // Initialize Geo Selection
 function initializeGeoSelection() {
-  const countryInput = document.querySelector('.country-search-input')
-  const regionInput = document.querySelector('.region-search-input')
-  const countrySuggestions = document.querySelector('.country-suggestions')
-  const regionSuggestions = document.querySelector('.region-suggestions')
-  const selectedCountriesContainer = document.getElementById('selected-countries')
-  const selectedRegionsContainer = document.getElementById('selected-regions')
+  const countryInput = document.querySelector(".country-search-input");
+  const regionInput = document.querySelector(".region-search-input");
+  const countrySuggestions = document.querySelector(".country-suggestions");
+  const regionSuggestions = document.querySelector(".region-suggestions");
+  const selectedCountriesContainer = document.getElementById("selected-countries");
+  const selectedRegionsContainer = document.getElementById("selected-regions");
 
-  if (!countryInput || !regionInput) return
+  if (!countryInput || !regionInput) return;
 
-  let highlightedCountryIndex = -1
-  let highlightedRegionIndex = -1
+  let highlightedCountryIndex = -1;
+  let highlightedRegionIndex = -1;
 
   // Make entire container clickable for countries
-  const countryContainer = document.querySelector('.selected-countries-container')
+  const countryContainer = document.querySelector(".selected-countries-container");
   if (countryContainer) {
-    countryContainer.addEventListener('click', (e) => {
+    countryContainer.addEventListener("click", (e) => {
       // Don't focus if clicking on a tag or remove button
-      if (!e.target.closest('.geo-tag')) {
-        countryInput.focus()
+      if (!e.target.closest(".geo-tag")) {
+        countryInput.focus();
       }
-    })
+    });
   }
 
   // Make entire container clickable for regions
-  const regionContainer = document.querySelector('.selected-regions-container')
+  const regionContainer = document.querySelector(".selected-regions-container");
   if (regionContainer) {
-    regionContainer.addEventListener('click', (e) => {
+    regionContainer.addEventListener("click", (e) => {
       // Don't focus if clicking on a tag or remove button
-      if (!e.target.closest('.geo-tag')) {
-        regionInput.focus()
+      if (!e.target.closest(".geo-tag")) {
+        regionInput.focus();
       }
-    })
+    });
   }
 
   // Country search functionality
-  countryInput.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase()
-    const fbData = appState.getState().fbLocationsData
+  countryInput.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const fbData = appState.getState().fbLocationsData;
 
     if (!fbData || searchTerm.length < 1) {
-      countrySuggestions.style.display = 'none'
-      return
+      countrySuggestions.style.display = "none";
+      return;
     }
 
-    const filteredCountries = fbData.countries.filter(country =>
-      country.name.toLowerCase().includes(searchTerm) &&
-      !appState.getState().selectedCountries.find(c => c.key === country.key)
-    )
+    const filteredCountries = fbData.countries.filter((country) => country.name.toLowerCase().includes(searchTerm) && !appState.getState().selectedCountries.find((c) => c.key === country.key));
 
-    displayCountrySuggestions(filteredCountries)
-  })
+    displayCountrySuggestions(filteredCountries);
+  });
 
   // Region search functionality
-  regionInput.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase()
-    const fbData = appState.getState().fbLocationsData
-    const selectedCountries = appState.getState().selectedCountries
+  regionInput.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const fbData = appState.getState().fbLocationsData;
+    const selectedCountries = appState.getState().selectedCountries;
 
     if (!fbData || searchTerm.length < 1 || selectedCountries.length === 0) {
-      regionSuggestions.style.display = 'none'
-      return
+      regionSuggestions.style.display = "none";
+      return;
     }
 
-    const allRegions = []
-    selectedCountries.forEach(country => {
-      const countryRegions = fbData.regions[country.key]
+    const allRegions = [];
+    selectedCountries.forEach((country) => {
+      const countryRegions = fbData.regions[country.key];
       if (countryRegions && countryRegions.regions) {
-        countryRegions.regions.forEach(region => {
-          if (region.name.toLowerCase().includes(searchTerm) &&
-            !appState.getState().selectedRegions.find(r => r.key === region.key)) {
+        countryRegions.regions.forEach((region) => {
+          if (region.name.toLowerCase().includes(searchTerm) && !appState.getState().selectedRegions.find((r) => r.key === region.key)) {
             allRegions.push({
               ...region,
               countryName: country.name,
-              countryKey: country.key
-            })
+              countryKey: country.key,
+            });
           }
-        })
+        });
       }
-    })
+    });
 
-    displayRegionSuggestions(allRegions)
-  })
+    displayRegionSuggestions(allRegions);
+  });
 
   // Country selection
   function selectCountry(country) {
-    const currentCountries = [...appState.getState().selectedCountries]
+    const currentCountries = [...appState.getState().selectedCountries];
 
     // Check if country is already selected
-    if (currentCountries.find(c => c.key === country.key)) {
-      return // Country already selected, do nothing
+    if (currentCountries.find((c) => c.key === country.key)) {
+      return; // Country already selected, do nothing
     }
 
-    currentCountries.push(country)
-    appState.updateState('selectedCountries', currentCountries)
+    currentCountries.push(country);
+    appState.updateState("selectedCountries", currentCountries);
 
-    countryInput.value = ''
-    countrySuggestions.style.display = 'none'
-    renderSelectedCountries()
+    countryInput.value = "";
+    countrySuggestions.style.display = "none";
+    renderSelectedCountries();
 
     // Clear selected regions if needed
-    checkAndUpdateRegions()
+    checkAndUpdateRegions();
   }
 
   // Region selection
   function selectRegion(region) {
-    const currentRegions = [...appState.getState().selectedRegions]
+    const currentRegions = [...appState.getState().selectedRegions];
 
     // Check if region is already selected
-    if (currentRegions.find(r => r.key === region.key)) {
-      return // Region already selected, do nothing
+    if (currentRegions.find((r) => r.key === region.key)) {
+      return; // Region already selected, do nothing
     }
 
     // Add region with default excluded state (red)
     currentRegions.push({
       ...region,
-      excluded: true
-    })
-    appState.updateState('selectedRegions', currentRegions)
+      excluded: true,
+    });
+    appState.updateState("selectedRegions", currentRegions);
 
-    regionInput.value = ''
-    regionSuggestions.style.display = 'none'
-    renderSelectedRegions()
+    regionInput.value = "";
+    regionSuggestions.style.display = "none";
+    renderSelectedRegions();
   }
 
   // Display country suggestions
   function displayCountrySuggestions(countries) {
-    countrySuggestions.innerHTML = ''
-    highlightedCountryIndex = -1
+    countrySuggestions.innerHTML = "";
+    highlightedCountryIndex = -1;
 
     if (countries.length === 0) {
-      countrySuggestions.innerHTML = '<li class="geo-no-results">No countries found</li>'
+      countrySuggestions.innerHTML = '<li class="geo-no-results">No countries found</li>';
     } else {
       countries.forEach((country, index) => {
-        const li = document.createElement('li')
-        li.textContent = country.name
-        li.dataset.index = index
-        li.addEventListener('click', () => selectCountry(country))
-        countrySuggestions.appendChild(li)
-      })
+        const li = document.createElement("li");
+        li.textContent = country.name;
+        li.dataset.index = index;
+        li.addEventListener("click", () => selectCountry(country));
+        countrySuggestions.appendChild(li);
+      });
     }
 
-    countrySuggestions.style.display = 'block'
+    countrySuggestions.style.display = "block";
   }
 
   // Display region suggestions
   function displayRegionSuggestions(regions) {
-    regionSuggestions.innerHTML = ''
-    highlightedRegionIndex = -1
+    regionSuggestions.innerHTML = "";
+    highlightedRegionIndex = -1;
 
     if (regions.length === 0) {
-      regionSuggestions.innerHTML = '<li class="geo-no-results">No regions found</li>'
+      regionSuggestions.innerHTML = '<li class="geo-no-results">No regions found</li>';
     } else {
       regions.forEach((region, index) => {
-        const li = document.createElement('li')
-        li.textContent = `${region.name}, ${region.countryName}`
-        li.dataset.index = index
-        li.addEventListener('click', () => selectRegion(region))
-        regionSuggestions.appendChild(li)
-      })
+        const li = document.createElement("li");
+        li.textContent = `${region.name}, ${region.countryName}`;
+        li.dataset.index = index;
+        li.addEventListener("click", () => selectRegion(region));
+        regionSuggestions.appendChild(li);
+      });
     }
 
-    regionSuggestions.style.display = 'block'
+    regionSuggestions.style.display = "block";
   }
 
   // Render selected countries
   function renderSelectedCountries() {
-    const countries = appState.getState().selectedCountries
-    selectedCountriesContainer.innerHTML = ''
+    const countries = appState.getState().selectedCountries;
+    selectedCountriesContainer.innerHTML = "";
 
     countries.forEach((country, index) => {
-      const tag = document.createElement('div')
-      tag.className = 'geo-tag'
+      const tag = document.createElement("div");
+      tag.className = "geo-tag";
       tag.innerHTML = `
         ${country.name}
         <span class="remove-tag" data-index="${index}">×</span>
-      `
-      selectedCountriesContainer.appendChild(tag)
-    })
+      `;
+      selectedCountriesContainer.appendChild(tag);
+    });
 
     // Add remove handlers
-    selectedCountriesContainer.querySelectorAll('.remove-tag').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const index = parseInt(e.target.dataset.index)
-        removeCountry(index)
-      })
-    })
+    selectedCountriesContainer.querySelectorAll(".remove-tag").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const index = parseInt(e.target.dataset.index);
+        removeCountry(index);
+      });
+    });
   }
 
   // Render selected regions
   function renderSelectedRegions() {
-    const regions = appState.getState().selectedRegions
-    selectedRegionsContainer.innerHTML = ''
+    const regions = appState.getState().selectedRegions;
+    selectedRegionsContainer.innerHTML = "";
 
     regions.forEach((region, index) => {
-      const tag = document.createElement('div')
-      tag.className = `geo-tag ${region.excluded ? 'excluded' : 'included'}`
-      tag.dataset.index = index
+      const tag = document.createElement("div");
+      tag.className = `geo-tag ${region.excluded ? "excluded" : "included"}`;
+      tag.dataset.index = index;
       tag.innerHTML = `
         <span class="region-name">${region.name}</span>
         <span class="remove-tag" data-index="${index}">×</span>
-      `
-      selectedRegionsContainer.appendChild(tag)
-    })
+      `;
+      selectedRegionsContainer.appendChild(tag);
+    });
 
     // Add click handlers for toggling include/exclude
-    selectedRegionsContainer.querySelectorAll('.geo-tag').forEach(tag => {
-      const regionName = tag.querySelector('.region-name')
+    selectedRegionsContainer.querySelectorAll(".geo-tag").forEach((tag) => {
+      const regionName = tag.querySelector(".region-name");
       if (regionName) {
-        regionName.addEventListener('click', (e) => {
-          e.stopPropagation()
-          const index = parseInt(tag.dataset.index)
-          toggleRegionExclusion(index)
-        })
+        regionName.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const index = parseInt(tag.dataset.index);
+          toggleRegionExclusion(index);
+        });
       }
-    })
+    });
 
     // Add remove handlers
-    selectedRegionsContainer.querySelectorAll('.remove-tag').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const index = parseInt(e.target.dataset.index)
-        removeRegion(index)
-      })
-    })
+    selectedRegionsContainer.querySelectorAll(".remove-tag").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const index = parseInt(e.target.dataset.index);
+        removeRegion(index);
+      });
+    });
   }
 
   // Remove country
   function removeCountry(index) {
-    const currentCountries = [...appState.getState().selectedCountries]
-    const removedCountry = currentCountries.splice(index, 1)[0]
-    appState.updateState('selectedCountries', currentCountries)
-    renderSelectedCountries()
+    const currentCountries = [...appState.getState().selectedCountries];
+    const removedCountry = currentCountries.splice(index, 1)[0];
+    appState.updateState("selectedCountries", currentCountries);
+    renderSelectedCountries();
 
     // Remove regions from the removed country
-    checkAndUpdateRegions()
+    checkAndUpdateRegions();
   }
 
   // Remove region
   function removeRegion(index) {
-    const currentRegions = [...appState.getState().selectedRegions]
-    currentRegions.splice(index, 1)
-    appState.updateState('selectedRegions', currentRegions)
-    renderSelectedRegions()
+    const currentRegions = [...appState.getState().selectedRegions];
+    currentRegions.splice(index, 1);
+    appState.updateState("selectedRegions", currentRegions);
+    renderSelectedRegions();
   }
 
   // Toggle region inclusion/exclusion
   function toggleRegionExclusion(index) {
-    const currentRegions = [...appState.getState().selectedRegions]
-    currentRegions[index].excluded = !currentRegions[index].excluded
-    appState.updateState('selectedRegions', currentRegions)
-    renderSelectedRegions()
+    const currentRegions = [...appState.getState().selectedRegions];
+    currentRegions[index].excluded = !currentRegions[index].excluded;
+    appState.updateState("selectedRegions", currentRegions);
+    renderSelectedRegions();
   }
 
   // Check and update regions when countries change
   function checkAndUpdateRegions() {
-    const selectedCountries = appState.getState().selectedCountries
-    const selectedRegions = appState.getState().selectedRegions
+    const selectedCountries = appState.getState().selectedCountries;
+    const selectedRegions = appState.getState().selectedRegions;
 
     // Filter out regions that don't belong to selected countries
-    const validRegions = selectedRegions.filter(region =>
-      selectedCountries.find(country => country.key === region.countryKey)
-    )
+    const validRegions = selectedRegions.filter((region) => selectedCountries.find((country) => country.key === region.countryKey));
 
     if (validRegions.length !== selectedRegions.length) {
-      appState.updateState('selectedRegions', validRegions)
-      renderSelectedRegions()
+      appState.updateState("selectedRegions", validRegions);
+      renderSelectedRegions();
     }
   }
 
   // Handle keyboard navigation for countries
-  countryInput.addEventListener('keydown', (e) => {
-    const items = countrySuggestions.querySelectorAll('li:not(.geo-no-results)')
+  countryInput.addEventListener("keydown", (e) => {
+    const items = countrySuggestions.querySelectorAll("li:not(.geo-no-results)");
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      highlightedCountryIndex = Math.min(highlightedCountryIndex + 1, items.length - 1)
-      updateHighlight(items, highlightedCountryIndex)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      highlightedCountryIndex = Math.max(highlightedCountryIndex - 1, -1)
-      updateHighlight(items, highlightedCountryIndex)
-    } else if (e.key === 'Enter') {
-      e.preventDefault() // Always prevent Enter key default behavior
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlightedCountryIndex = Math.min(highlightedCountryIndex + 1, items.length - 1);
+      updateHighlight(items, highlightedCountryIndex);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlightedCountryIndex = Math.max(highlightedCountryIndex - 1, -1);
+      updateHighlight(items, highlightedCountryIndex);
+    } else if (e.key === "Enter") {
+      e.preventDefault(); // Always prevent Enter key default behavior
       if (highlightedCountryIndex >= 0 && items[highlightedCountryIndex]) {
-        items[highlightedCountryIndex].click()
+        items[highlightedCountryIndex].click();
       }
-    } else if (e.key === 'Escape') {
-      countrySuggestions.style.display = 'none'
+    } else if (e.key === "Escape") {
+      countrySuggestions.style.display = "none";
     }
-  })
+  });
 
   // Handle keyboard navigation for regions
-  regionInput.addEventListener('keydown', (e) => {
-    const items = regionSuggestions.querySelectorAll('li:not(.geo-no-results)')
+  regionInput.addEventListener("keydown", (e) => {
+    const items = regionSuggestions.querySelectorAll("li:not(.geo-no-results)");
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      highlightedRegionIndex = Math.min(highlightedRegionIndex + 1, items.length - 1)
-      updateHighlight(items, highlightedRegionIndex)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      highlightedRegionIndex = Math.max(highlightedRegionIndex - 1, -1)
-      updateHighlight(items, highlightedRegionIndex)
-    } else if (e.key === 'Enter') {
-      e.preventDefault() // Always prevent Enter key default behavior
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlightedRegionIndex = Math.min(highlightedRegionIndex + 1, items.length - 1);
+      updateHighlight(items, highlightedRegionIndex);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlightedRegionIndex = Math.max(highlightedRegionIndex - 1, -1);
+      updateHighlight(items, highlightedRegionIndex);
+    } else if (e.key === "Enter") {
+      e.preventDefault(); // Always prevent Enter key default behavior
       if (highlightedRegionIndex >= 0 && items[highlightedRegionIndex]) {
-        items[highlightedRegionIndex].click()
+        items[highlightedRegionIndex].click();
       }
-    } else if (e.key === 'Escape') {
-      regionSuggestions.style.display = 'none'
+    } else if (e.key === "Escape") {
+      regionSuggestions.style.display = "none";
     }
-  })
+  });
 
   // Update highlight
   function updateHighlight(items, index) {
     items.forEach((item, i) => {
       if (i === index) {
-        item.classList.add('highlighted')
+        item.classList.add("highlighted");
       } else {
-        item.classList.remove('highlighted')
+        item.classList.remove("highlighted");
       }
-    })
+    });
   }
 
   // Hide suggestions on click outside
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.country-selection')) {
-      countrySuggestions.style.display = 'none'
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".country-selection")) {
+      countrySuggestions.style.display = "none";
     }
-    if (!e.target.closest('.region-selection')) {
-      regionSuggestions.style.display = 'none'
+    if (!e.target.closest(".region-selection")) {
+      regionSuggestions.style.display = "none";
     }
-  })
+  });
 }
 
 // Initialize Event Type Selection
 function initializeEventTypeSelection() {
   const eventTypes = [
-    { value: 'AD_IMPRESSION', name: 'Ad Impression', description: 'Track when ads are shown' },
-    { value: 'RATE', name: 'Rate', description: 'Track rating actions' },
-    { value: 'TUTORIAL_COMPLETION', name: 'Tutorial Completion', description: 'Track tutorial completions' },
-    { value: 'CONTACT', name: 'Contact', description: 'Track contact form submissions' },
-    { value: 'CUSTOMIZE_PRODUCT', name: 'Customize Product', description: 'Track product customization' },
-    { value: 'DONATE', name: 'Donate', description: 'Track donation events' },
-    { value: 'FIND_LOCATION', name: 'Find Location', description: 'Track location searches' },
-    { value: 'SCHEDULE', name: 'Schedule', description: 'Track scheduling actions' },
-    { value: 'START_TRIAL', name: 'Start Trial', description: 'Track trial starts' },
-    { value: 'SUBMIT_APPLICATION', name: 'Submit Application', description: 'Track application submissions' },
-    { value: 'SUBSCRIBE', name: 'Subscribe', description: 'Track subscription events' },
-    { value: 'ADD_TO_CART', name: 'Add to Cart', description: 'Track cart additions' },
-    { value: 'ADD_TO_WISHLIST', name: 'Add to Wishlist', description: 'Track wishlist additions' },
-    { value: 'INITIATED_CHECKOUT', name: 'Initiated Checkout', description: 'Track checkout starts' },
-    { value: 'ADD_PAYMENT_INFO', name: 'Add Payment Info', description: 'Track payment info additions' },
-    { value: 'PURCHASE', name: 'Purchase', description: 'Track completed purchases' },
-    { value: 'LEAD', name: 'Lead', description: 'Track lead generation' },
-    { value: 'COMPLETE_REGISTRATION', name: 'Complete Registration', description: 'Track registration completions' },
-    { value: 'CONTENT_VIEW', name: 'Content View', description: 'Track content views' },
-    { value: 'SEARCH', name: 'Search', description: 'Track search events' },
-    { value: 'SERVICE_BOOKING_REQUEST', name: 'Service Booking Request', description: 'Track booking requests' },
-    { value: 'MESSAGING_CONVERSATION_STARTED_7D', name: 'Messaging Conversation Started (7D)', description: 'Track messaging starts within 7 days' },
-    { value: 'LEVEL_ACHIEVED', name: 'Level Achieved', description: 'Track level achievements' },
-    { value: 'ACHIEVEMENT_UNLOCKED', name: 'Achievement Unlocked', description: 'Track unlocked achievements' },
-    { value: 'SPENT_CREDITS', name: 'Spent Credits', description: 'Track credit spending' },
-    { value: 'LISTING_INTERACTION', name: 'Listing Interaction', description: 'Track listing interactions' },
-    { value: 'D2_RETENTION', name: 'D2 Retention', description: 'Track day 2 retention' },
-    { value: 'D7_RETENTION', name: 'D7 Retention', description: 'Track day 7 retention' },
-    { value: 'OTHER', name: 'Other', description: 'Other custom events' }
-  ]
+    { value: "AD_IMPRESSION", name: "Ad Impression", description: "Track when ads are shown" },
+    { value: "RATE", name: "Rate", description: "Track rating actions" },
+    { value: "TUTORIAL_COMPLETION", name: "Tutorial Completion", description: "Track tutorial completions" },
+    { value: "CONTACT", name: "Contact", description: "Track contact form submissions" },
+    { value: "CUSTOMIZE_PRODUCT", name: "Customize Product", description: "Track product customization" },
+    { value: "DONATE", name: "Donate", description: "Track donation events" },
+    { value: "FIND_LOCATION", name: "Find Location", description: "Track location searches" },
+    { value: "SCHEDULE", name: "Schedule", description: "Track scheduling actions" },
+    { value: "START_TRIAL", name: "Start Trial", description: "Track trial starts" },
+    { value: "SUBMIT_APPLICATION", name: "Submit Application", description: "Track application submissions" },
+    { value: "SUBSCRIBE", name: "Subscribe", description: "Track subscription events" },
+    { value: "ADD_TO_CART", name: "Add to Cart", description: "Track cart additions" },
+    { value: "ADD_TO_WISHLIST", name: "Add to Wishlist", description: "Track wishlist additions" },
+    { value: "INITIATED_CHECKOUT", name: "Initiated Checkout", description: "Track checkout starts" },
+    { value: "ADD_PAYMENT_INFO", name: "Add Payment Info", description: "Track payment info additions" },
+    { value: "PURCHASE", name: "Purchase", description: "Track completed purchases" },
+    { value: "LEAD", name: "Lead", description: "Track lead generation" },
+    { value: "COMPLETE_REGISTRATION", name: "Complete Registration", description: "Track registration completions" },
+    { value: "CONTENT_VIEW", name: "Content View", description: "Track content views" },
+    { value: "SEARCH", name: "Search", description: "Track search events" },
+    { value: "SERVICE_BOOKING_REQUEST", name: "Service Booking Request", description: "Track booking requests" },
+    { value: "MESSAGING_CONVERSATION_STARTED_7D", name: "Messaging Conversation Started (7D)", description: "Track messaging starts within 7 days" },
+    { value: "LEVEL_ACHIEVED", name: "Level Achieved", description: "Track level achievements" },
+    { value: "ACHIEVEMENT_UNLOCKED", name: "Achievement Unlocked", description: "Track unlocked achievements" },
+    { value: "SPENT_CREDITS", name: "Spent Credits", description: "Track credit spending" },
+    { value: "LISTING_INTERACTION", name: "Listing Interaction", description: "Track listing interactions" },
+    { value: "D2_RETENTION", name: "D2 Retention", description: "Track day 2 retention" },
+    { value: "D7_RETENTION", name: "D7 Retention", description: "Track day 7 retention" },
+    { value: "OTHER", name: "Other", description: "Other custom events" },
+  ];
 
-  const eventTypeInput = document.querySelector('.config-event-type')
-  const eventTypeSearch = document.querySelector('.event-type-search')
-  const eventTypeSuggestions = document.querySelector('.event-type-suggestions')
+  const eventTypeInput = document.querySelector(".config-event-type");
+  const eventTypeSearch = document.querySelector(".event-type-search");
+  const eventTypeSuggestions = document.querySelector(".event-type-suggestions");
 
-  if (!eventTypeInput || !eventTypeSearch || !eventTypeSuggestions) return
+  if (!eventTypeInput || !eventTypeSearch || !eventTypeSuggestions) return;
 
-  let highlightedIndex = -1
-  let selectedEventType = null
+  let highlightedIndex = -1;
+  let selectedEventType = null;
 
   // Click on main input to show search
-  eventTypeInput.addEventListener('click', (e) => {
-    e.preventDefault()
-    eventTypeInput.style.display = 'none'
-    eventTypeSearch.style.display = 'block'
-    eventTypeSearch.focus()
-    displayAllEventTypes()
-  })
+  eventTypeInput.addEventListener("click", (e) => {
+    e.preventDefault();
+    eventTypeInput.style.display = "none";
+    eventTypeSearch.style.display = "block";
+    eventTypeSearch.focus();
+    displayAllEventTypes();
+  });
 
   // Search functionality
-  eventTypeSearch.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase()
+  eventTypeSearch.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
 
     if (searchTerm.length === 0) {
-      displayAllEventTypes()
-      return
+      displayAllEventTypes();
+      return;
     }
 
-    const filteredEvents = eventTypes.filter(event =>
-      event.name.toLowerCase().includes(searchTerm) ||
-      event.value.toLowerCase().includes(searchTerm) ||
-      event.description.toLowerCase().includes(searchTerm)
-    )
+    const filteredEvents = eventTypes.filter((event) => event.name.toLowerCase().includes(searchTerm) || event.value.toLowerCase().includes(searchTerm) || event.description.toLowerCase().includes(searchTerm));
 
-    displayEventTypes(filteredEvents)
-  })
+    displayEventTypes(filteredEvents);
+  });
 
   // Display all event types
   function displayAllEventTypes() {
-    displayEventTypes(eventTypes)
+    displayEventTypes(eventTypes);
   }
 
   // Display filtered event types
   function displayEventTypes(events) {
-    eventTypeSuggestions.innerHTML = ''
-    highlightedIndex = -1
+    eventTypeSuggestions.innerHTML = "";
+    highlightedIndex = -1;
 
     events.forEach((event, index) => {
-      const li = document.createElement('li')
+      const li = document.createElement("li");
       li.innerHTML = `
         <div>${event.name}</div>
         <div class="event-description">${event.description}</div>
-      `
-      li.dataset.index = index
-      li.dataset.value = event.value
-      li.dataset.name = event.name
-      li.addEventListener('click', () => selectEventType(event))
-      eventTypeSuggestions.appendChild(li)
-    })
+      `;
+      li.dataset.index = index;
+      li.dataset.value = event.value;
+      li.dataset.name = event.name;
+      li.addEventListener("click", () => selectEventType(event));
+      eventTypeSuggestions.appendChild(li);
+    });
 
-    eventTypeSuggestions.style.display = 'block'
+    eventTypeSuggestions.style.display = "block";
   }
 
   // Select event type
   function selectEventType(event) {
-    selectedEventType = event
-    eventTypeInput.value = event.name
-    eventTypeInput.dataset.value = event.value
-    eventTypeSearch.style.display = 'none'
-    eventTypeInput.style.display = 'block'
-    eventTypeSuggestions.style.display = 'none'
-    eventTypeSearch.value = ''
+    selectedEventType = event;
+    eventTypeInput.value = event.name;
+    eventTypeInput.dataset.value = event.value;
+    eventTypeSearch.style.display = "none";
+    eventTypeInput.style.display = "block";
+    eventTypeSuggestions.style.display = "none";
+    eventTypeSearch.value = "";
 
     // Remove error styling if present
-    eventTypeInput.classList.remove('empty-input')
-    
+    eventTypeInput.classList.remove("empty-input");
+
     // Trigger validation check after event type selection
-    if (typeof checkRequiredFields === 'function') {
-      checkRequiredFields()
+    if (typeof checkRequiredFields === "function") {
+      checkRequiredFields();
     }
   }
 
   // Keyboard navigation
-  eventTypeSearch.addEventListener('keydown', (e) => {
-    const items = eventTypeSuggestions.querySelectorAll('li')
+  eventTypeSearch.addEventListener("keydown", (e) => {
+    const items = eventTypeSuggestions.querySelectorAll("li");
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1)
-      updateHighlight(items, highlightedIndex)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      highlightedIndex = Math.max(highlightedIndex - 1, -1)
-      updateHighlight(items, highlightedIndex)
-    } else if (e.key === 'Enter' && highlightedIndex >= 0) {
-      e.preventDefault()
-      const selectedItem = items[highlightedIndex]
-      const event = eventTypes.find(et => et.value === selectedItem.dataset.value)
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1);
+      updateHighlight(items, highlightedIndex);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlightedIndex = Math.max(highlightedIndex - 1, -1);
+      updateHighlight(items, highlightedIndex);
+    } else if (e.key === "Enter" && highlightedIndex >= 0) {
+      e.preventDefault();
+      const selectedItem = items[highlightedIndex];
+      const event = eventTypes.find((et) => et.value === selectedItem.dataset.value);
       if (event) {
-        selectEventType(event)
+        selectEventType(event);
       }
-    } else if (e.key === 'Escape') {
-      eventTypeSearch.style.display = 'none'
-      eventTypeInput.style.display = 'block'
-      eventTypeSuggestions.style.display = 'none'
+    } else if (e.key === "Escape") {
+      eventTypeSearch.style.display = "none";
+      eventTypeInput.style.display = "block";
+      eventTypeSuggestions.style.display = "none";
     }
-  })
+  });
 
   // Update highlight
   function updateHighlight(items, index) {
     items.forEach((item, i) => {
       if (i === index) {
-        item.classList.add('highlighted')
-        item.scrollIntoView({ block: 'nearest' })
+        item.classList.add("highlighted");
+        item.scrollIntoView({ block: "nearest" });
       } else {
-        item.classList.remove('highlighted')
+        item.classList.remove("highlighted");
       }
-    })
+    });
   }
 
   // Hide suggestions on click outside
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.event-type-container')) {
-      eventTypeSearch.style.display = 'none'
-      eventTypeInput.style.display = 'block'
-      eventTypeSuggestions.style.display = 'none'
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".event-type-container")) {
+      eventTypeSearch.style.display = "none";
+      eventTypeInput.style.display = "block";
+      eventTypeSuggestions.style.display = "none";
     }
-  })
+  });
 }
 
 // Creative Library Functionality
 class CreativeLibrary {
   constructor() {
-    this.modal = document.querySelector('.creative-library-modal')
-    this.selectedCreatives = new Set()
-    this.allCreatives = []
-    this.filteredCreatives = []
-    this.currentAccountId = null
-    this.currentView = 'creatives' // 'creatives' or 'batches'
-    this.allBatches = []
-    this.currentBatch = null
-    this.init()
+    this.modal = document.querySelector(".creative-library-modal");
+    this.selectedCreatives = new Set();
+    this.allCreatives = [];
+    this.filteredCreatives = [];
+    this.currentAccountId = null;
+    this.currentView = "creatives"; // 'creatives' or 'batches'
+    this.allBatches = [];
+    this.currentBatch = null;
+    this.init();
   }
 
   init() {
     // Open library button
-    const openLibraryBtn = document.querySelector('.open-library-btn')
+    const openLibraryBtn = document.querySelector(".open-library-btn");
     if (openLibraryBtn) {
-      openLibraryBtn.addEventListener('click', () => this.openLibrary())
+      openLibraryBtn.addEventListener("click", () => this.openLibrary());
     }
 
     // Close modal
-    const closeBtn = this.modal.querySelector('.modal-close-btn')
-    closeBtn.addEventListener('click', () => this.closeLibrary())
+    const closeBtn = this.modal.querySelector(".modal-close-btn");
+    closeBtn.addEventListener("click", () => this.closeLibrary());
 
     // Click outside modal to close
-    this.modal.addEventListener('click', (e) => {
+    this.modal.addEventListener("click", (e) => {
       if (e.target === this.modal) {
-        this.closeLibrary()
+        this.closeLibrary();
       }
-    })
+    });
 
     // Search functionality
-    const searchInput = this.modal.querySelector('.library-search')
-    searchInput.addEventListener('input', (e) => this.filterCreatives())
+    const searchInput = this.modal.querySelector(".library-search");
+    searchInput.addEventListener("input", (e) => this.filterCreatives());
 
     // Filter checkboxes
-    const filterCheckboxes = this.modal.querySelectorAll('.filter-checkbox input')
-    filterCheckboxes.forEach(checkbox => {
-      checkbox.addEventListener('change', () => this.filterCreatives())
-    })
+    const filterCheckboxes = this.modal.querySelectorAll(".filter-checkbox input");
+    filterCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", () => this.filterCreatives());
+    });
 
     // Add selected button
-    const addSelectedBtn = this.modal.querySelector('.add-selected-btn')
-    addSelectedBtn.addEventListener('click', () => this.addSelectedCreatives())
+    const addSelectedBtn = this.modal.querySelector(".add-selected-btn");
+    addSelectedBtn.addEventListener("click", () => this.addSelectedCreatives());
 
     // Clear all button
-    const clearAllBtn = this.modal.querySelector('.clear-all-btn')
+    const clearAllBtn = this.modal.querySelector(".clear-all-btn");
     if (clearAllBtn) {
-      clearAllBtn.addEventListener('click', () => {
-        console.log('Clear all button clicked')
-        this.clearAllCreatives()
-      })
+      clearAllBtn.addEventListener("click", () => {
+        console.log("Clear all button clicked");
+        this.clearAllCreatives();
+      });
     } else {
-      console.error('Clear all button not found')
+      console.error("Clear all button not found");
     }
 
     // View toggle buttons
-    const viewToggleBtns = this.modal.querySelectorAll('.view-toggle-btn')
-    viewToggleBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const view = btn.dataset.view
-        this.switchView(view)
-      })
-    })
+    const viewToggleBtns = this.modal.querySelectorAll(".view-toggle-btn");
+    viewToggleBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const view = btn.dataset.view;
+        this.switchView(view);
+      });
+    });
 
     // Create batch button
-    const createBatchBtn = this.modal.querySelector('.create-batch-btn')
+    const createBatchBtn = this.modal.querySelector(".create-batch-btn");
     if (createBatchBtn) {
-      createBatchBtn.addEventListener('click', () => this.createNewBatch())
+      createBatchBtn.addEventListener("click", () => this.createNewBatch());
     }
 
     // Breadcrumb navigation
-    const breadcrumbItem = this.modal.querySelector('.breadcrumb-item')
+    const breadcrumbItem = this.modal.querySelector(".breadcrumb-item");
     if (breadcrumbItem) {
-      breadcrumbItem.addEventListener('click', () => {
-        this.currentBatch = null
-        this.loadBatches()
-      })
+      breadcrumbItem.addEventListener("click", () => {
+        this.currentBatch = null;
+        this.loadBatches();
+      });
     }
   }
 
   openLibrary() {
-    this.currentAccountId = appState.state.selectedAccount
+    this.currentAccountId = appState.state.selectedAccount;
     if (!this.currentAccountId) {
-      alert('Please select an ad account first')
-      return
+      alert("Please select an ad account first");
+      return;
     }
 
-    this.modal.style.display = 'flex'
-    this.loadCreatives()
+    this.modal.style.display = "flex";
+    this.loadCreatives();
   }
 
   closeLibrary() {
-    this.modal.style.display = 'none'
-    this.selectedCreatives.clear()
-    this.updateSelectedCount()
+    this.modal.style.display = "none";
+    this.selectedCreatives.clear();
+    this.updateSelectedCount();
   }
 
   async loadCreatives() {
-    const loadingDiv = this.modal.querySelector('.library-loading')
-    const emptyDiv = this.modal.querySelector('.library-empty')
-    const gridContainer = this.modal.querySelector('.library-grid')
+    const loadingDiv = this.modal.querySelector(".library-loading");
+    const emptyDiv = this.modal.querySelector(".library-empty");
+    const gridContainer = this.modal.querySelector(".library-grid");
 
-    loadingDiv.style.display = 'block'
-    emptyDiv.style.display = 'none'
-    gridContainer.innerHTML = ''
+    loadingDiv.style.display = "block";
+    emptyDiv.style.display = "none";
+    gridContainer.innerHTML = "";
 
     try {
-      const response = await fetch('/api/creative-library')
-      const data = await response.json()
+      const response = await fetch("/api/creative-library");
+      const data = await response.json();
 
-      this.allCreatives = data.creatives || []
-      this.filteredCreatives = this.allCreatives // Initialize filtered with all
+      this.allCreatives = data.creatives || [];
+      this.filteredCreatives = this.allCreatives; // Initialize filtered with all
 
       if (this.allCreatives.length === 0) {
-        loadingDiv.style.display = 'none'
-        emptyDiv.style.display = 'block'
+        loadingDiv.style.display = "none";
+        emptyDiv.style.display = "block";
       } else {
-        loadingDiv.style.display = 'none'
-        this.filterCreatives() // This will apply filters and render
+        loadingDiv.style.display = "none";
+        this.filterCreatives(); // This will apply filters and render
       }
     } catch (error) {
-      console.error('Error loading creatives:', error)
-      loadingDiv.style.display = 'none'
-      emptyDiv.style.display = 'block'
-      emptyDiv.innerHTML = '<p>Error loading creatives</p>'
+      console.error("Error loading creatives:", error);
+      loadingDiv.style.display = "none";
+      emptyDiv.style.display = "block";
+      emptyDiv.innerHTML = "<p>Error loading creatives</p>";
     }
   }
 
   renderCreatives(creatives) {
-    const gridContainer = this.modal.querySelector('.library-grid')
-    gridContainer.innerHTML = ''
+    const gridContainer = this.modal.querySelector(".library-grid");
+    gridContainer.innerHTML = "";
 
-    creatives.forEach(creative => {
-      const creativeItem = this.createCreativeElement(creative)
-      gridContainer.appendChild(creativeItem)
-    })
+    creatives.forEach((creative) => {
+      const creativeItem = this.createCreativeElement(creative);
+      gridContainer.appendChild(creativeItem);
+    });
   }
 
   createCreativeElement(creative) {
-    const div = document.createElement('div')
-    div.className = 'creative-item'
-    div.dataset.creativeId = creative.id
+    const div = document.createElement("div");
+    div.className = "creative-item";
+    div.dataset.creativeId = creative.id;
 
-    const isInCurrentAccount = creative.uploaded_accounts &&
-      creative.uploaded_accounts.split(',').includes(this.currentAccountId)
+    const isInCurrentAccount = creative.uploaded_accounts && creative.uploaded_accounts.split(",").includes(this.currentAccountId);
 
-    const isVideo = creative.file_type.startsWith('video/')
-    const typeClass = isVideo ? 'video' : 'image'
+    const isVideo = creative.file_type.startsWith("video/");
+    const typeClass = isVideo ? "video" : "image";
 
     // Use thumbnail for videos, actual file for images
-    const imageUrl = isVideo ? creative.thumbnailUrl : creative.fileUrl
+    const imageUrl = isVideo ? creative.thumbnailUrl : creative.fileUrl;
 
     div.innerHTML = `
       <div class="creative-thumbnail">
-        ${imageUrl ?
-        `<img src="${imageUrl}" alt="${creative.original_name}">` :
-        `<div class="no-thumbnail">${isVideo ? '🎥 Video' : '🖼️ Image'}</div>`
-      }
+        ${imageUrl ? `<img src="${imageUrl}" alt="${creative.original_name}">` : `<div class="no-thumbnail">${isVideo ? "🎥 Video" : "🖼️ Image"}</div>`}
       </div>
       <div class="creative-info">
         <div class="creative-name" title="${creative.original_name}">${creative.original_name}</div>
@@ -4126,216 +4342,215 @@ class CreativeLibrary {
           <span class="creative-size">${this.formatFileSize(creative.file_size)}</span>
         </div>
       </div>
-      ${isInCurrentAccount ? '<div class="upload-status">✓ In Account</div>' : ''}
+      ${isInCurrentAccount ? '<div class="upload-status">✓ In Account</div>' : ""}
       <div class="selection-checkbox"></div>
       <button class="delete-btn" title="Delete creative">×</button>
       <button class="add-to-batch-btn" title="Add to batch">📁</button>
-    `
+    `;
 
     // Add click handler for selection
-    div.addEventListener('click', (e) => {
+    div.addEventListener("click", (e) => {
       // Don't toggle selection if clicking delete button
-      if (!e.target.closest('.delete-btn')) {
-        this.toggleSelection(creative, div)
+      if (!e.target.closest(".delete-btn")) {
+        this.toggleSelection(creative, div);
       }
-    })
+    });
 
     // Add click handler for delete button
-    const deleteBtn = div.querySelector('.delete-btn')
-    deleteBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.deleteCreative(creative.id)
-    })
+    const deleteBtn = div.querySelector(".delete-btn");
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.deleteCreative(creative.id);
+    });
 
     // Add click handler for add to batch button
-    const addToBatchBtn = div.querySelector('.add-to-batch-btn')
-    addToBatchBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.addCreativeToBatch(creative.id)
-    })
+    const addToBatchBtn = div.querySelector(".add-to-batch-btn");
+    addToBatchBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.addCreativeToBatch(creative.id);
+    });
 
-    return div
+    return div;
   }
 
   toggleSelection(creative, element) {
     if (this.selectedCreatives.has(creative.id)) {
-      this.selectedCreatives.delete(creative.id)
-      element.classList.remove('selected')
+      this.selectedCreatives.delete(creative.id);
+      element.classList.remove("selected");
     } else {
-      this.selectedCreatives.add(creative.id)
-      element.classList.add('selected')
+      this.selectedCreatives.add(creative.id);
+      element.classList.add("selected");
     }
 
-    this.updateSelectedCount()
+    this.updateSelectedCount();
   }
 
   updateSelectedCount() {
-    const countSpan = this.modal.querySelector('.selected-count')
-    const addBtn = this.modal.querySelector('.add-selected-btn')
+    const countSpan = this.modal.querySelector(".selected-count");
+    const addBtn = this.modal.querySelector(".add-selected-btn");
 
-    const count = this.selectedCreatives.size
-    countSpan.textContent = `${count} selected`
-    addBtn.disabled = count === 0
+    const count = this.selectedCreatives.size;
+    countSpan.textContent = `${count} selected`;
+    addBtn.disabled = count === 0;
   }
 
   filterCreatives() {
-    const searchTerm = this.modal.querySelector('.library-search').value.toLowerCase()
-    const filterNew = this.modal.querySelector('#filter-new').checked
-    const filterUploaded = this.modal.querySelector('#filter-uploaded').checked
-    const filterVideos = this.modal.querySelector('#filter-videos').checked
-    const filterImages = this.modal.querySelector('#filter-images').checked
+    const searchTerm = this.modal.querySelector(".library-search").value.toLowerCase();
+    const filterNew = this.modal.querySelector("#filter-new").checked;
+    const filterUploaded = this.modal.querySelector("#filter-uploaded").checked;
+    const filterVideos = this.modal.querySelector("#filter-videos").checked;
+    const filterImages = this.modal.querySelector("#filter-images").checked;
 
-    this.filteredCreatives = this.allCreatives.filter(creative => {
+    this.filteredCreatives = this.allCreatives.filter((creative) => {
       // Search filter
       if (searchTerm && !creative.original_name.toLowerCase().includes(searchTerm)) {
-        return false
+        return false;
       }
 
       // Upload status filter
-      const isInCurrentAccount = creative.uploaded_accounts &&
-        creative.uploaded_accounts.split(',').includes(this.currentAccountId)
+      const isInCurrentAccount = creative.uploaded_accounts && creative.uploaded_accounts.split(",").includes(this.currentAccountId);
 
-      if (!filterNew && !isInCurrentAccount) return false
-      if (!filterUploaded && isInCurrentAccount) return false
+      if (!filterNew && !isInCurrentAccount) return false;
+      if (!filterUploaded && isInCurrentAccount) return false;
 
       // Type filter
-      const isVideo = creative.file_type.startsWith('video/')
-      if (!filterVideos && isVideo) return false
-      if (!filterImages && !isVideo) return false
+      const isVideo = creative.file_type.startsWith("video/");
+      if (!filterVideos && isVideo) return false;
+      if (!filterImages && !isVideo) return false;
 
-      return true
-    })
+      return true;
+    });
 
-    this.renderCreatives(this.filteredCreatives)
+    this.renderCreatives(this.filteredCreatives);
   }
 
   showLoading() {
-    const loadingDiv = this.modal.querySelector('.library-loading')
-    const gridContainer = this.modal.querySelector('.library-grid')
-    const emptyDiv = this.modal.querySelector('.library-empty')
+    const loadingDiv = this.modal.querySelector(".library-loading");
+    const gridContainer = this.modal.querySelector(".library-grid");
+    const emptyDiv = this.modal.querySelector(".library-empty");
 
-    loadingDiv.style.display = 'block'
-    gridContainer.style.display = 'none'
-    emptyDiv.style.display = 'none'
+    loadingDiv.style.display = "block";
+    gridContainer.style.display = "none";
+    emptyDiv.style.display = "none";
   }
 
   hideLoading() {
-    const loadingDiv = this.modal.querySelector('.library-loading')
-    const gridContainer = this.modal.querySelector('.library-grid-container')
+    const loadingDiv = this.modal.querySelector(".library-loading");
+    const gridContainer = this.modal.querySelector(".library-grid-container");
 
-    loadingDiv.style.display = 'none'
-    gridContainer.style.display = 'block'
+    loadingDiv.style.display = "none";
+    gridContainer.style.display = "block";
   }
 
   showEmpty() {
-    const loadingDiv = this.modal.querySelector('.library-loading')
-    const emptyDiv = this.modal.querySelector('.library-empty')
-    const gridContainer = this.modal.querySelector('.library-grid')
+    const loadingDiv = this.modal.querySelector(".library-loading");
+    const emptyDiv = this.modal.querySelector(".library-empty");
+    const gridContainer = this.modal.querySelector(".library-grid");
 
-    loadingDiv.style.display = 'none'
-    emptyDiv.style.display = 'block'
-    gridContainer.innerHTML = ''
+    loadingDiv.style.display = "none";
+    emptyDiv.style.display = "block";
+    gridContainer.innerHTML = "";
   }
 
   formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
   switchView(view) {
-    this.currentView = view
+    this.currentView = view;
 
     // Update toggle buttons
-    document.querySelectorAll('.view-toggle-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.view === view)
-    })
+    document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.view === view);
+    });
 
     // Update UI visibility
-    const filtersSection = this.modal.querySelector('.library-filters')
-    const batchActions = this.modal.querySelector('.batch-actions')
+    const filtersSection = this.modal.querySelector(".library-filters");
+    const batchActions = this.modal.querySelector(".batch-actions");
 
-    if (view === 'creatives') {
-      filtersSection.style.display = 'flex'
-      batchActions.style.display = 'none'
-      this.loadCreatives()
+    if (view === "creatives") {
+      filtersSection.style.display = "flex";
+      batchActions.style.display = "none";
+      this.loadCreatives();
     } else {
-      filtersSection.style.display = 'none'
-      batchActions.style.display = 'block'
-      this.loadBatches()
+      filtersSection.style.display = "none";
+      batchActions.style.display = "block";
+      this.loadBatches();
     }
   }
 
   async loadBatches() {
-    const loadingDiv = this.modal.querySelector('.library-loading')
-    const emptyDiv = this.modal.querySelector('.library-empty')
-    const gridContainer = this.modal.querySelector('.library-grid')
-    const breadcrumb = this.modal.querySelector('.batch-breadcrumb')
+    const loadingDiv = this.modal.querySelector(".library-loading");
+    const emptyDiv = this.modal.querySelector(".library-empty");
+    const gridContainer = this.modal.querySelector(".library-grid");
+    const breadcrumb = this.modal.querySelector(".batch-breadcrumb");
 
-    loadingDiv.style.display = 'block'
-    emptyDiv.style.display = 'none'
-    gridContainer.innerHTML = ''
+    loadingDiv.style.display = "block";
+    emptyDiv.style.display = "none";
+    gridContainer.innerHTML = "";
 
     try {
       if (this.currentBatch) {
         // Load creatives in the batch
-        breadcrumb.style.display = 'block'
-        breadcrumb.querySelector('.breadcrumb-current').textContent = this.currentBatch.name
+        breadcrumb.style.display = "block";
+        breadcrumb.querySelector(".breadcrumb-current").textContent = this.currentBatch.name;
 
-        const response = await fetch(`/api/creative-batches/${this.currentBatch.id}/creatives`)
-        const data = await response.json()
+        const response = await fetch(`/api/creative-batches/${this.currentBatch.id}/creatives`);
+        const data = await response.json();
 
-        this.allCreatives = data.creatives || []
-        this.filteredCreatives = this.allCreatives
+        this.allCreatives = data.creatives || [];
+        this.filteredCreatives = this.allCreatives;
 
         if (this.allCreatives.length === 0) {
-          loadingDiv.style.display = 'none'
-          emptyDiv.style.display = 'block'
-          emptyDiv.innerHTML = '<p>No creatives in this batch</p>'
+          loadingDiv.style.display = "none";
+          emptyDiv.style.display = "block";
+          emptyDiv.innerHTML = "<p>No creatives in this batch</p>";
         } else {
-          loadingDiv.style.display = 'none'
-          this.renderCreatives(this.allCreatives)
+          loadingDiv.style.display = "none";
+          this.renderCreatives(this.allCreatives);
         }
       } else {
         // Load all batches
-        breadcrumb.style.display = 'none'
+        breadcrumb.style.display = "none";
 
-        const response = await fetch('/api/creative-batches')
-        const data = await response.json()
+        const response = await fetch("/api/creative-batches");
+        const data = await response.json();
 
-        this.allBatches = data.batches || []
+        this.allBatches = data.batches || [];
 
         if (this.allBatches.length === 0) {
-          loadingDiv.style.display = 'none'
-          emptyDiv.style.display = 'block'
-          emptyDiv.innerHTML = '<p>No batches created yet</p>'
+          loadingDiv.style.display = "none";
+          emptyDiv.style.display = "block";
+          emptyDiv.innerHTML = "<p>No batches created yet</p>";
         } else {
-          loadingDiv.style.display = 'none'
-          this.renderBatches(this.allBatches)
+          loadingDiv.style.display = "none";
+          this.renderBatches(this.allBatches);
         }
       }
     } catch (error) {
-      console.error('Error loading batches:', error)
-      loadingDiv.style.display = 'none'
-      emptyDiv.style.display = 'block'
-      emptyDiv.innerHTML = '<p>Error loading batches</p>'
+      console.error("Error loading batches:", error);
+      loadingDiv.style.display = "none";
+      emptyDiv.style.display = "block";
+      emptyDiv.innerHTML = "<p>Error loading batches</p>";
     }
   }
 
   renderBatches(batches) {
-    const gridContainer = this.modal.querySelector('.library-grid')
-    gridContainer.innerHTML = ''
+    const gridContainer = this.modal.querySelector(".library-grid");
+    gridContainer.innerHTML = "";
 
-    batches.forEach(batch => {
-      const div = this.createBatchElement(batch)
-      gridContainer.appendChild(div)
-    })
+    batches.forEach((batch) => {
+      const div = this.createBatchElement(batch);
+      gridContainer.appendChild(div);
+    });
   }
 
   createBatchElement(batch) {
-    const div = document.createElement('div')
-    div.className = 'batch-item'
-    div.dataset.batchId = batch.id
+    const div = document.createElement("div");
+    div.className = "batch-item";
+    div.dataset.batchId = batch.id;
 
     div.innerHTML = `
       <div class="batch-folder-icon">📁</div>
@@ -4356,125 +4571,125 @@ class CreativeLibrary {
         <button class="batch-action-btn edit-batch-btn" title="Edit batch">✏️</button>
         <button class="batch-action-btn delete-batch-btn" title="Delete batch">×</button>
       </div>
-    `
+    `;
 
     // Click to open batch
-    div.addEventListener('click', (e) => {
-      if (!e.target.closest('.batch-action-btn')) {
-        this.currentBatch = batch
-        this.loadBatches() // Will load creatives in the batch
+    div.addEventListener("click", (e) => {
+      if (!e.target.closest(".batch-action-btn")) {
+        this.currentBatch = batch;
+        this.loadBatches(); // Will load creatives in the batch
       }
-    })
+    });
 
     // Upload batch button
-    const uploadBtn = div.querySelector('.upload-batch-btn')
-    uploadBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.uploadEntireBatch(batch)
-    })
+    const uploadBtn = div.querySelector(".upload-batch-btn");
+    uploadBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.uploadEntireBatch(batch);
+    });
 
     // Edit batch button
-    const editBtn = div.querySelector('.edit-batch-btn')
-    editBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.editBatch(batch)
-    })
+    const editBtn = div.querySelector(".edit-batch-btn");
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.editBatch(batch);
+    });
 
     // Delete batch button
-    const deleteBtn = div.querySelector('.delete-batch-btn')
-    deleteBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.deleteBatch(batch.id)
-    })
+    const deleteBtn = div.querySelector(".delete-batch-btn");
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.deleteBatch(batch.id);
+    });
 
-    return div
+    return div;
   }
 
   async createNewBatch() {
-    const name = prompt('Enter batch name (e.g., AT-VID35):')
-    if (!name) return
+    const name = prompt("Enter batch name (e.g., AT-VID35):");
+    if (!name) return;
 
-    const description = prompt('Enter batch description (optional):')
+    const description = prompt("Enter batch description (optional):");
 
     try {
-      const response = await fetch('/api/creative-batches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description })
-      })
+      const response = await fetch("/api/creative-batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description }),
+      });
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create batch')
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create batch");
       }
 
-      const data = await response.json()
-      this.loadBatches()
+      const data = await response.json();
+      this.loadBatches();
     } catch (error) {
-      console.error('Error creating batch:', error)
-      alert(`Failed to create batch: ${error.message}`)
+      console.error("Error creating batch:", error);
+      alert(`Failed to create batch: ${error.message}`);
     }
   }
 
   async editBatch(batch) {
-    const name = prompt('Edit batch name:', batch.name)
-    if (!name || name === batch.name) return
+    const name = prompt("Edit batch name:", batch.name);
+    if (!name || name === batch.name) return;
 
-    const description = prompt('Edit batch description:', batch.description || '')
+    const description = prompt("Edit batch description:", batch.description || "");
 
     try {
       const response = await fetch(`/api/creative-batches/${batch.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description })
-      })
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description }),
+      });
 
       if (!response.ok) {
-        throw new Error('Failed to update batch')
+        throw new Error("Failed to update batch");
       }
 
-      this.loadBatches()
+      this.loadBatches();
     } catch (error) {
-      console.error('Error updating batch:', error)
-      alert('Failed to update batch. Please try again.')
+      console.error("Error updating batch:", error);
+      alert("Failed to update batch. Please try again.");
     }
   }
 
   async deleteBatch(batchId) {
-    if (!confirm('Are you sure you want to delete this batch? The creatives will not be deleted.')) {
-      return
+    if (!confirm("Are you sure you want to delete this batch? The creatives will not be deleted.")) {
+      return;
     }
 
     try {
       const response = await fetch(`/api/creative-batches/${batchId}`, {
-        method: 'DELETE'
-      })
+        method: "DELETE",
+      });
 
       if (!response.ok) {
-        throw new Error('Failed to delete batch')
+        throw new Error("Failed to delete batch");
       }
 
-      this.loadBatches()
+      this.loadBatches();
     } catch (error) {
-      console.error('Error deleting batch:', error)
-      alert('Failed to delete batch. Please try again.')
+      console.error("Error deleting batch:", error);
+      alert("Failed to delete batch. Please try again.");
     }
   }
 
   async uploadEntireBatch(batch) {
     try {
       // Fetch all creatives in the batch
-      const response = await fetch(`/api/creative-batches/${batch.id}/creatives`)
-      const data = await response.json()
+      const response = await fetch(`/api/creative-batches/${batch.id}/creatives`);
+      const data = await response.json();
 
-      const creatives = data.creatives || []
+      const creatives = data.creatives || [];
       if (creatives.length === 0) {
-        alert('No creatives in this batch to upload')
-        return
+        alert("No creatives in this batch to upload");
+        return;
       }
 
       // Convert to file-like objects for the upload handler
-      const filesToAdd = creatives.map(creative => ({
+      const filesToAdd = creatives.map((creative) => ({
         name: creative.original_name,
         originalname: creative.original_name,
         type: creative.file_type,
@@ -4482,27 +4697,27 @@ class CreativeLibrary {
         isFromLibrary: true,
         libraryId: creative.id,
         thumbnailUrl: creative.thumbnailUrl,
-        fileUrl: creative.fileUrl
-      }))
+        fileUrl: creative.fileUrl,
+      }));
 
       // Add to upload handler
       if (window.fileUploadHandler) {
-        window.fileUploadHandler.addFilesFromLibrary(filesToAdd)
+        window.fileUploadHandler.addFilesFromLibrary(filesToAdd);
       }
 
-      this.closeLibrary()
+      this.closeLibrary();
     } catch (error) {
-      console.error('Error uploading batch:', error)
-      alert('Failed to upload batch. Please try again.')
+      console.error("Error uploading batch:", error);
+      alert("Failed to upload batch. Please try again.");
     }
   }
 
   async addSelectedCreatives() {
-    const selectedArray = Array.from(this.selectedCreatives)
-    const creativesToAdd = this.allCreatives.filter(c => selectedArray.includes(c.id))
+    const selectedArray = Array.from(this.selectedCreatives);
+    const creativesToAdd = this.allCreatives.filter((c) => selectedArray.includes(c.id));
 
     // Convert to file-like objects for the upload handler
-    const filesToAdd = creativesToAdd.map(creative => ({
+    const filesToAdd = creativesToAdd.map((creative) => ({
       name: creative.original_name,
       originalname: creative.original_name,
       type: creative.file_type,
@@ -4510,341 +4725,341 @@ class CreativeLibrary {
       isFromLibrary: true,
       libraryId: creative.id,
       thumbnailUrl: creative.thumbnailUrl,
-      fileUrl: creative.fileUrl
-    }))
+      fileUrl: creative.fileUrl,
+    }));
 
     // Add to upload handler
     if (window.fileUploadHandler) {
-      window.fileUploadHandler.addFilesFromLibrary(filesToAdd)
+      window.fileUploadHandler.addFilesFromLibrary(filesToAdd);
     }
 
-    this.closeLibrary()
+    this.closeLibrary();
   }
 
   async deleteCreative(creativeId) {
-    if (!confirm('Are you sure you want to delete this creative? This action cannot be undone.')) {
-      return
+    if (!confirm("Are you sure you want to delete this creative? This action cannot be undone.")) {
+      return;
     }
 
     try {
       const response = await fetch(`/api/creative-library/${creativeId}`, {
-        method: 'DELETE'
-      })
+        method: "DELETE",
+      });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || 'Failed to delete creative')
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Failed to delete creative");
       }
 
-      const result = await response.json()
-      console.log('Delete result:', result)
+      const result = await response.json();
+      console.log("Delete result:", result);
 
       // Remove from UI
-      const element = document.querySelector(`[data-creative-id="${creativeId}"]`)
+      const element = document.querySelector(`[data-creative-id="${creativeId}"]`);
       if (element) {
-        element.remove()
+        element.remove();
       }
 
       // Remove from local data
-      this.allCreatives = this.allCreatives.filter(c => c.id !== creativeId)
-      this.filteredCreatives = this.filteredCreatives.filter(c => c.id !== creativeId)
-      this.selectedCreatives.delete(creativeId)
+      this.allCreatives = this.allCreatives.filter((c) => c.id !== creativeId);
+      this.filteredCreatives = this.filteredCreatives.filter((c) => c.id !== creativeId);
+      this.selectedCreatives.delete(creativeId);
 
       // Update UI
-      this.updateSelectedCount()
+      this.updateSelectedCount();
 
       // Show empty state if no creatives left
       if (this.allCreatives.length === 0) {
-        this.showEmpty()
+        this.showEmpty();
       }
     } catch (error) {
-      console.error('Error deleting creative:', error)
-      alert('Failed to delete creative. Please try again.')
+      console.error("Error deleting creative:", error);
+      alert("Failed to delete creative. Please try again.");
     }
   }
 
   async clearAllCreatives() {
-    console.log('clearAllCreatives called')
+    console.log("clearAllCreatives called");
 
-    if (!confirm('Are you sure you want to delete ALL creatives from the library? This action cannot be undone.')) {
-      return
+    if (!confirm("Are you sure you want to delete ALL creatives from the library? This action cannot be undone.")) {
+      return;
     }
 
-    this.showLoading()
+    this.showLoading();
 
     try {
-      const response = await fetch('/api/creative-library', {
-        method: 'DELETE'
-      })
+      const response = await fetch("/api/creative-library", {
+        method: "DELETE",
+      });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || 'Failed to delete all creatives')
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Failed to delete all creatives");
       }
 
-      const result = await response.json()
-      console.log('Clear all result:', result)
+      const result = await response.json();
+      console.log("Clear all result:", result);
 
       // Clear UI
-      this.allCreatives = []
-      this.filteredCreatives = []
-      this.selectedCreatives.clear()
-      this.updateSelectedCount()
-      this.showEmpty()
+      this.allCreatives = [];
+      this.filteredCreatives = [];
+      this.selectedCreatives.clear();
+      this.updateSelectedCount();
+      this.showEmpty();
 
-      alert(`Successfully deleted ${result.deletedCount} creative(s) from the library.`)
+      alert(`Successfully deleted ${result.deletedCount} creative(s) from the library.`);
     } catch (error) {
-      console.error('Error clearing all creatives:', error)
-      alert('Failed to clear all creatives. Please try again.')
+      console.error("Error clearing all creatives:", error);
+      alert("Failed to clear all creatives. Please try again.");
     } finally {
-      this.hideLoading()
+      this.hideLoading();
     }
   }
 
   async addCreativeToBatch(creativeId) {
     try {
       // First, fetch available batches
-      const response = await fetch('/api/creative-batches')
-      const data = await response.json()
-      const batches = data.batches || []
+      const response = await fetch("/api/creative-batches");
+      const data = await response.json();
+      const batches = data.batches || [];
 
       if (batches.length === 0) {
-        if (confirm('No batches exist. Would you like to create one?')) {
-          await this.createNewBatch()
+        if (confirm("No batches exist. Would you like to create one?")) {
+          await this.createNewBatch();
         }
-        return
+        return;
       }
 
       // Show batch selection
-      const batchNames = batches.map(b => `${b.name} (${b.creative_count} files)`).join('\n')
-      const selectedBatchName = prompt(`Select a batch:\n\n${batchNames}\n\nEnter batch name:`)
+      const batchNames = batches.map((b) => `${b.name} (${b.creative_count} files)`).join("\n");
+      const selectedBatchName = prompt(`Select a batch:\n\n${batchNames}\n\nEnter batch name:`);
 
-      if (!selectedBatchName) return
+      if (!selectedBatchName) return;
 
-      const selectedBatch = batches.find(b => b.name === selectedBatchName.split(' (')[0])
+      const selectedBatch = batches.find((b) => b.name === selectedBatchName.split(" (")[0]);
       if (!selectedBatch) {
-        alert('Batch not found')
-        return
+        alert("Batch not found");
+        return;
       }
 
       // Add creative to batch
       const addResponse = await fetch(`/api/creative-batches/${selectedBatch.id}/creatives`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creativeIds: [creativeId] })
-      })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creativeIds: [creativeId] }),
+      });
 
       if (!addResponse.ok) {
-        throw new Error('Failed to add creative to batch')
+        throw new Error("Failed to add creative to batch");
       }
 
-      alert(`Creative added to batch "${selectedBatch.name}"`)
+      alert(`Creative added to batch "${selectedBatch.name}"`);
 
       // Refresh the view if we're in batch view
-      if (this.currentView === 'batches' && this.currentBatch) {
-        this.loadBatches()
+      if (this.currentView === "batches" && this.currentBatch) {
+        this.loadBatches();
       }
     } catch (error) {
-      console.error('Error adding creative to batch:', error)
-      alert('Failed to add creative to batch. Please try again.')
+      console.error("Error adding creative to batch:", error);
+      alert("Failed to add creative to batch. Please try again.");
     }
   }
 }
 
 FileUploadHandler.prototype.addFilesFromLibrary = function (files) {
-  this.uploadedFiles.push(...files)
-  this.displayUploadedFiles()
-  this.showStep(3)
-}
+  this.uploadedFiles.push(...files);
+  this.displayUploadedFiles();
+  this.showStep(3);
+};
 
 // Override uploadFiles to handle library files
-const originalUploadFiles = FileUploadHandler.prototype.uploadFiles
+const originalUploadFiles = FileUploadHandler.prototype.uploadFiles;
 FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
   // Separate library files from other files
-  const libraryFiles = files.filter(file => file.isFromLibrary)
-  const otherFiles = files.filter(file => !file.isFromLibrary)
+  const libraryFiles = files.filter((file) => file.isFromLibrary);
+  const otherFiles = files.filter((file) => !file.isFromLibrary);
 
   // If we have library files, we need to handle them separately
   if (libraryFiles.length > 0) {
-    this.showLoadingState()
+    this.showLoadingState();
 
-    const button = document.querySelector('[data-step="3"] .continue-btn')
-    const totalFiles = files.length
-    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? 's' : ''}`)
+    const button = document.querySelector('[data-step="3"] .continue-btn');
+    const totalFiles = files.length;
+    animatedEllipsis.start(button, `Processing ${totalFiles} file${totalFiles > 1 ? "s" : ""}`);
 
     // Reset progress tracker for new upload
-    this.progressTracker.reset()
+    this.progressTracker.reset();
 
     try {
-      const uploadPromises = []
+      const uploadPromises = [];
 
       // Handle library files
       if (libraryFiles.length > 0) {
         const libraryPromise = (async () => {
           try {
-            const creativeIds = libraryFiles.map(file => file.libraryId)
-            console.log('Processing library files:', creativeIds)
+            const creativeIds = libraryFiles.map((file) => file.libraryId);
+            console.log("Processing library files:", creativeIds);
 
-            const response = await fetch('/api/upload-library-creatives', {
-              method: 'POST',
+            const response = await fetch("/api/upload-library-creatives", {
+              method: "POST",
               headers: {
-                'Content-Type': 'application/json'
+                "Content-Type": "application/json",
               },
-              body: JSON.stringify({ creativeIds, account_id })
-            })
+              body: JSON.stringify({ creativeIds, account_id }),
+            });
 
             if (!response.ok) {
-              const errorData = await response.json()
-              console.error('Library upload failed:', errorData)
-              throw new Error(errorData.error || 'Failed to upload library creatives')
+              const errorData = await response.json();
+              console.error("Library upload failed:", errorData);
+              throw new Error(errorData.error || "Failed to upload library creatives");
             }
 
-            const libraryResults = await response.json()
-            console.log('Library upload response:', libraryResults)
+            const libraryResults = await response.json();
+            console.log("Library upload response:", libraryResults);
 
-            return libraryResults.results
+            return libraryResults.results;
           } catch (error) {
-            console.error('Error uploading library files:', error)
-            throw error
+            console.error("Error uploading library files:", error);
+            throw error;
           }
-        })()
+        })();
 
-        uploadPromises.push(libraryPromise)
+        uploadPromises.push(libraryPromise);
       }
 
       // Handle other files using the original method
       if (otherFiles.length > 0) {
-        const otherFilesPromise = originalUploadFiles.call(this, otherFiles, account_id)
-        uploadPromises.push(otherFilesPromise)
+        const otherFilesPromise = originalUploadFiles.call(this, otherFiles, account_id);
+        uploadPromises.push(otherFilesPromise);
       }
 
       // Wait for all uploads to complete
-      const results = await Promise.all(uploadPromises)
+      const results = await Promise.all(uploadPromises);
 
       // Combine results
-      const allResults = results.flat()
+      const allResults = results.flat();
 
       // Process results similar to original method
-      const normalizedAssets = []
-      const failedUploads = []
+      const normalizedAssets = [];
+      const failedUploads = [];
 
-      allResults.forEach(item => {
-        if (item.status === 'fulfilled') {
-          if (item.value.status === 'failed') {
+      allResults.forEach((item) => {
+        if (item.status === "fulfilled") {
+          if (item.value.status === "failed") {
             failedUploads.push({
               file: item.value.file,
-              error: item.value.error || 'Upload failed'
-            })
+              error: item.value.error || "Upload failed",
+            });
           } else {
-            normalizedAssets.push(item.value)
+            normalizedAssets.push(item.value);
           }
-        } else if (item.status === 'rejected') {
+        } else if (item.status === "rejected") {
           failedUploads.push({
-            file: item.creativeId || 'Unknown file',
-            error: item.reason || 'Upload failed'
-          })
+            file: item.creativeId || "Unknown file",
+            error: item.reason || "Upload failed",
+          });
         }
-      })
+      });
 
-      this.hideLoadingState(failedUploads.length > 0)
+      this.hideLoadingState(failedUploads.length > 0);
 
       if (failedUploads.length > 0) {
-        console.error('Failed uploads:', failedUploads)
-        const errorMessages = failedUploads.map(f => `${f.file}: ${f.error}`).join('\n')
-        alert(`Some files failed to upload:\n${errorMessages}`)
+        console.error("Failed uploads:", failedUploads);
+        const errorMessages = failedUploads.map((f) => `${f.file}: ${f.error}`).join("\n");
+        alert(`Some files failed to upload:\n${errorMessages}`);
       }
 
       if (normalizedAssets.length > 0) {
-        appState.updateState('uploadedAssets', normalizedAssets)
-        this.showAdCopySection()
+        appState.updateState("uploadedAssets", normalizedAssets);
+        this.showAdCopySection();
       }
 
-      return normalizedAssets
+      return normalizedAssets;
     } catch (error) {
-      this.hideLoadingState(true)
-      throw error
+      this.hideLoadingState(true);
+      throw error;
     }
   } else {
     // No library files, use original method
-    return originalUploadFiles.call(this, files, account_id)
+    return originalUploadFiles.call(this, files, account_id);
   }
-}
+};
 
 // Initialize creative library
-document.addEventListener('DOMContentLoaded', () => {
-  window.creativeLibrary = new CreativeLibrary()
-})
+document.addEventListener("DOMContentLoaded", () => {
+  window.creativeLibrary = new CreativeLibrary();
+});
 
 // Ad set form validation
 let checkRequiredFields; // Declare globally
 
 function setupAdSetFormValidation() {
-  const adsetForm = document.querySelector('.adset-form-container')
-  if (!adsetForm) return
+  const adsetForm = document.querySelector(".adset-form-container");
+  if (!adsetForm) return;
 
-  const createButton = adsetForm.querySelector('button')
+  const createButton = adsetForm.querySelector("button");
   const requiredFields = {
-    adsetName: adsetForm.querySelector('.config-adset-name'),
-    eventType: adsetForm.querySelector('.config-event-type'),
-    minAge: adsetForm.querySelector('.min-age'),
-    maxAge: adsetForm.querySelector('.max-age')
-  }
+    adsetName: adsetForm.querySelector(".config-adset-name"),
+    eventType: adsetForm.querySelector(".config-event-type"),
+    minAge: adsetForm.querySelector(".min-age"),
+    maxAge: adsetForm.querySelector(".max-age"),
+  };
 
   checkRequiredFields = function () {
     // First, make sure we have fresh references to the elements
-    const ageContainer = document.querySelector('.targeting-age')
-    const geoContainers = document.querySelectorAll('.geo-selection-container')
-    
+    const ageContainer = document.querySelector(".targeting-age");
+    const geoContainers = document.querySelectorAll(".geo-selection-container");
+
     // Get fresh references to form fields
-    const adsetNameField = document.querySelector('.config-adset-name')
-    const eventTypeField = document.querySelector('.config-event-type')
-    
+    const adsetNameField = document.querySelector(".config-adset-name");
+    const eventTypeField = document.querySelector(".config-event-type");
+
     // Check if all required fields have values
-    const hasAdsetName = adsetNameField && adsetNameField.value.trim() !== ''
-    const hasEventType = eventTypeField && (eventTypeField.value.trim() !== '' || eventTypeField.dataset.value)
-    
+    const hasAdsetName = adsetNameField && adsetNameField.value.trim() !== "";
+    const hasEventType = eventTypeField && (eventTypeField.value.trim() !== "" || eventTypeField.dataset.value);
+
     // Debug event type specifically
     if (!hasEventType && eventTypeField) {
-      console.log('Event type validation failed:', {
+      console.log("Event type validation failed:", {
         element: eventTypeField,
         value: eventTypeField.value,
         datasetValue: eventTypeField.dataset.value,
-        hasValue: eventTypeField.value.trim() !== '',
-        hasDatasetValue: !!eventTypeField.dataset.value
-      })
+        hasValue: eventTypeField.value.trim() !== "",
+        hasDatasetValue: !!eventTypeField.dataset.value,
+      });
     }
 
     // Check if age fields are visible (not special ad category)
     // Force a fresh computation of styles
-    const ageFieldsVisible = ageContainer && window.getComputedStyle(ageContainer).display !== 'none'
-    let hasValidAge = true
+    const ageFieldsVisible = ageContainer && window.getComputedStyle(ageContainer).display !== "none";
+    let hasValidAge = true;
     if (ageFieldsVisible) {
-      const hasMinAge = requiredFields.minAge && requiredFields.minAge.value.trim() !== ''
-      const hasMaxAge = requiredFields.maxAge && requiredFields.maxAge.value.trim() !== ''
-      hasValidAge = hasMinAge && hasMaxAge
+      const hasMinAge = requiredFields.minAge && requiredFields.minAge.value.trim() !== "";
+      const hasMaxAge = requiredFields.maxAge && requiredFields.maxAge.value.trim() !== "";
+      hasValidAge = hasMinAge && hasMaxAge;
     }
 
     // Check if geo fields are visible (not special ad category)
     // Force a fresh computation of styles
-    const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== 'none'
-    let hasValidGeo = true
+    const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
+    let hasValidGeo = true;
     if (geoFieldsVisible) {
-      hasValidGeo = document.querySelector('#selected-countries').children.length > 0
+      hasValidGeo = document.querySelector("#selected-countries").children.length > 0;
     }
 
     // Check if budget field is required and valid
-    const budgetInput = document.querySelector('.config-daily-budget')
-    let hasValidBudget = true
+    const budgetInput = document.querySelector(".config-daily-budget");
+    let hasValidBudget = true;
     if (budgetInput && budgetInput.required) {
-      hasValidBudget = budgetInput.value.trim() !== ''
+      hasValidBudget = budgetInput.value.trim() !== "";
     }
-    
+
     // Debug logging
-    const selectedCampaign = document.querySelector('.campaign.selected')
+    const selectedCampaign = document.querySelector(".campaign.selected");
     if (selectedCampaign) {
-      const specialAdCategories = JSON.parse(selectedCampaign.dataset.specialAdCategories || '[]')
-      console.log('Validation check:', {
-        campaign: selectedCampaign.querySelector('h3').textContent,
+      const specialAdCategories = JSON.parse(selectedCampaign.dataset.specialAdCategories || "[]");
+      console.log("Validation check:", {
+        campaign: selectedCampaign.querySelector("h3").textContent,
         specialAdCategories: specialAdCategories.length > 0,
         ageFieldsVisible,
         geoFieldsVisible,
@@ -4853,306 +5068,305 @@ function setupAdSetFormValidation() {
         hasValidAge,
         hasValidGeo,
         hasValidBudget,
-        shouldActivate: hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget
-      })
+        shouldActivate: hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget,
+      });
     }
 
     // Enable button only if all required fields are filled
     // Use a small delay to ensure DOM has settled
     setTimeout(() => {
       if (hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget) {
-        createButton.classList.add('active')
+        createButton.classList.add("active");
       } else {
-        createButton.classList.remove('active')
+        createButton.classList.remove("active");
       }
-    }, 0)
-  }
+    }, 0);
+  };
 
   // Add event listeners to all required fields
-  Object.values(requiredFields).forEach(field => {
+  Object.values(requiredFields).forEach((field) => {
     if (field) {
-      field.addEventListener('input', checkRequiredFields)
+      field.addEventListener("input", checkRequiredFields);
     }
-  })
+  });
 
   // Monitor country selection changes
-  const observer = new MutationObserver(checkRequiredFields)
-  const selectedCountries = document.querySelector('#selected-countries')
+  const observer = new MutationObserver(checkRequiredFields);
+  const selectedCountries = document.querySelector("#selected-countries");
   if (selectedCountries) {
-    observer.observe(selectedCountries, { childList: true })
+    observer.observe(selectedCountries, { childList: true });
   }
 
   // Add listener to budget field
-  const budgetInput = document.querySelector('.config-daily-budget')
+  const budgetInput = document.querySelector(".config-daily-budget");
   if (budgetInput) {
-    budgetInput.addEventListener('input', checkRequiredFields)
+    budgetInput.addEventListener("input", checkRequiredFields);
   }
 
   // Monitor for visibility changes on age and geo containers
-  const ageContainer = document.querySelector('.targeting-age')
-  const geoContainers = document.querySelectorAll('.geo-selection-container')
+  const ageContainer = document.querySelector(".targeting-age");
+  const geoContainers = document.querySelectorAll(".geo-selection-container");
 
   // Create a debounced version of checkRequiredFields
-  let validationTimeout
+  let validationTimeout;
   const debouncedCheckRequiredFields = () => {
-    clearTimeout(validationTimeout)
+    clearTimeout(validationTimeout);
     validationTimeout = setTimeout(() => {
-      checkRequiredFields()
-    }, 50)
-  }
+      checkRequiredFields();
+    }, 50);
+  };
 
   if (ageContainer) {
     const ageObserver = new MutationObserver(() => {
-      debouncedCheckRequiredFields()
-    })
-    ageObserver.observe(ageContainer, { attributes: true, attributeFilter: ['style'] })
+      debouncedCheckRequiredFields();
+    });
+    ageObserver.observe(ageContainer, { attributes: true, attributeFilter: ["style"] });
   }
 
-  geoContainers.forEach(container => {
+  geoContainers.forEach((container) => {
     const geoObserver = new MutationObserver(() => {
-      debouncedCheckRequiredFields()
-    })
-    geoObserver.observe(container, { attributes: true, attributeFilter: ['style'] })
-  })
+      debouncedCheckRequiredFields();
+    });
+    geoObserver.observe(container, { attributes: true, attributeFilter: ["style"] });
+  });
 
   // Initial check
-  checkRequiredFields()
+  checkRequiredFields();
 }
 // Cache notification and real-time update functions
 function showCacheNotification(cacheAgeMinutes) {
-  const notification = document.createElement('div')
-  notification.className = 'cache-notification'
-  notification.style = 'position: fixed; bottom: 10px; right: 10px; color: #999; font-size: 12px; z-index: 10;'
-  notification.textContent = `Cached data${cacheAgeMinutes ? ' (' + cacheAgeMinutes + 'm old)' : ''}`
+  const notification = document.createElement("div");
+  notification.className = "cache-notification";
+  notification.style = "position: fixed; bottom: 10px; right: 10px; color: #999; font-size: 12px; z-index: 10;";
+  notification.textContent = `Cached data${cacheAgeMinutes ? " (" + cacheAgeMinutes + "m old)" : ""}`;
 
-  document.body.appendChild(notification)
+  document.body.appendChild(notification);
 
-  setTimeout(() => notification.remove(), 1000)
+  setTimeout(() => notification.remove(), 1000);
 }
 
 // Manual refresh function
 async function refreshMetaDataManually() {
-  const refreshBtn = document.querySelector('.refresh-data-btn')
+  const refreshBtn = document.querySelector(".refresh-data-btn");
 
   try {
     // Add spinning animation
     if (refreshBtn) {
-      refreshBtn.classList.add('refreshing')
-      refreshBtn.disabled = true
+      refreshBtn.classList.add("refreshing");
+      refreshBtn.disabled = true;
     }
 
-    const response = await fetch('/api/refresh-meta-cache', { method: 'POST' })
-    const result = await response.json()
+    const response = await fetch("/api/refresh-meta-cache", { method: "POST" });
+    const result = await response.json();
 
-    if (result.status === 'success') {
+    if (result.status === "success") {
       // Data will be updated via SSE, no need to reload
-      console.log('Manual refresh completed successfully')
+      console.log("Manual refresh completed successfully");
 
       // Show a temporary success indicator
       if (window.showSuccess) {
-        window.showSuccess('Refreshing data from Facebook...', 2000)
+        window.showSuccess("Refreshing data from Facebook...", 2000);
       }
-    } else if (result.status === 'already_refreshing') {
+    } else if (result.status === "already_refreshing") {
       // Just log it, no alert
-      console.log('A refresh is already in progress')
+      console.log("A refresh is already in progress");
     }
   } catch (error) {
-    console.error('Manual refresh failed:', error)
+    console.error("Manual refresh failed:", error);
     if (window.showError) {
-      window.showError('Failed to refresh data', 3000)
+      window.showError("Failed to refresh data", 3000);
     }
   } finally {
     // Remove spinning animation after a short delay
     setTimeout(() => {
       if (refreshBtn) {
-        refreshBtn.classList.remove('refreshing')
-        refreshBtn.disabled = false
+        refreshBtn.classList.remove("refreshing");
+        refreshBtn.disabled = false;
       }
-    }, 1000)
+    }, 1000);
   }
 }
 
 // Set up SSE for real-time updates
 function setupMetaDataUpdates() {
-  const eventSource = new EventSource('/api/meta-data-updates')
+  const eventSource = new EventSource("/api/meta-data-updates");
 
-  eventSource.addEventListener('connected', (event) => {
-    console.log('Connected to Meta data updates:', JSON.parse(event.data))
-  })
+  eventSource.addEventListener("connected", (event) => {
+    console.log("Connected to Meta data updates:", JSON.parse(event.data));
+  });
 
-  eventSource.addEventListener('refresh-started', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('Meta data refresh started:', data)
-  })
+  eventSource.addEventListener("refresh-started", (event) => {
+    const data = JSON.parse(event.data);
+    console.log("Meta data refresh started:", data);
+  });
 
-  eventSource.addEventListener('refresh-completed', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('Meta data refresh completed:', data)
+  eventSource.addEventListener("refresh-completed", (event) => {
+    const data = JSON.parse(event.data);
+    console.log("Meta data refresh completed:", data);
 
     // Update the UI with fresh data without disrupting the user
     if (data.data) {
-      updateUIWithFreshData(data.data)
+      updateUIWithFreshData(data.data);
     }
 
-    if (data.source === 'background') {
-      const indicator = document.createElement('div')
-      indicator.style = 'position: fixed; bottom: 10px; right: 10px; color: #28a745; font-size: 12px; z-index: 10;'
-      indicator.textContent = 'Data updated'
-      document.body.appendChild(indicator)
-      setTimeout(() => indicator.remove(), 1000)
+    if (data.source === "background") {
+      const indicator = document.createElement("div");
+      indicator.style = "position: fixed; bottom: 10px; right: 10px; color: #28a745; font-size: 12px; z-index: 10;";
+      indicator.textContent = "Data updated";
+      document.body.appendChild(indicator);
+      setTimeout(() => indicator.remove(), 1000);
 
-      const zuck = document.createElement('img')
-      zuck.style = 'position: fixed; bottom: 35px; right: 10px; width: 54px; z-index: 10;'
-      zuck.src = 'icons/favi.png'
-      document.body.appendChild(zuck)
-      setTimeout(() => zuck.remove(), 1000)
-
+      const zuck = document.createElement("img");
+      zuck.style = "position: fixed; bottom: 35px; right: 10px; width: 54px; z-index: 10;";
+      zuck.src = "icons/favi.png";
+      document.body.appendChild(zuck);
+      setTimeout(() => zuck.remove(), 1000);
     }
-  })
+  });
 
-  eventSource.addEventListener('refresh-failed', (event) => {
-    const data = JSON.parse(event.data)
-    console.error('Meta data refresh failed:', data)
+  eventSource.addEventListener("refresh-failed", (event) => {
+    const data = JSON.parse(event.data);
+    console.error("Meta data refresh failed:", data);
     // No visual indicator for failures - just log it
-  })
+  });
 
   eventSource.onerror = (error) => {
-    console.error('SSE connection error:', error)
-    eventSource.close()
+    console.error("SSE connection error:", error);
+    eventSource.close();
 
     // Reconnect after 5 seconds
-    setTimeout(() => setupMetaDataUpdates(), 5000)
-  }
+    setTimeout(() => setupMetaDataUpdates(), 5000);
+  };
 
   // Clean up on page unload
-  window.addEventListener('beforeunload', () => {
-    eventSource.close()
-  })
+  window.addEventListener("beforeunload", () => {
+    eventSource.close();
+  });
 }
 
 // Initialize SSE when data is loaded - call this after populating data
-window.initializeMetaDataUpdates = setupMetaDataUpdates
+window.initializeMetaDataUpdates = setupMetaDataUpdates;
 
 // Helper function to force cache refresh on next page load
 function forceMetaDataRefreshOnNextLoad() {
-  sessionStorage.setItem('forceMetaDataRefresh', 'true')
+  sessionStorage.setItem("forceMetaDataRefresh", "true");
 }
 
 // Update UI with fresh data without disrupting the user
 function updateUIWithFreshData(freshData) {
   // Store the current selections
-  const currentState = appState.getState()
-  const selectedAccount = currentState.selectedAccount
-  const selectedCampaign = currentState.selectedCampaign
-  const selectedAction = currentState.selectedAction
+  const currentState = appState.getState();
+  const selectedAccount = currentState.selectedAccount;
+  const selectedCampaign = currentState.selectedCampaign;
+  const selectedAction = currentState.selectedAction;
 
   // Update the global data
   if (freshData.campaigns) {
     // Update campaign data globally
-    window.campaignsData = freshData.campaigns
+    window.campaignsData = freshData.campaigns;
 
     // If a campaign is selected, check if it still exists
     if (selectedCampaign) {
-      const campaignStillExists = freshData.campaigns.some(c => c.id === selectedCampaign)
+      const campaignStillExists = freshData.campaigns.some((c) => c.id === selectedCampaign);
       if (!campaignStillExists) {
         // Campaign was deleted, update the UI
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`)
+        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
         if (campaignElement) {
-          campaignElement.remove()
+          campaignElement.remove();
         }
 
         // Clear downstream selections
-        appState.updateState('selectedCampaign', null)
-        const actionColumn = document.querySelector('.action-column')
+        appState.updateState("selectedCampaign", null);
+        const actionColumn = document.querySelector(".action-column");
         if (actionColumn) {
-          actionColumn.style.display = 'none'
+          actionColumn.style.display = "none";
         }
       } else {
         // Update campaign info if it changed
-        const updatedCampaign = freshData.campaigns.find(c => c.id === selectedCampaign)
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`)
+        const updatedCampaign = freshData.campaigns.find((c) => c.id === selectedCampaign);
+        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
         if (campaignElement && updatedCampaign) {
           // Update campaign name if changed
-          const nameElement = campaignElement.querySelector('h3')
+          const nameElement = campaignElement.querySelector("h3");
           if (nameElement && nameElement.textContent !== updatedCampaign.name) {
-            nameElement.textContent = updatedCampaign.name
+            nameElement.textContent = updatedCampaign.name;
           }
 
           // Update status, spend, clicks
-          const listItems = campaignElement.querySelectorAll('li')
-          if (listItems[0]) listItems[0].textContent = updatedCampaign.status || 'UNKNOWN'
-          if (listItems[1]) listItems[1].textContent = `Spend: ${updatedCampaign.insights?.spend || 'N/A'}`
-          if (listItems[2]) listItems[2].textContent = `Clicks: ${updatedCampaign.insights?.clicks || 'N/A'}`
+          const listItems = campaignElement.querySelectorAll("li");
+          if (listItems[0]) listItems[0].textContent = updatedCampaign.status || "UNKNOWN";
+          if (listItems[1]) listItems[1].textContent = `Spend: ${updatedCampaign.insights?.spend || "N/A"}`;
+          if (listItems[2]) listItems[2].textContent = `Clicks: ${updatedCampaign.insights?.clicks || "N/A"}`;
         }
       }
     }
 
     // Check for new campaigns to add
     if (selectedAccount) {
-      const accountCampaigns = freshData.campaigns.filter(c => c.account_id === selectedAccount)
-      accountCampaigns.forEach(campaign => {
-        const existingElement = document.querySelector(`.campaign[data-campaign-id="${campaign.id}"]`)
+      const accountCampaigns = freshData.campaigns.filter((c) => c.account_id === selectedAccount);
+      accountCampaigns.forEach((campaign) => {
+        const existingElement = document.querySelector(`.campaign[data-campaign-id="${campaign.id}"]`);
         if (!existingElement) {
           // This is a new campaign, add it to the UI
-          addCampaignToUI(campaign)
+          addCampaignToUI(campaign);
         }
-      })
+      });
     }
   }
 
   // Update pixels if provided
   if (freshData.pixels) {
-    window.pixelsData = freshData.pixels
+    window.pixelsData = freshData.pixels;
   }
 
   // Update ad accounts if provided
   if (freshData.adAccounts) {
-    window.adAccountsData = freshData.adAccounts
+    window.adAccountsData = freshData.adAccounts;
   }
 
   // Update pages if provided
   if (freshData.pages) {
-    window.pagesData = freshData.pages
+    window.pagesData = freshData.pages;
   }
 }
 
 // Helper function to add a campaign to the UI
 function addCampaignToUI(campaign) {
-  const campaignSelection = document.querySelector('.campaign-selection')
-  if (!campaignSelection) return
+  const campaignSelection = document.querySelector(".campaign-selection");
+  if (!campaignSelection) return;
 
-  const newCampaignElement = document.createElement('div')
-  newCampaignElement.className = 'campaign'
-  newCampaignElement.setAttribute('data-next-column', '.action-column')
-  newCampaignElement.setAttribute('data-col-id', '2')
-  newCampaignElement.setAttribute('data-acc-campaign-id', campaign.account_id)
-  newCampaignElement.setAttribute('data-campaign-id', campaign.id)
-  newCampaignElement.setAttribute('data-daily-budget', campaign.daily_budget || '')
-  newCampaignElement.setAttribute('data-bid-strategy', campaign.bid_strategy || '')
-  newCampaignElement.setAttribute('data-special-ad-categories', JSON.stringify(campaign.special_ad_categories || []))
-  newCampaignElement.style.display = '' // Make it visible if it matches current filter
+  const newCampaignElement = document.createElement("div");
+  newCampaignElement.className = "campaign";
+  newCampaignElement.setAttribute("data-next-column", ".action-column");
+  newCampaignElement.setAttribute("data-col-id", "2");
+  newCampaignElement.setAttribute("data-acc-campaign-id", campaign.account_id);
+  newCampaignElement.setAttribute("data-campaign-id", campaign.id);
+  newCampaignElement.setAttribute("data-daily-budget", campaign.daily_budget || "");
+  newCampaignElement.setAttribute("data-bid-strategy", campaign.bid_strategy || "");
+  newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(campaign.special_ad_categories || []));
+  newCampaignElement.style.display = ""; // Make it visible if it matches current filter
 
   newCampaignElement.innerHTML = `
     <h3>${campaign.name}</h3>
     <ul>
-      <li>${campaign.status || 'UNKNOWN'}</li>
-      <li>Spend: ${campaign.insights?.spend || 'N/A'}</li>
-      <li>Clicks: ${campaign.insights?.clicks || 'N/A'}</li>
+      <li>${campaign.status || "UNKNOWN"}</li>
+      <li>Spend: ${campaign.insights?.spend || "N/A"}</li>
+      <li>Clicks: ${campaign.insights?.clicks || "N/A"}</li>
     </ul>
-  `
+  `;
 
   // Insert at the top of the list
-  const firstCampaign = campaignSelection.querySelector('.campaign')
+  const firstCampaign = campaignSelection.querySelector(".campaign");
   if (firstCampaign) {
-    campaignSelection.insertBefore(newCampaignElement, firstCampaign)
+    campaignSelection.insertBefore(newCampaignElement, firstCampaign);
   } else {
-    campaignSelection.appendChild(newCampaignElement)
+    campaignSelection.appendChild(newCampaignElement);
   }
 
   // Reinitialize the single select group
   // Clean up existing campaign select group before creating new one
   if (campaignSelectGroup) {
-    campaignSelectGroup.cleanup()
+    campaignSelectGroup.cleanup();
   }
-  campaignSelectGroup = new SingleSelectGroup('.campaign')
+  campaignSelectGroup = new SingleSelectGroup(".campaign");
 }

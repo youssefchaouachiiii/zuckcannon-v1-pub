@@ -1,10 +1,10 @@
-# ZuckCannon v1.0
+# Bulk Uploader v1.0
 
-ZuckCannon is a web application for managing and deploying Meta advertising campaigns. 
+Bulk Uploader is a web application for managing and deploying Meta advertising campaigns.
 
 ## Prerequisites
 
-Before setting up ZuckCannon, ensure you have:
+Before setting up Bulk Uploader, ensure you have:
 
 - Node.js (v14 or higher)
 - npm (Node Package Manager)
@@ -103,7 +103,7 @@ The application will be available at `http://localhost:6969` (or the port specif
 
 ## Database Structure
 
-ZuckCannon uses SQLite databases for data storage:
+Bulk Uploader uses SQLite databases for data storage:
 
 - **users.db** - User authentication and sessions
 - **creative-library.db** - Creative assets metadata

@@ -1,0 +1,15 @@
+* {
+  font-family: "Geist Mono", monospace;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #ffffff;
+  color: #333;
+}
+
+#root {
+  min-height: 100vh;
+}
