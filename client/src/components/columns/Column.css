@@ -16,6 +16,40 @@
   margin-bottom: 0;
 }
 
+/* Sub-workflow Selector */
+.sub-workflow-selector {
+  display: flex;
+  margin-bottom: 20px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sub-workflow-selector button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background-color: #f8f9fa;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.sub-workflow-selector button:not(:last-child) {
+  border-right: 1px solid #e5e5e5;
+}
+
+.sub-workflow-selector button:hover {
+  background-color: #f1f3f5;
+}
+
+.sub-workflow-selector button.active {
+  background-color: #e8f2ff;
+  color: #103dee;
+  font-weight: 600;
+}
+
 /* Search Input */
 .search-input {
   width: 100%;
