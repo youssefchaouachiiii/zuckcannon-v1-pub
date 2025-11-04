@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { mockUser, shouldUseMockData, mockApiDelay } from "../mockData";
 
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -6,6 +7,14 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true);
 
   const checkAuth = async () => {
+    if (shouldUseMockData()) {
+      console.log("--- USING MOCK AUTH DATA ---");
+      await mockApiDelay();
+      setUser(mockUser);
+      setIsAuthenticated(true);
+      setIsLoading(false);
+      return;
+    }
     try {
       const response = await fetch("/api/auth/status");
       if (!response.ok) throw new Error("Failed to check auth status");

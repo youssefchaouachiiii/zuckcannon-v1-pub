@@ -10,13 +10,32 @@ import { devtools } from "zustand/middleware";
 const useStore = create(
   devtools(
     (set, get) => ({
-      // ============= Account & Campaign Selection =============
-      selectedAccount: null,
+      // ============= Workflow Selection =============
+      workflow: "manage", // 'manage' or 'bulk_upload'
+      manageMode: "select_existing", // 'select_existing' or 'create_new'
+
+      setWorkflow: (workflow) =>
+        set(
+          (state) => {
+            // Reset states when switching workflows to prevent conflicts
+            if (workflow === "manage") {
+              return { workflow, selectedCampaigns: [], selectedAccounts: [] };
+            } else if (workflow === "bulk_upload") {
+              return { workflow, selectedCampaign: null, selectedAction: null };
+            }
+            return { workflow };
+          },
+          false,
+          "setWorkflow"
+        ),
+
+      setManageMode: (mode) => set({ manageMode: mode }, false, "setManageMode"),
+
+      // ============= Single-Campaign Management State (for 'manage' workflow) =============
       selectedCampaign: null,
       campaignBidStrategy: null,
       campaignDailyBudget: null,
-
-      setSelectedAccount: (account) => set({ selectedAccount: account }, false, "setSelectedAccount"),
+      selectedAction: null, // For the ActionColumn
 
       setSelectedCampaign: (campaign, bidStrategy, dailyBudget) =>
         set(
@@ -24,9 +43,44 @@ const useStore = create(
             selectedCampaign: campaign,
             campaignBidStrategy: bidStrategy,
             campaignDailyBudget: dailyBudget,
+            selectedAction: null, // Reset action when campaign changes
           },
           false,
           "setSelectedCampaign"
+        ),
+
+      setSelectedAction: (action) => set({ selectedAction: action }, false, "setSelectedAction"),
+
+      // ============= Bulk Upload State (for 'bulk_upload' workflow) =============
+      selectedCampaigns: [],
+      selectedAccounts: [],
+
+      toggleCampaignSelection: (campaignId) =>
+        set(
+          (state) => {
+            const isSelected = state.selectedCampaigns.includes(campaignId);
+            if (isSelected) {
+              return { selectedCampaigns: state.selectedCampaigns.filter((id) => id !== campaignId) };
+            } else {
+              return { selectedCampaigns: [...state.selectedCampaigns, campaignId] };
+            }
+          },
+          false,
+          "toggleCampaignSelection"
+        ),
+
+      toggleAccountSelection: (accountId) =>
+        set(
+          (state) => {
+            const isSelected = state.selectedAccounts.includes(accountId);
+            if (isSelected) {
+              return { selectedAccounts: state.selectedAccounts.filter((id) => id !== accountId) };
+            } else {
+              return { selectedAccounts: [...state.selectedAccounts, accountId] };
+            }
+          },
+          false,
+          "toggleAccountSelection"
         ),
 
       // ============= Ad Configuration =============
@@ -109,10 +163,14 @@ const useStore = create(
       resetAll: () =>
         set(
           {
-            selectedAccount: null,
+            workflow: "manage",
+            manageMode: "select_existing",
             selectedCampaign: null,
             campaignBidStrategy: null,
             campaignDailyBudget: null,
+            selectedAction: null,
+            selectedCampaigns: [],
+            selectedAccounts: [],
             adSetConfig: {},
             uploadedAssets: [],
             adCopyData: {},

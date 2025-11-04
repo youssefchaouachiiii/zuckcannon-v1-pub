@@ -1,10 +1,19 @@
 import { useState, useEffect } from "react";
+import { shouldUseMockData, mockFacebookConnection, mockApiDelay } from "../mockData";
 
 export function useFacebookConnection() {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const checkStatus = async () => {
+    if (shouldUseMockData()) {
+      console.log("--- USING MOCK FACEBOOK CONNECTION DATA ---");
+      await mockApiDelay();
+      setIsConnected(mockFacebookConnection.connected);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch("/api/facebook/status");
       if (!response.ok) {

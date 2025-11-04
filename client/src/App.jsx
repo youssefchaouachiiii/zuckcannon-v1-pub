@@ -3,10 +3,14 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { useUploadProtection } from "./hooks/useUploadProtection";
 import { useFacebookConnection } from "./hooks/useFacebookConnection";
 import { useAuth } from "./hooks/useAuth";
-import AccountColumn from "./components/columns/AccountColumn";
+import { shouldUseMockData } from "./mockData";
+import useStore from "./store/useStore";
 import CampaignColumn from "./components/columns/CampaignColumn";
 import ActionColumn from "./components/columns/ActionColumn";
 import WorkflowColumn from "./components/columns/WorkflowColumn";
+import WorkflowSelectionColumn from "./components/columns/WorkflowSelectionColumn";
+import AccountColumn from "./components/columns/AccountColumn";
+import ReviewColumn from "./components/columns/ReviewColumn";
 import FacebookModal from "./components/FacebookModal";
 import NotificationContainer from "./components/NotificationContainer";
 import "./App.css";
@@ -14,6 +18,8 @@ import "./App.css";
 function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFacebookModalOpen, setIsFacebookModalOpen] = useState(false);
+
+  const workflow = useStore((state) => state.workflow);
 
   // Check authentication
   const { user, isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
@@ -36,18 +42,19 @@ function App() {
   }
 
   // Show login message if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <div className="app-container">
-        <div className="auth-message" style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", flexDirection: "column" }}>
-          <p style={{ fontSize: "18px", marginBottom: "20px" }}>Not authenticated.</p>
-          <a href="/login.html" style={{ color: "#103dee", textDecoration: "underline" }}>
-            Please login to view data.
-          </a>
-        </div>
-      </div>
-    );
-  }
+  // TEMPORARILY DISABLED - Allow viewing UI without login
+  // if (!isAuthenticated) {
+  //   return (
+  //     <div className="app-container">
+  //       <div className="auth-message" style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", flexDirection: "column" }}>
+  //         <p style={{ fontSize: "18px", marginBottom: "20px" }}>Not authenticated.</p>
+  //         <a href="/login.html" style={{ color: "#103dee", textDecoration: "underline" }}>
+  //           Please login to view data.
+  //         </a>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -60,9 +67,55 @@ function App() {
     }
   };
 
+  const useMockData = shouldUseMockData();
+
   return (
     <Router>
       <div className="app-container">
+        {/* Mock Data Banner */}
+        {useMockData && (
+          <div
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              color: "white",
+              padding: "8px 20px",
+              textAlign: "center",
+              fontSize: "14px",
+              fontWeight: "500",
+              borderBottom: "2px solid rgba(255,255,255,0.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "20px" }}>🎭</span>
+            <span>
+              <strong>UI Development Mode</strong> - Using Mock Data (Backend tidak diperlukan)
+            </span>
+            <button
+              onClick={() => {
+                if (window.confirm("Matikan Mock Data Mode? Halaman akan di-reload.")) {
+                  localStorage.removeItem("USE_MOCK_DATA");
+                  window.location.reload();
+                }
+              }}
+              style={{
+                background: "rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.4)",
+                color: "white",
+                padding: "4px 12px",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontSize: "12px",
+                marginLeft: "12px",
+              }}
+            >
+              Disable Mock Mode
+            </button>
+          </div>
+        )}
+
         <header className="app-header">
           <h1>
             Bulk Uploader <span className="h1-version">v1.0</span>
@@ -90,10 +143,23 @@ function App() {
 
         <main className="main-content">
           <div className="columns-container">
-            <AccountColumn />
-            <CampaignColumn />
-            <ActionColumn />
-            <WorkflowColumn />
+            <WorkflowSelectionColumn />
+
+            {workflow === "manage" ? (
+              <>
+                {/* Single-Campaign Management Workflow */}
+                <CampaignColumn />
+                <ActionColumn />
+                <WorkflowColumn />
+              </>
+            ) : (
+              <>
+                {/* Bulk Upload Workflow */}
+                <CampaignColumn />
+                <AccountColumn />
+                <ReviewColumn />
+              </>
+            )}
           </div>
         </main>
 
