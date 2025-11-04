@@ -47,8 +47,22 @@ function CampaignColumn() {
         setCampaigns(sorted);
         return;
       }
-      const response = await fetch("/api/fetch-meta-data");
+
+      // Use /api/meta-data endpoint to get all campaigns from OAuth system
+      const response = await fetch("/api/meta-data");
+      if (!response.ok) {
+        throw new Error("Failed to fetch campaigns");
+      }
+      
       const data = await response.json();
+      
+      // Check if user is connected
+      if (!data.isConnected) {
+        console.log("Facebook not connected via OAuth");
+        setCampaigns([]);
+        return;
+      }
+      
       const allCampaigns = data.campaigns || [];
       const sorted = allCampaigns.sort((a, b) => {
         if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
@@ -58,6 +72,9 @@ function CampaignColumn() {
       setCampaigns(sorted);
     } catch (error) {
       console.error("Error fetching campaigns:", error);
+      if (window.showError) {
+        window.showError("Failed to load campaigns. Please try again.", 3000);
+      }
     }
   };
 

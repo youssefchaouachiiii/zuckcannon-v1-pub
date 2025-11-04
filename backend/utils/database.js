@@ -52,6 +52,17 @@ async function initializeDatabase() {
     // Enable foreign keys
     await db.runAsync('PRAGMA foreign_keys = ON')
 
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT,
+        facebookId TEXT UNIQUE,
+        email TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create creative batches table
     await db.runAsync(`
       CREATE TABLE IF NOT EXISTS creative_batches (
@@ -61,7 +72,7 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `)
+    `);
 
     // Check if creatives table exists and if batch_id column exists
     const tableInfo = await db.allAsync("PRAGMA table_info(creatives)")

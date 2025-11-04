@@ -52,7 +52,23 @@ export default function FacebookModal({ isOpen, onClose }) {
     setLoading(true);
     try {
       const response = await fetch("/api/facebook/sync", { method: "POST" });
-      if (!response.ok) throw new Error("Failed to sync Facebook data");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        // Handle rate limit error specifically
+        if (response.status === 429) {
+          const retryMinutes = Math.ceil((errorData.retryAfter || 300) / 60);
+          throw new Error(`Facebook rate limit exceeded. Please wait ${retryMinutes} minutes and try again.`);
+        }
+        
+        // Handle service unavailable (circuit breaker open)
+        if (response.status === 503) {
+          throw new Error(errorData.message || "Facebook API is temporarily unavailable. Please try again later.");
+        }
+        
+        throw new Error(errorData.message || errorData.error || "Failed to sync Facebook data");
+      }
 
       const result = await response.json();
       setFbData({
@@ -63,14 +79,18 @@ export default function FacebookModal({ isOpen, onClose }) {
 
       // Show success message
       if (window.showSuccess) {
-        window.showSuccess("Facebook data synced successfully!", 3000);
+        window.showSuccess("Facebook data synced successfully! Reloading page...", 2000);
       }
+      
+      // Reload page after short delay to update campaigns and accounts
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
     } catch (error) {
       console.error("Error syncing Facebook data:", error);
       if (window.showError) {
-        window.showError("Failed to sync Facebook data. Please try again.", 4000);
+        window.showError(error.message || "Failed to sync Facebook data. Please try again.", 6000);
       }
-    } finally {
       setLoading(false);
     }
   };

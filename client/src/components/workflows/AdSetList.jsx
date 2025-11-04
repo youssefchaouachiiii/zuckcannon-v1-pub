@@ -27,10 +27,10 @@ function AdSetList({ onAdSetSelect }) {
         const campaignAdSets = mockAdSets.filter((adSet) => adSet.campaign_id === campaignId);
         setAdSets(campaignAdSets);
       } else {
-        // In a real app, you'd fetch adsets for the specific campaignId
-        const response = await fetch(`/api/fetch-meta-data?campaign_id=${campaignId}`);
+        // Use new /api/adsets endpoint
+        const response = await fetch(`/api/adsets?campaign_id=${campaignId}`);
         const data = await response.json();
-        setAdSets(data.ad_sets || []); // Assuming the API can return ad_sets
+        setAdSets(data.adsets || []);
       }
     } catch (error) {
       console.error("Error fetching ad sets:", error);

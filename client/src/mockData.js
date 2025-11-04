@@ -1,8 +1,69 @@
 /**
  * Mock Data for UI Development
- * Set USE_MOCK_DATA=true in your environment or localStorage to use this data
+ * Structured to match backend API responses exactly
+ * Set USE_MOCK_DATA=true in localStorage to use this data
  */
 
+// ============================================================================
+// 1. FACEBOOK CONNECTION STATUS
+// Matches: GET /api/meta-data
+// ============================================================================
+export const mockMetaData = {
+  isConnected: true,
+  accounts: [
+    {
+      id: "act_123456789",
+      account_id: "act_123456789",
+      name: "Demo Ad Account 1",
+      currency: "USD",
+      account_status: 1,
+      timezone_name: "America/Los_Angeles",
+    },
+    {
+      id: "act_987654321",
+      account_id: "act_987654321",
+      name: "Demo Ad Account 2",
+      currency: "USD",
+      account_status: 1,
+      timezone_name: "America/New_York",
+    },
+    {
+      id: "act_555444333",
+      account_id: "act_555444333",
+      name: "Test Account - Marketing",
+      currency: "USD",
+      account_status: 1,
+      timezone_name: "Europe/London",
+    },
+  ],
+  pages: [
+    {
+      id: "123456789",
+      name: "Demo Page 1",
+      access_token: "mock_token_page_001",
+    },
+    {
+      id: "987654321",
+      name: "Demo Page 2",
+      access_token: "mock_token_page_002",
+    },
+  ],
+  businesses: [
+    {
+      id: "biz_001",
+      name: "Demo Business 1",
+    },
+    {
+      id: "biz_002",
+      name: "Demo Business 2",
+    },
+  ],
+};
+
+// ============================================================================
+// 2. CAMPAIGNS
+// Matches: GET /api/campaigns?account_id=act_123456789
+// ============================================================================
 export const mockAdAccounts = [
   {
     account_id: "act_123456789",

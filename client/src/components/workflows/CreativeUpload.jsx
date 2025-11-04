@@ -87,13 +87,14 @@ function CreativeUpload({ adSetId, adSetName, onUploadComplete }) {
     try {
       const formData = new FormData();
       formData.append("adset_id", adSetId);
+      formData.append("account_id", "act_123456789"); // TODO: Get from selected account
 
-      // Add all files to FormData
-      files.forEach((file, index) => {
-        formData.append(`creative_${index}`, file);
+      // Add all files to FormData with the correct field name
+      files.forEach((file) => {
+        formData.append("files", file);
       });
 
-      const response = await fetch("/api/upload-creatives", {
+      const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });

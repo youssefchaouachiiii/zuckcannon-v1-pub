@@ -31,11 +31,27 @@ function AccountColumn() {
         return;
       }
 
-      const response = await fetch("/api/fetch-meta-data");
+      // Use /api/meta-data endpoint to get accounts from OAuth system
+      const response = await fetch("/api/meta-data");
+      if (!response.ok) {
+        throw new Error("Failed to fetch accounts");
+      }
+      
       const data = await response.json();
-      setAccounts(data.ad_accounts || []);
+      
+      // Check if user is connected
+      if (!data.isConnected) {
+        console.log("Facebook not connected via OAuth");
+        setAccounts([]);
+        return;
+      }
+      
+      setAccounts(data.accounts || []);
     } catch (error) {
       console.error("Error fetching accounts:", error);
+      if (window.showError) {
+        window.showError("Failed to load ad accounts. Please try again.", 3000);
+      }
     } finally {
       setLoading(false);
     }

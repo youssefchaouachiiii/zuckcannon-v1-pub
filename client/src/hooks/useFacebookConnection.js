@@ -15,15 +15,18 @@ export function useFacebookConnection() {
     }
 
     try {
-      const response = await fetch("/api/facebook/status");
+      // Use the /api/meta-data endpoint (now uses OAuth system)
+      const response = await fetch("/api/meta-data");
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "Failed to check Facebook status");
       }
 
       const data = await response.json();
-      console.log("Facebook connection status:", data);
-      setIsConnected(data.connected);
+      console.log("Facebook connection status (OAuth):", data);
+      
+      // Connected if isConnected is true and we have at least one ad account
+      setIsConnected(data.isConnected === true && data.accounts && data.accounts.length > 0);
     } catch (error) {
       console.error("Error checking Facebook status:", error);
       setIsConnected(false);
