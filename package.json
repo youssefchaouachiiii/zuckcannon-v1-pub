@@ -37,8 +37,8 @@
     "supertest": "^6.3.3"
   },
   "scripts": {
-    "start": "node validate-env.js && node init-directories.js && node server.js",
-    "dev": "node validate-env.js && node init-directories.js && nodemon server.js",
+    "start": "node init-directories.js && node server.js",
+    "dev": "node init-directories.js && nodemon server.js",
     "s": "node validate-env.js && node init-directories.js && nodemon server.js",
     "create-user": "node init-directories.js && node create-user.js",
     "validate": "node validate-env.js",

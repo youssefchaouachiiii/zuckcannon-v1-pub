@@ -38,6 +38,7 @@ await db.runAsync("PRAGMA journal_mode = WAL");
 // Initialize Facebook auth tables
 async function initializeDatabase() {
   // Table to store Facebook access tokens for users
+  // Note: No foreign keys since user data is in a separate database (auth-db.js)
   await db.runAsync(`
     CREATE TABLE IF NOT EXISTS facebook_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +49,6 @@ async function initializeDatabase() {
       expires_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       UNIQUE(user_id, facebook_user_id)
     )
   `);
@@ -59,8 +59,7 @@ async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -75,7 +74,6 @@ async function initializeDatabase() {
       currency TEXT,
       timezone_name TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (business_id) REFERENCES facebook_businesses(id) ON DELETE SET NULL
     )
   `);
@@ -87,8 +85,7 @@ async function initializeDatabase() {
       user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       access_token TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -254,6 +251,16 @@ export const FacebookAuthDB = {
       adAccounts,
       pages,
     };
+  },
+
+  // Delete all user's Facebook data
+  async deleteAllUserData(userId) {
+    await Promise.all([
+      db.runAsync("DELETE FROM facebook_tokens WHERE user_id = ?", [userId]),
+      db.runAsync("DELETE FROM facebook_businesses WHERE user_id = ?", [userId]),
+      db.runAsync("DELETE FROM facebook_ad_accounts WHERE user_id = ?", [userId]),
+      db.runAsync("DELETE FROM facebook_pages WHERE user_id = ?", [userId]),
+    ]);
   },
 };
 

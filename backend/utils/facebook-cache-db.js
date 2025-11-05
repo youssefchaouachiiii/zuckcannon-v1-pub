@@ -42,7 +42,19 @@ async function initializeDatabase() {
         last_fetched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `)
+    `);
+
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT,
+        facebookId TEXT UNIQUE,
+        email TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
 
     // Create pages cache table
     await db.runAsync(`
@@ -80,6 +92,19 @@ async function initializeDatabase() {
       )
     `)
 
+    // Create ad sets cache table
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS cached_adsets (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        data TEXT NOT NULL,
+        last_fetched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // Create cache metadata table for tracking overall cache state
     await db.runAsync(`
       CREATE TABLE IF NOT EXISTS cache_metadata (
@@ -92,6 +117,8 @@ async function initializeDatabase() {
     // Create indexes for better performance
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_campaigns_account ON cached_campaigns(account_id)')
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_pixels_account ON cached_pixels(account_id)')
+    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_adsets_campaign ON cached_adsets(campaign_id)')
+    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_adsets_account ON cached_adsets(account_id)')
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_last_fetched_accounts ON cached_ad_accounts(last_fetched)')
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_last_fetched_campaigns ON cached_campaigns(last_fetched)')
 
@@ -268,6 +295,14 @@ export const FacebookCacheDB = {
     }))
   },
 
+  async getCampaignsByAccount(accountId) {
+    const rows = await db.allAsync('SELECT * FROM cached_campaigns WHERE account_id = ? ORDER BY updated_at DESC', accountId)
+    return rows.map(row => ({
+      ...JSON.parse(row.data),
+      last_fetched: row.last_fetched
+    }))
+  },
+
   // Pixels
   async savePixels(pixels) {
     const stmt = db.prepare(`
@@ -314,13 +349,53 @@ export const FacebookCacheDB = {
     }))
   },
 
+  // Ad Sets
+  async saveAdSets(adsets) {
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO cached_adsets (id, campaign_id, account_id, name, data, last_fetched, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `)
+
+    try {
+      for (const adset of adsets) {
+        await new Promise((resolve, reject) => {
+          stmt.run([adset.id, adset.campaign_id, adset.account_id, adset.name, JSON.stringify(adset)], (err) => {
+            if (err) reject(err)
+            else resolve()
+          })
+        })
+      }
+    } catch (error) {
+      throw error
+    } finally {
+      stmt.finalize()
+    }
+  },
+
+  async getAdSets() {
+    const rows = await db.allAsync('SELECT * FROM cached_adsets ORDER BY updated_at DESC')
+    return rows.map(row => ({
+      ...JSON.parse(row.data),
+      last_fetched: row.last_fetched
+    }))
+  },
+
+  async getAdSetsByCampaign(campaignId) {
+    const rows = await db.allAsync('SELECT * FROM cached_adsets WHERE campaign_id = ? ORDER BY name', campaignId)
+    return rows.map(row => ({
+      ...JSON.parse(row.data),
+      last_fetched: row.last_fetched
+    }))
+  },
+
   // Get all cached data
   async getAllCachedData() {
-    const [adAccounts, pages, campaigns, pixels] = await Promise.all([
+    const [adAccounts, pages, campaigns, pixels, adsets] = await Promise.all([
       this.getAdAccounts(),
       this.getPages(),
       this.getCampaigns(),
-      this.getPixels()
+      this.getPixels(),
+      this.getAdSets()
     ])
 
     // Group pixels by account to match the original API response format
@@ -340,7 +415,8 @@ export const FacebookCacheDB = {
       adAccounts,
       pages,
       campaigns,
-      pixels: Object.values(pixelsByAccount)
+      pixels: Object.values(pixelsByAccount),
+      adsets
     }
   },
 
@@ -362,17 +438,19 @@ export const FacebookCacheDB = {
     await db.runAsync('DELETE FROM cached_pages')
     await db.runAsync('DELETE FROM cached_campaigns')
     await db.runAsync('DELETE FROM cached_pixels')
+    await db.runAsync('DELETE FROM cached_adsets')
     await db.runAsync('DELETE FROM cache_metadata')
   },
 
   // Save all data in a single transaction (replacing old data)
-  async saveAllData(adAccounts, pages, campaigns, pixels) {
+  async saveAllData(adAccounts, pages, campaigns, pixels, adsets = []) {
     try {
       // Use async/await pattern for better control
       await db.runAsync('BEGIN TRANSACTION');
 
       // Clear all existing data to prevent stale records
       console.log('Clearing existing cache data...');
+      await db.runAsync('DELETE FROM cached_adsets');
       await db.runAsync('DELETE FROM cached_pixels');
       await db.runAsync('DELETE FROM cached_campaigns');
       await db.runAsync('DELETE FROM cached_pages');
@@ -471,6 +549,25 @@ export const FacebookCacheDB = {
           }
         }
         pixelStmt.finalize();
+      }
+
+      // Save ad sets
+      if (adsets && adsets.length > 0) {
+        const adsetStmt = db.prepare(`
+          INSERT INTO cached_adsets (id, campaign_id, account_id, name, data, last_fetched, updated_at)
+          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `);
+
+        for (const adset of adsets) {
+          await new Promise((resolve, reject) => {
+            adsetStmt.run([adset.id, adset.campaign_id, adset.account_id, adset.name, JSON.stringify(adset)], (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
+        adsetStmt.finalize();
+        console.log(`Saved ${adsets.length} ad sets to cache`);
       }
 
       await db.runAsync('COMMIT');

@@ -23,6 +23,7 @@ import { UserDB } from "./backend/auth/auth-db.js";
 import { configurePassport, ensureAuthenticated, ensureAuthenticatedAPI, ensureNotAuthenticated } from "./backend/auth/passport-config.js";
 import { validateRequest, loginRateLimiter, apiRateLimiter } from "./backend/middleware/validation.js";
 import { getPaths } from "./backend/utils/paths.js";
+import { setupHttpsServer } from "./backend/utils/https-config.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
@@ -78,7 +79,14 @@ const corsOptions = {
       ? process.env.FRONTEND_URL
         ? [process.env.FRONTEND_URL, process.env.FRONTEND_URL.replace("https://", "https://www.")]
         : ["*"]
-      : ["http://localhost:3000", "http://localhost:6969", "http://localhost:5173"];
+      : [
+          "http://localhost:3000",
+          "https://localhost:3000", // React client with HTTPS
+          "http://localhost:6969",
+          "https://localhost:6969",
+          "http://localhost:5173",
+          "https://localhost:5173",
+        ];
 
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
@@ -169,7 +177,7 @@ app.use("/uploads", express.static(paths.uploads));
 app.use("/api/", apiRateLimiter);
 
 // Facebook Graph API credentials
-const api_version = "v23.0";
+const api_version = "v24.0";
 const access_token = process.env.META_ACCESS_TOKEN;
 const system_user_id = process.env.META_SYSTEM_USER_ID;
 
@@ -436,18 +444,19 @@ app.get(
 
 app.get(
   "/auth/facebook/callback",
-  ensureAuthenticated,
-  passport.authenticate("facebook", {
-    failureRedirect: process.env.NODE_ENV === "development" ? "http://localhost:3000/?facebook_error=true" : "/?facebook_error=true",
-    successRedirect: process.env.NODE_ENV === "development" ? "http://localhost:3000/?facebook_connected=true" : "/?facebook_connected=true",
-  })
+  passport.authenticate("facebook", { failureRedirect: "/login" }),
+  (req, res) => {
+    // Successful authentication - redirect to frontend
+    const frontendUrl = process.env.FRONTEND_URL || "https://localhost:3000";
+    res.redirect(frontendUrl);
+  }
 );
+
 
 // Check Facebook connection status
 app.get("/api/facebook/status", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = process.env.NODE_ENV === "development" ? 1 : req.user.id;
-    const { FacebookAuthDB } = await import("./backend/utils/facebook-auth-db.js");
     const isConnected = await FacebookAuthDB.isConnected(userId);
 
     res.json({ connected: isConnected });
@@ -461,13 +470,20 @@ app.get("/api/facebook/status", ensureAuthenticatedAPI, async (req, res) => {
 app.post("/api/facebook/disconnect", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = process.env.NODE_ENV === "development" ? 1 : req.user.id;
-    const { FacebookAuthDB } = await import("./backend/utils/facebook-auth-db.js");
-    await FacebookAuthDB.deleteToken(userId);
-
+    console.log(`Disconnecting Facebook for user ${userId}...`);
+    
+    // Delete all Facebook data for this user
+    await FacebookAuthDB.deleteAllUserData(userId);
+    
+    console.log(`Successfully disconnected Facebook for user ${userId}`);
     res.json({ message: "Facebook account disconnected successfully" });
   } catch (error) {
     console.error("Error disconnecting Facebook:", error);
-    res.status(500).json({ error: "Failed to disconnect Facebook account" });
+    console.error("Error stack:", error.stack);
+    res.status(500).json({ 
+      error: "Failed to disconnect Facebook account",
+      details: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 });
 
@@ -475,7 +491,6 @@ app.post("/api/facebook/disconnect", ensureAuthenticatedAPI, async (req, res) =>
 app.get("/api/facebook/data", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = process.env.NODE_ENV === "development" ? 1 : req.user.id;
-    const { FacebookAuthDB } = await import("./backend/utils/facebook-auth-db.js");
     const data = await FacebookAuthDB.getUserFacebookData(userId);
 
     res.json(data);
@@ -489,7 +504,6 @@ app.get("/api/facebook/data", ensureAuthenticatedAPI, async (req, res) => {
 app.post("/api/facebook/sync", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = process.env.NODE_ENV === "development" ? 1 : req.user.id;
-    const { FacebookAuthDB } = await import("./backend/utils/facebook-auth-db.js");
 
     // Get user's access token
     const tokenData = await FacebookAuthDB.getValidToken(userId);
@@ -499,47 +513,56 @@ app.post("/api/facebook/sync", ensureAuthenticatedAPI, async (req, res) => {
 
     const userAccessToken = tokenData.access_token;
 
-    // Fetch businesses
-    const businessesUrl = `https://graph.facebook.com/${api_version}/me/businesses`;
-    const businessesResponse = await axios.get(businessesUrl, {
-      params: {
-        fields: "id,name",
-        access_token: userAccessToken,
-      },
+    // Wrap all Facebook API calls in circuit breaker
+    await circuitBreakers.facebook.call(async () => {
+      // Fetch businesses
+      const businessesUrl = `https://graph.facebook.com/${api_version}/me/businesses`;
+      const businessesResponse = await axios.get(businessesUrl, {
+        params: {
+          fields: "id,name",
+          access_token: userAccessToken,
+        },
+      });
+
+      const businesses = businessesResponse.data.data || [];
+      for (const business of businesses) {
+        await FacebookAuthDB.saveBusiness(business.id, userId, business.name);
+      }
+
+      // Add small delay between calls to respect rate limits
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Fetch ad accounts
+      const adAccountsUrl = `https://graph.facebook.com/${api_version}/me/adaccounts`;
+      const adAccountsResponse = await axios.get(adAccountsUrl, {
+        params: {
+          fields: "id,account_id,name,currency,timezone_name,business",
+          access_token: userAccessToken,
+        },
+      });
+
+      const adAccounts = adAccountsResponse.data.data || [];
+      for (const account of adAccounts) {
+        await FacebookAuthDB.saveAdAccount(account.id, account.account_id, userId, account.business?.id || null, account.name, account.currency, account.timezone_name);
+      }
+
+      // Add small delay between calls to respect rate limits
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Fetch pages
+      const pagesUrl = `https://graph.facebook.com/${api_version}/me/accounts`;
+      const pagesResponse = await axios.get(pagesUrl, {
+        params: {
+          fields: "id,name,access_token",
+          access_token: userAccessToken,
+        },
+      });
+
+      const pages = pagesResponse.data.data || [];
+      for (const page of pages) {
+        await FacebookAuthDB.savePage(page.id, userId, page.name, page.access_token);
+      }
     });
-
-    const businesses = businessesResponse.data.data || [];
-    for (const business of businesses) {
-      await FacebookAuthDB.saveBusiness(business.id, userId, business.name);
-    }
-
-    // Fetch ad accounts
-    const adAccountsUrl = `https://graph.facebook.com/${api_version}/me/adaccounts`;
-    const adAccountsResponse = await axios.get(adAccountsUrl, {
-      params: {
-        fields: "id,account_id,name,currency,timezone_name,business",
-        access_token: userAccessToken,
-      },
-    });
-
-    const adAccounts = adAccountsResponse.data.data || [];
-    for (const account of adAccounts) {
-      await FacebookAuthDB.saveAdAccount(account.id, account.account_id, userId, account.business?.id || null, account.name, account.currency, account.timezone_name);
-    }
-
-    // Fetch pages
-    const pagesUrl = `https://graph.facebook.com/${api_version}/me/accounts`;
-    const pagesResponse = await axios.get(pagesUrl, {
-      params: {
-        fields: "id,name,access_token",
-        access_token: userAccessToken,
-      },
-    });
-
-    const pages = pagesResponse.data.data || [];
-    for (const page of pages) {
-      await FacebookAuthDB.savePage(page.id, userId, page.name, page.access_token);
-    }
 
     // Return synced data
     const syncedData = await FacebookAuthDB.getUserFacebookData(userId);
@@ -550,6 +573,29 @@ app.post("/api/facebook/sync", ensureAuthenticatedAPI, async (req, res) => {
     });
   } catch (error) {
     console.error("Error syncing Facebook data:", error);
+
+    // Check if it's a rate limit error
+    const isRateLimitError =
+      error.response?.status === 400 &&
+      (error.response?.data?.error?.code === 80004 || // Rate limit error code
+        error.response?.data?.error?.message?.includes("too many calls"));
+
+    if (isRateLimitError) {
+      return res.status(429).json({
+        error: "Facebook rate limit exceeded",
+        message: "Too many API calls. Please wait a few minutes and try again.",
+        retryAfter: 300, // Suggest retry after 5 minutes
+      });
+    }
+
+    // Check if circuit breaker is open
+    if (error.message?.includes("Circuit breaker is OPEN")) {
+      return res.status(503).json({
+        error: "Service temporarily unavailable",
+        message: "Facebook API is temporarily unavailable. Please try again later.",
+      });
+    }
+
     res.status(500).json({
       error: "Failed to sync Facebook data",
       details: error.response?.data || error.message,
@@ -755,7 +801,8 @@ app.get("/api/upload-progress/:sessionId", (req, res) => {
   });
 });
 
-// Fetch ad account data with caching
+// DEPRECATED: Fetch ad account data with caching (OLD SYSTEM - use /api/meta-data instead)
+// This endpoint is kept for backward compatibility but should not be used in new code
 app.get("/api/fetch-meta-data", async (req, res) => {
   const forceRefresh = req.query.refresh === "true";
   const userId = getUserId(req);
@@ -782,7 +829,7 @@ app.get("/api/fetch-meta-data", async (req, res) => {
       }
     }
 
-    // Fallback to system user cache method
+    // Fallback to system user cache method (DEPRECATED - requires META_ACCESS_TOKEN)
     // Check if we have cached data and it's still valid
     const hasValidCache = await FacebookCacheDB.isCacheValid(60); // Cache valid for 60 minutes
 
@@ -833,6 +880,345 @@ app.get("/api/fetch-meta-data", async (req, res) => {
     sendTelegramNotification(telegramMessage);
 
     res.status(500).json({ error: "Failed to fetch Meta data" });
+  }
+});
+
+// NEW REACT API ENDPOINTS
+// ============================================================================
+
+// GET /api/meta-data - Returns Facebook connection status (uses OAuth system)
+app.get("/api/meta-data", async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    
+    // Check if user has connected Facebook via OAuth
+    const isConnected = userId ? await FacebookAuthDB.isConnected(userId) : false;
+    
+    if (isConnected) {
+      // Get user's Facebook data from OAuth system
+      const userData = await FacebookAuthDB.getUserFacebookData(userId);
+      
+      // Fetch campaigns for all user's ad accounts
+      const campaignsPromises = userData.adAccounts.map(account => 
+        fetchCampaigns(account.id, userId).catch(err => {
+          console.error(`Error fetching campaigns for ${account.id}:`, err);
+          return [];
+        })
+      );
+      
+      const campaignsResults = await Promise.all(campaignsPromises);
+      const allCampaigns = campaignsResults.flat();
+      
+      // Fetch ad sets for all campaigns
+      const adsetsPromises = allCampaigns.map(campaign => 
+        fetchAdSets(campaign.id, campaign.account_id, userId).catch(err => {
+          console.error(`Error fetching ad sets for campaign ${campaign.id}:`, err);
+          return [];
+        })
+      );
+      
+      const adsetsResults = await Promise.all(adsetsPromises);
+      const allAdSets = adsetsResults.flat();
+      
+      // Fetch pixels for all user's ad accounts
+      const pixelsPromises = userData.adAccounts.map(account => 
+        fetchPixels(account.id, userId).catch(err => {
+          console.error(`Error fetching pixels for ${account.id}:`, err);
+          return null;
+        })
+      );
+      
+      const pixelsResults = await Promise.all(pixelsPromises);
+      const allPixels = pixelsResults.filter(p => p !== null);
+      
+      // Save all fetched data to cache for faster subsequent requests
+      try {
+        await FacebookCacheDB.saveAllData(userData.adAccounts, userData.pages, allCampaigns, allPixels, allAdSets);
+      } catch (cacheError) {
+        console.error('Error saving to cache:', cacheError);
+        // Continue even if cache fails
+      }
+      
+      res.json({
+        isConnected: true,
+        accounts: userData.adAccounts || [],
+        pages: userData.pages || [],
+        businesses: userData.businesses || [],
+        campaigns: allCampaigns || [],
+        pixels: allPixels || [],
+        adsets: allAdSets || [],
+        source: 'oauth'
+      });
+    } else {
+      // User not connected via OAuth
+      res.json({
+        isConnected: false,
+        accounts: [],
+        pages: [],
+        businesses: [],
+        campaigns: [],
+        pixels: [],
+        adsets: [],
+        source: 'none'
+      });
+    }
+  } catch (error) {
+    console.error("Error in /api/meta-data:", error);
+    res.status(500).json({ error: error.message, isConnected: false });
+  }
+});
+
+// GET /api/campaigns?account_id=act_123456789 - Get campaigns for account
+app.get("/api/campaigns", async (req, res) => {
+  try {
+    const { account_id } = req.query;
+    
+    if (!account_id) {
+      return res.status(400).json({ error: "account_id is required" });
+    }
+    
+    const campaigns = await FacebookCacheDB.getCampaignsByAccount(account_id);
+    
+    res.json({
+      campaigns: campaigns || [],
+    });
+  } catch (error) {
+    console.error("Error in /api/campaigns:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/adsets?campaign_id=camp_001 - Get ad sets for campaign
+app.get("/api/adsets", async (req, res) => {
+  try {
+    const { campaign_id } = req.query;
+    
+    if (!campaign_id) {
+      return res.status(400).json({ error: "campaign_id is required" });
+    }
+    
+    const adsets = await FacebookCacheDB.getAdSetsByCampaign(campaign_id);
+    
+    res.json({
+      adsets: adsets || [],
+    });
+  } catch (error) {
+    console.error("Error in /api/adsets:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/creatives?account_id=act_123456789 - Get creatives for account
+app.get("/api/creatives", async (req, res) => {
+  try {
+    const { account_id } = req.query;
+    
+    if (!account_id) {
+      return res.status(400).json({ error: "account_id is required" });
+    }
+    
+    // Get creatives from creative-library database
+    const creatives = await CreativeDB.getByAccount(account_id);
+    
+    res.json({
+      creatives: creatives || [],
+    });
+  } catch (error) {
+    console.error("Error in /api/creatives:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/campaigns - Create a new campaign
+app.post("/api/campaigns", async (req, res) => {
+  try {
+    const { account_id, name, objective, daily_budget, status, special_ad_categories } = req.body;
+    const userId = getUserId(req);
+
+    // Validate required fields
+    if (!account_id || !name || !objective) {
+      return res.status(400).json({ 
+        error: "Missing required fields: account_id, name, and objective are required" 
+      });
+    }
+
+    // Ensure account_id has 'act_' prefix (Facebook requires it for API calls)
+    const formattedAccountId = account_id.startsWith('act_') ? account_id : `act_${account_id}`;
+
+    // Get OAuth token
+    const token = await getAccessToken(userId);
+
+    // Create campaign via Facebook Graph API using FormData (as per Meta's documentation)
+    const campaignUrl = `https://graph.facebook.com/${api_version}/${formattedAccountId}/campaigns`;
+    
+    // Use FormData for proper array/object serialization (matches Meta's curl -F examples)
+    const formData = new URLSearchParams();
+    formData.append('name', name);
+    formData.append('objective', objective);
+    formData.append('status', status || 'PAUSED');
+    formData.append('access_token', token);
+    
+    // Meta requires special_ad_categories as JSON string when empty
+    formData.append('special_ad_categories', JSON.stringify(special_ad_categories || []));
+
+    // Add daily_budget if provided (convert to cents as Meta requires)
+    if (daily_budget) {
+      const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+      formData.append('daily_budget', budgetInCents.toString());
+    }
+
+    console.log('Creating campaign:', { 
+      url: campaignUrl, 
+      data: Object.fromEntries(formData.entries()).access_token = '***'
+    });
+
+    const response = await axios.post(campaignUrl, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    // Fetch the newly created campaign with full details
+    const newCampaignId = response.data.id;
+    const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
+    const detailsResponse = await axios.get(campaignDetailsUrl, {
+      params: {
+        fields: "id,account_id,name,objective,status,daily_budget,bid_strategy,created_time,special_ad_categories",
+        access_token: token,
+      },
+    });
+
+    const newCampaign = detailsResponse.data;
+
+    // Save to cache
+    try {
+      await FacebookCacheDB.saveCampaigns([newCampaign]);
+    } catch (cacheError) {
+      console.error('Error saving campaign to cache:', cacheError);
+      // Continue even if cache fails
+    }
+
+    res.json({
+      success: true,
+      campaign: newCampaign,
+      message: `Campaign "${name}" created successfully`,
+    });
+
+  } catch (error) {
+    console.error("Error creating campaign:", error.response?.data || error);
+    res.status(500).json({ 
+      error: error.response?.data?.error?.message || error.message,
+      details: error.response?.data || null
+    });
+  }
+});
+
+// POST /api/upload - Unified upload endpoint for images and videos
+app.post("/api/upload", upload.array("files", 50), async (req, res) => {
+  try {
+    const files = req.files;
+    const { account_id, adset_id } = req.body;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    if (!account_id) {
+      return res.status(400).json({ error: "account_id is required" });
+    }
+
+    // Create SSE session for progress tracking
+    const sessionId = createUploadSession();
+    const session = uploadSessions.get(sessionId);
+    
+    session.totalFiles = files.length;
+    session.processedFiles = 0;
+
+    // Send session ID back immediately
+    res.json({ 
+      sessionId,
+      message: "Upload started",
+      totalFiles: files.length 
+    });
+
+    // Broadcast session start
+    broadcastToSession(sessionId, "session-start", {
+      sessionId,
+      totalFiles: files.length,
+    });
+
+    // Process uploads asynchronously
+    const results = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      try {
+        // Determine if video or image
+        const isVideo = file.mimetype.startsWith("video");
+        
+        // Broadcast progress
+        broadcastToSession(sessionId, "progress", {
+          current: i + 1,
+          total: files.length,
+          currentFile: file.originalname,
+          status: "processing",
+        });
+
+        let uploadResult;
+        
+        if (isVideo) {
+          // Upload video to Facebook
+          uploadResult = await uploadVideoToMeta(file, account_id);
+        } else {
+          // Upload image to Facebook
+          const imageHash = await uploadImageToMeta(file.path, account_id);
+          uploadResult = { hash: imageHash, success: true };
+        }
+
+        // Save to creative library database
+        const creative = await CreativeDB.create({
+          name: file.originalname,
+          type: isVideo ? "VIDEO" : "IMAGE",
+          filePath: file.path,
+          facebookId: uploadResult.id || uploadResult.hash,
+          accounts: [account_id],
+          adsetId: adset_id || null,
+        });
+
+        results.push({
+          filename: file.originalname,
+          success: true,
+          facebookId: uploadResult.id || uploadResult.hash,
+          isDuplicate: false,
+        });
+
+      } catch (error) {
+        console.error(`Error uploading ${file.originalname}:`, error);
+        results.push({
+          filename: file.originalname,
+          success: false,
+          error: error.message,
+        });
+      }
+      
+      session.processedFiles = i + 1;
+    }
+
+    // Broadcast completion
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+    
+    broadcastToSession(sessionId, "complete", {
+      sessionId,
+      uploaded: successCount,
+      failed: failCount,
+      results,
+    });
+
+  } catch (error) {
+    console.error("Error in /api/upload:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -918,25 +1304,40 @@ async function fetchMetaDataFresh(userId = null) {
       }
 
       const dataPromises = adAccounts.flatMap((account) => {
-        return Promise.all([fetchCampaigns(account.id, userId), fetchPixels(account.id, userId)]).then(([campaigns, pixels]) => ({
-          campaigns,
-          pixels,
-        }));
+        return Promise.all([fetchCampaigns(account.id, userId), fetchPixels(account.id, userId)]).then(async ([campaigns, pixels]) => {
+          // Fetch ad sets for each campaign
+          const adsetsPromises = campaigns.map(campaign => 
+            fetchAdSets(campaign.id, campaign.account_id, userId).catch(err => {
+              console.error(`Error fetching ad sets for campaign ${campaign.id}:`, err);
+              return [];
+            })
+          );
+          const adsetsResults = await Promise.all(adsetsPromises);
+          const adsets = adsetsResults.flat();
+          
+          return {
+            campaigns,
+            pixels,
+            adsets,
+          };
+        });
       });
 
       const results = await Promise.all(dataPromises);
 
       const allCampaigns = results.flatMap((accountData) => accountData.campaigns);
       const allPixels = results.flatMap((accountData) => accountData.pixels);
+      const allAdSets = results.flatMap((accountData) => accountData.adsets);
 
-      // Save to cache using single transaction
-      await FacebookCacheDB.saveAllData(adAccounts, pages, allCampaigns, allPixels);
+      // Save to cache using single transaction (including ad sets)
+      await FacebookCacheDB.saveAllData(adAccounts, pages, allCampaigns, allPixels, allAdSets);
 
       return {
         adAccounts,
         pages,
         campaigns: allCampaigns,
         pixels: allPixels,
+        adsets: allAdSets,
       };
     } catch (err) {
       console.log("Error fetching data from Meta: ", err.message);
@@ -1026,13 +1427,40 @@ async function fetchCampaigns(account_id, userId = null) {
     const token = await getAccessToken(userId);
     const campaignResponse = await axios.get(campaignUrl, {
       params: {
-        fields: "account_id,id,name,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,created_time",
+        fields: "account_id,id,name,bid_strategy,special_ad_categories,status,objective,insights{spend,clicks,impressions},daily_budget,created_time",
         access_token: token,
       },
     });
     return campaignResponse.data.data;
   } catch (err) {
     console.error(`Error fetching campaigns for account ${account_id}:`, err);
+    return [];
+  }
+}
+
+// Fetch ad sets for a campaign
+async function fetchAdSets(campaign_id, account_id, userId = null) {
+  const adsetUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/adsets`;
+  
+  try {
+    const token = await getAccessToken(userId);
+    const adsetResponse = await axios.get(adsetUrl, {
+      params: {
+        fields: "id,name,status,daily_budget,bid_strategy,optimization_goal,billing_event,created_time,insights{spend,clicks,impressions}",
+        access_token: token,
+      },
+    });
+    
+    // Add campaign_id and account_id to each ad set for proper tracking
+    const adsets = adsetResponse.data.data.map(adset => ({
+      ...adset,
+      campaign_id: campaign_id,
+      account_id: account_id
+    }));
+    
+    return adsets;
+  } catch (err) {
+    console.error(`Error fetching ad sets for campaign ${campaign_id}:`, err);
     return [];
   }
 }
@@ -2027,6 +2455,149 @@ async function addCampaignToDatabase(campaignId, campaignName, accountId) {
     console.error("Error adding campaign to database:", error.response?.data || error.message);
   }
 }
+
+// Bulk copy campaigns to multiple accounts
+app.post("/api/bulk-copy-campaigns", ensureAuthenticatedAPI, async (req, res) => {
+  const { campaign_ids, target_account_id } = req.body;
+
+  // Validate input
+  if (!campaign_ids || !Array.isArray(campaign_ids) || campaign_ids.length === 0) {
+    return res.status(400).json({ error: "campaign_ids must be a non-empty array" });
+  }
+
+  if (!target_account_id) {
+    return res.status(400).json({ error: "target_account_id is required" });
+  }
+
+  try {
+    const userId = getUserId(req);
+    const token = await getAccessToken(userId);
+
+    // Meta Batch API can handle up to 50 requests per batch
+    const batchSize = 50;
+    const results = [];
+
+    // Process campaigns in batches
+    for (let i = 0; i < campaign_ids.length; i += batchSize) {
+      const batchCampaigns = campaign_ids.slice(i, i + batchSize);
+      
+      // Build batch request array
+      const batchRequests = batchCampaigns.map((campaignId, index) => ({
+        method: "POST",
+        name: `copy-campaign-${index}`,
+        relative_url: `${campaignId}/copies`,
+        body: new URLSearchParams({
+          deep_copy: "true",
+          status_option: "PAUSED",
+          rename_options: JSON.stringify({
+            rename_strategy: "ONLY_TOP_LEVEL_RENAME",
+            rename_suffix: " - Copy"
+          }),
+          access_token: token
+        }).toString()
+      }));
+
+      // Execute batch request
+      const batchUrl = `https://graph.facebook.com/${api_version}/`;
+      const batchResponse = await circuitBreakers.facebook.call(async () => {
+        return await axios.post(batchUrl, null, {
+          params: {
+            batch: JSON.stringify(batchRequests),
+            access_token: token,
+            include_headers: false
+          },
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        });
+      });
+
+      // Parse batch response
+      if (batchResponse.data && Array.isArray(batchResponse.data)) {
+        for (let j = 0; j < batchResponse.data.length; j++) {
+          const response = batchResponse.data[j];
+          const originalCampaignId = batchCampaigns[j];
+          
+          if (response.code === 200) {
+            try {
+              const body = JSON.parse(response.body);
+              const newCampaignId = body.copied_campaign_id || body.id || body.campaign_id;
+              
+              if (newCampaignId) {
+                // Add to database cache
+                try {
+                  await addCampaignToDatabase(newCampaignId, null, target_account_id);
+                } catch (dbError) {
+                  console.error("Error adding campaign to database:", dbError);
+                }
+
+                results.push({
+                  original_id: originalCampaignId,
+                  new_id: newCampaignId,
+                  success: true
+                });
+              } else {
+                results.push({
+                  original_id: originalCampaignId,
+                  success: false,
+                  error: "Campaign ID not found in response"
+                });
+              }
+            } catch (parseError) {
+              results.push({
+                original_id: originalCampaignId,
+                success: false,
+                error: "Failed to parse response: " + parseError.message
+              });
+            }
+          } else {
+            // Extract error from response
+            let errorMessage = "Unknown error";
+            try {
+              const body = JSON.parse(response.body);
+              errorMessage = body.error?.message || body.error || errorMessage;
+            } catch (e) {
+              errorMessage = response.body || errorMessage;
+            }
+
+            results.push({
+              original_id: originalCampaignId,
+              success: false,
+              error: errorMessage
+            });
+          }
+        }
+      }
+    }
+
+    // Count successes and failures
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    res.status(200).json({
+      success: true,
+      total: campaign_ids.length,
+      successful,
+      failed,
+      results
+    });
+
+  } catch (error) {
+    console.error("Bulk copy campaigns error:", error.response?.data || error.message);
+    
+    // Send Telegram notification for critical failures
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+      await sendTelegramNotification(
+        `🚨 Bulk Copy Campaigns Failed\n\nError: ${error.message}\nAccount: ${target_account_id}\nCampaigns: ${campaign_ids.length}`
+      );
+    }
+
+    res.status(500).json({
+      error: "Failed to copy campaigns",
+      details: error.response?.data?.error?.message || error.message
+    });
+  }
+});
 
 app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
   try {
@@ -3371,11 +3942,16 @@ const gracefulShutdown = (signal) => {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-const server = app.listen(PORT, "0.0.0.0", () => {
+const server = setupHttpsServer(app, PORT);
+
+// Temporary for OAuth Meta HTTPS Rights
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`App is listening on PORT:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`Circuit breakers initialized for: ${Object.keys(circuitBreakers).join(", ")}`);
-  console.log(`Server is now accepting connections on http://localhost:${PORT}`);
+  
+  const protocol = process.env.NODE_ENV === 'development' ? 'https' : 'http';
+  console.log(`Server is now accepting connections on ${protocol}://localhost:${PORT}`);
 
   // Send startup notification (non-error) - wrapped in async to avoid blocking
   (async () => {

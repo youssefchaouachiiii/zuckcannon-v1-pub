@@ -49,6 +49,28 @@ await db.runAsync(`
   )
 `);
 
+// Add facebookId column if it doesn't exist (migration)
+const tableInfo = await db.allAsync('PRAGMA table_info(users)');
+const hasFacebookId = tableInfo.some(col => col.name === 'facebookId');
+
+if (!hasFacebookId) {
+  // Add column without UNIQUE constraint (can't add UNIQUE to existing table with data)
+  await db.runAsync('ALTER TABLE users ADD COLUMN facebookId TEXT');
+  console.log('Added facebookId column to users table');
+}
+
+// Create index for facebookId if it doesn't exist
+await db.runAsync(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_users_facebookId 
+  ON users(facebookId) 
+  WHERE facebookId IS NOT NULL
+`).catch(err => {
+  // Ignore error if index already exists
+  if (!err.message.includes('already exists')) {
+    console.error('Error creating facebookId index:', err);
+  }
+});
+
 // User management functions
 export const UserDB = {
   async create(username, password, email = null) {
@@ -108,6 +130,29 @@ export const UserDB = {
       'DELETE FROM users WHERE id = ?',
       [userId]
     );
+  },
+
+  async findByFacebookId(facebookId) {
+    return await db.getAsync(
+      'SELECT * FROM users WHERE facebookId = ?',
+      [facebookId]
+    );
+  },
+
+  async updateFacebookId(userId, facebookId) {
+    return await db.runAsync(
+      'UPDATE users SET facebookId = ? WHERE id = ?',
+      [facebookId, userId]
+    );
+  },
+
+  async createFacebookUser(username, facebookId, email = null) {
+    const result = await db.runAsync(
+      'INSERT INTO users (username, facebookId, email, password) VALUES (?, ?, ?, ?)',
+      [username, facebookId, email, ''] // Empty password for OAuth users
+    );
+    
+    return await this.findById(result.lastID);
   }
 };
 

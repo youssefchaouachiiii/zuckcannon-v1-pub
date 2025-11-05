@@ -24,39 +24,79 @@ export function configurePassport() {
     })
   );
 
+  const callbackURL = process.env.NODE_ENV === 'development' ? 'https://localhost:6969/auth/facebook/callback' : `https://${process.env.DOMAIN}/auth/facebook/callback`;
+
   // Facebook Strategy
   passport.use(
     new FacebookStrategy(
       {
         clientID: process.env.META_APP_ID,
         clientSecret: process.env.META_APP_SECRET,
-        callbackURL: process.env.META_OAUTH_CALLBACK_URL || "http://localhost:6969/auth/facebook/callback",
-        profileFields: ["id", "displayName", "email"],
+        callbackURL: callbackURL,
         passReqToCallback: true,
-        enableProof: true,
       },
-      async function (req, accessToken, refreshToken, profile, done) {
+      async (req, accessToken, refreshToken, profile, done) => {
         try {
-          console.log("Facebook OAuth callback - User ID:", req.user?.id);
-
-          if (!req.user) {
-            return done(new Error("User must be logged in to connect Facebook"));
+          console.log("Facebook OAuth callback - Profile ID:", profile.id);
+          
+          let user = req.user; // Existing logged-in user
+          
+          if (user) {
+            // User already logged in - just connect Facebook
+            // Save the Facebook access token for the logged-in user
+            await FacebookAuthDB.saveToken(
+              user.id,
+              profile.id,
+              accessToken,
+              "user",
+              null // Facebook user tokens don't expire by default
+            );
+            
+            // Update user's Facebook ID in database
+            await UserDB.updateFacebookId(user.id, profile.id);
+            
+            console.log("Facebook connected to existing user:", user.id);
+            return done(null, user);
           }
-
-          // Save the Facebook access token for the logged-in user
+          
+          // No session - check if Facebook ID exists in database
+          const existingUser = await UserDB.findByFacebookId(profile.id);
+          
+          if (existingUser) {
+            // Auto-login existing Facebook user
+            // Update/save the access token
+            await FacebookAuthDB.saveToken(
+              existingUser.id,
+              profile.id,
+              accessToken,
+              "user",
+              null
+            );
+            
+            console.log("Auto-login existing Facebook user:", existingUser.id);
+            return done(null, existingUser);
+          }
+          
+          // Create new user from Facebook profile
+          const username = profile.displayName || profile.emails?.[0]?.value || `fb_${profile.id}`;
+          const email = profile.emails?.[0]?.value || null;
+          
+          const newUser = await UserDB.createFacebookUser(username, profile.id, email);
+          
+          // Save the Facebook access token
           await FacebookAuthDB.saveToken(
-            req.user.id,
+            newUser.id,
             profile.id,
             accessToken,
             "user",
-            null // Facebook user tokens don't expire by default
+            null
           );
-
-          console.log("Facebook token saved for user:", req.user.id);
-          return done(null, req.user);
-        } catch (err) {
-          console.error("Facebook strategy error:", err);
-          return done(err);
+          
+          console.log("Created new Facebook user:", newUser.id);
+          return done(null, newUser);
+        } catch (error) {
+          console.error("Facebook strategy error:", error);
+          return done(error);
         }
       }
     )

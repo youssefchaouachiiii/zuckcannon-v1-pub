@@ -8,6 +8,11 @@ package-lock.json
 .env.*.local
 .env.lock
 
+# ========== SSL CERTIFICATES ==========
+*.pem
+*.crt
+*.key
+
 # ========== DATA & UPLOADS ==========
 data/
 uploads/
@@ -82,3 +87,9 @@ ecosystem.config.js.backup
 personal-docs/
 
 __tests__
+
+# TEMPORARY SSL CERTIFICATE FOR DEVELOPMENT (OAUTH)
+generate-certs.js
+https-config.js
+
+rate-limiter-monitor.html
