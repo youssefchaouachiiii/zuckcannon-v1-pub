@@ -28,8 +28,8 @@ export function configurePassport() {
   passport.use(
     new FacebookStrategy(
       {
-        clientID: process.env.META_APP_ID,
-        clientSecret: process.env.META_APP_SECRET,
+        clientID: "781142368085268",
+        clientSecret: "793c8fa93f9983161efb479990e9a434",
         callbackURL: process.env.META_OAUTH_CALLBACK_URL || "http://localhost:6969/auth/facebook/callback",
         profileFields: ["id", "displayName", "email"],
         passReqToCallback: true,
