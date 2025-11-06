@@ -7,9 +7,16 @@ services:
       - "6969:6969"
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - app_data:/data
     networks:
       - shared_n8n
 
 networks:
   shared_n8n:
     external: true
+
+volumes:
+  app_data:
