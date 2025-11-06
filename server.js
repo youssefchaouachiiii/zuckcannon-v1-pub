@@ -390,9 +390,16 @@ app.get("/auth/facebook/callback", passport.authenticate("facebook", { failureRe
 app.post("/logout", (req, res) => {
   req.logout(function (err) {
     if (err) {
+      console.error("Logout error:", err);
       return res.status(500).json({ error: "Logout failed" });
     }
-    res.redirect("/login.html");
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Session destroy error:", err);
+        return res.status(500).json({ error: "Session cleanup failed" });
+      }
+      res.json({ success: true, message: "Logged out successfully" });
+    });
   });
 });
 

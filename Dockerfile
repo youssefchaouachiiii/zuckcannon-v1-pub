@@ -1,43 +1,23 @@
-# ---- Builder Stage ----
-# This stage builds the client-side React application.
-FROM node:20 AS builder
-
-# Set the working directory for the client
-WORKDIR /usr/src/app/client
-
-# Copy client's package.json and package-lock.json
-COPY client/package*.json ./
-
-# Install client dependencies
-RUN npm install
-
-# Copy the rest of the client's code
-COPY client/ ./
-
-# Build the client application
-RUN npm run build
-
-# ---- Production Stage ----
-# This stage creates the final, lean production image.
+# Use Node.js 20 Alpine for smaller image size
 FROM node:20-alpine
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /usr/src/app
 
-# Copy server's package.json and package-lock.json
+# Copy package files
 COPY package*.json ./
 
-# Install only production dependencies for the server
+# Install production dependencies only
 RUN npm install --only=production
 
-# Copy the server-side code
+# Copy application code
 COPY . .
 
-# Copy the built client application from the builder stage
-COPY --from=builder /usr/src/app/client/dist ./client/dist
+# Create necessary directories
+RUN mkdir -p data uploads creative-library
 
-# Expose port 6969
+# Expose application port
 EXPOSE 6969
 
-# Command to run the application
-CMD [ "node", "server.js" ]
+# Start the application
+CMD ["sh", "-c", "node init-directories.js && node server.js"]
