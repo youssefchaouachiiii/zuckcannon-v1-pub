@@ -3856,20 +3856,10 @@ app.use((err, req, res, next) => {
 
   console.error("Unhandled error:", errorDetails);
 
-  // Send Telegram notification for unhandled errors
-  const telegramMessage = `<b>Unhandled Express Error</b>
-<b>URL:</b> ${req.method} ${req.url}
-<b>Error:</b> ${err.message}
-<b>IP:</b> ${req.ip}`;
-  sendTelegramNotification(telegramMessage);
-
-  // Don't leak error details in production
-  const isDevelopment = process.env.NODE_ENV === "development";
-
   res.status(err.status || 500).json({
     error: "Internal server error",
-    message: isDevelopment ? err.message : "An unexpected error occurred",
-    ...(isDevelopment && { stack: err.stack }),
+    message: err.message,
+    stack: err.stack,
   });
 });
 
@@ -3888,12 +3878,6 @@ process.on("uncaughtException", (err) => {
 
   console.error("UNCAUGHT EXCEPTION:", errorDetails);
 
-  // Send critical Telegram notification
-  const telegramMessage = `<b>🔥 CRITICAL: Uncaught Exception</b>
-<b>Error:</b> ${err.message}
-<b>Stack:</b> ${err.stack?.substring(0, 500)}...`;
-  sendTelegramNotification(telegramMessage);
-
   // Log the error but don't exit immediately to allow ongoing requests to complete
   setTimeout(() => {
     process.exit(1);
@@ -3901,22 +3885,11 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  const errorDetails = {
-    reason: reason,
-  };
-
-  console.error("UNHANDLED REJECTION:", errorDetails);
-
-  // Send Telegram notification for unhandled rejections
-  const telegramMessage = `<b>⚠️ Unhandled Promise Rejection</b>
-<b>Reason:</b> ${reason?.toString() || "Unknown reason"}`;
-  sendTelegramNotification(telegramMessage);
-
   console.error("UNHANDLED REJECTION:", {
-    promise: promise,
+    reason: reason,
     timestamp: new Date().toISOString(),
   });
-  // Convert unhandled rejections to exceptions
+  // Convert unhandled rejections to uncaught exceptions for consistent handling
   throw reason;
 });
 
