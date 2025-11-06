@@ -78,20 +78,16 @@ const corsOptions = {
   origin: function (origin, callback) {
     // Production: Use FRONTEND_URL from environment
     let allowedOrigins;
-    
+
     if (process.env.FRONTEND_URL) {
       const baseUrl = process.env.FRONTEND_URL;
-      allowedOrigins = [
-        baseUrl,
-        baseUrl.replace("https://", "https://www."),
-        baseUrl.replace("http://", "http://www."),
-      ];
+      allowedOrigins = [baseUrl, baseUrl.replace("https://", "https://www."), baseUrl.replace("http://", "http://www.")];
     } else {
       console.warn("⚠️  FRONTEND_URL not set. Allowing all origins (not recommended for production)");
       allowedOrigins = ["*"];
     }
 
-    // Allow requests with no origin (mobile apps, Postman, same-origin)
+    // Allow requests with no origin (mobile apps, Postman, same-origin, server-to-server)
     if (!origin) {
       return callback(null, true);
     }
@@ -101,15 +97,18 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Check if origin is allowed
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Check if origin is allowed (case-insensitive)
+    const originLower = origin.toLowerCase();
+    const isAllowed = allowedOrigins.some((allowed) => allowed.toLowerCase() === originLower);
+
+    if (isAllowed) {
       callback(null, true);
     } else {
       // Debug-friendly error logging for production
       console.error(`🚫 CORS blocked: origin="${origin}"`);
       console.error(`   Allowed: [${allowedOrigins.join(", ")}]`);
       console.error(`   💡 Fix: Add "${origin}" to FRONTEND_URL or update your environment config`);
-      
+
       callback(new Error("Not allowed by CORS"));
     }
   },
@@ -126,6 +125,7 @@ app.use(
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // You may want to remove unsafe-eval in production
+        scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers
         imgSrc: ["'self'", "data:", "https:", "blob:"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         connectSrc: ["'self'", "https://graph.facebook.com", "https://www.googleapis.com"],
@@ -3865,7 +3865,7 @@ app.use("/creative-library", express.static(paths.creativeLibrary));
 app.use((err, req, res, next) => {
   // Determine the status code (default to 500 if not set)
   const statusCode = err.status || err.statusCode || 500;
-  
+
   const errorDetails = {
     error: err.message,
     stack: err.stack,

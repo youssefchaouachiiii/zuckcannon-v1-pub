@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   app:
@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - FRONTEND_URL=https://adgen.sigmagrowthpartners.com
     volumes:
       - app_data:/data
     networks:
