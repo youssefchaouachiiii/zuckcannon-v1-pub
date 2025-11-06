@@ -543,7 +543,7 @@ function broadcastMetaDataUpdate(event, data) {
 }
 
 // Manual cache refresh endpoint
-app.post("/api/refresh-meta-cache", async (req, res) => {
+app.post("/api/refresh-meta-cache", ensureAuthenticatedAPI, async (req, res) => {
   try {
     if (isRefreshing) {
       return res.json({
@@ -552,10 +552,22 @@ app.post("/api/refresh-meta-cache", async (req, res) => {
       });
     }
 
+    // Get user credentials from session
+    const userId = req.user.id;
+    const userAccessToken = req.user.facebook_access_token;
+
+    // Validate user has access token
+    if (!userAccessToken) {
+      return res.status(401).json({
+        status: "error",
+        message: "No Facebook access token found. Please authenticate via Facebook OAuth.",
+      });
+    }
+
     // Start refresh
     broadcastMetaDataUpdate("refresh-started", { timestamp: new Date().toISOString() });
 
-    const freshData = await fetchMetaDataFresh();
+    const freshData = await fetchMetaDataFresh(userId, userAccessToken);
 
     // Broadcast completion with the new data
     broadcastMetaDataUpdate("refresh-completed", {
