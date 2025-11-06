@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "6969:6969"
+    env_file:
+      - .env
+    networks:
+      - shared_n8n
+
+networks:
+  shared_n8n:
+    external: true
