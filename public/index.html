@@ -16,8 +16,9 @@
 <body>
   <header>
     <h1>ZuckCannon <span class="h1-version">v1.0</span>
-      <button class="refresh-data-btn" onclick="refreshMetaDataManually()" title="Refresh data from Facebook">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="refresh-data-btn" title="Refresh data from Facebook">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 4v6h-6"></path>
           <path d="M1 20v-6h6"></path>
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
@@ -49,9 +50,83 @@
         <h2>Select Campaign</h2>
         <a href="#" class="search-icon-btn"><img src="icons/search-icon.svg" alt="Search" /></a>
       </div>
+      <button class="create-new-campaign-btn">+ Create New Campaign</button>
       <div class="campaign-search-wrapper" style="display: none;">
         <input type="text" class="campaign-search-input" placeholder="Search campaigns..." />
         <button class="search-close-btn">✕</button>
+      </div>
+    </div>
+
+    <!-- Column 2.5 - Campaign Creation -->
+    <div id="col-2-5" class="campaign-creation-column" style="display: none">
+      <h2>Create New Campaign</h2>
+      <div class="campaign-form-container">
+        <input type="text" placeholder="Campaign Name*" class="config-campaign-name" required />
+
+        <!-- Objective dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-objective">
+              <span class="dropdown-display placeholder">Campaign Objective*</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-objective">
+              <li data-value="OUTCOME_TRAFFIC">Traffic</li>
+              <li data-value="OUTCOME_ENGAGEMENT">Engagement</li>
+              <li data-value="OUTCOME_LEADS">Leads</li>
+              <li data-value="OUTCOME_SALES">Sales</li>
+              <li data-value="OUTCOME_APP_PROMOTION">App Promotion</li>
+              <li data-value="OUTCOME_AWARENESS">Awareness</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Status dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-status">
+              <span class="dropdown-display placeholder">Status*</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-status">
+              <li data-value="PAUSED">Paused</li>
+              <li data-value="ACTIVE">Active</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Daily Budget (Optional) -->
+        <input type="number" placeholder="Daily Budget (Optional, e.g., 10 for $10)" class="config-campaign-budget"
+          step="0.01" min="0" />
+
+        <!-- Special Categories dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-categories">
+              <span class="dropdown-display placeholder">Special Ad Categories (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-categories" data-multiple="true">
+              <li data-value="">None - If none of the categories apply</li>
+              <li data-value="CREDIT">Financial products and services</li>
+              <li data-value="EMPLOYMENT">Employment</li>
+              <li data-value="HOUSING">Housing</li>
+              <li data-value="ISSUES_ELECTIONS_POLITICS">Social issues, elections or politics</li>
+            </ul>
+          </div>
+        </div>
+
+        <button class="campaign-create-btn">Create Campaign</button>
+        <button class="campaign-cancel-btn">Cancel</button>
       </div>
     </div>
 
@@ -146,8 +221,10 @@
           </div>
 
           <div class="targeting-age">
-            <input type="number" placeholder="Min Age*" class="min-age" data-container="adset-form-container" required />
-            <input type="number" placeholder="Max Age*" class="max-age" data-container="adset-form-container" required />
+            <input type="number" placeholder="Min Age*" class="min-age" data-container="adset-form-container"
+              required />
+            <input type="number" placeholder="Max Age*" class="max-age" data-container="adset-form-container"
+              required />
           </div>
           <!-- Country Selection -->
           <div class="geo-selection-container">
@@ -335,6 +412,7 @@
           </div>
         </div>
         <button class="create-ads-button">Create Ads</button>
+        <!-- <button class="bulk-upload-ads-button" style="margin-top: 10px; background: #28a745;">Bulk Upload Ads to Multiple Accounts</button> -->
       </div>
 
       <!-- Success Screen -->
@@ -394,6 +472,168 @@
         <div class="button-group">
           <button class="btn-secondary duplicate-back">Back</button>
           <button class="btn-primary duplicate-proceed" disabled>Proceed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Campaign Dialog -->
+  <div class="create-campaign-dialog" style="display: none;">
+    <div class="dialog-content">
+      <button class="dialog-close-btn">&times;</button>
+      <h3>Create New Campaign</h3>
+      <div class="create-campaign-form">
+        <input type="text" id="create-campaign-name" placeholder="Campaign Name*" required>
+
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-objective">
+              <span class="dropdown-display">Campaign Objective*</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-objective">
+              <li data-value="OUTCOME_TRAFFIC">Traffic</li>
+              <li data-value="OUTCOME_ENGAGEMENT">Engagement</li>
+              <li data-value="OUTCOME_LEADS">Leads</li>
+              <li data-value="OUTCOME_SALES">Sales</li>
+              <li data-value="OUTCOME_APP_PROMOTION">App Promotion</li>
+              <li data-value="OUTCOME_AWARENESS">Awareness</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-status">
+              <span class="dropdown-display">Status*</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-status">
+              <li data-value="PAUSED">Paused</li>
+              <li data-value="ACTIVE">Active</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-categories">
+              <span class="dropdown-display">Special Ad Categories (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-categories" data-multiple="true">
+              <li data-value="">None</li>
+              <li data-value="CREDIT">Credit</li>
+              <li data-value="EMPLOYMENT">Employment</li>
+              <li data-value="HOUSING">Housing</li>
+              <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
+              <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button class="btn-secondary campaign-cancel">Cancel</button>
+          <button class="btn-primary campaign-create" disabled>Create Campaign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Upload Ads Modal -->
+  <div class="bulk-upload-modal" style="display: none;">
+    <div class="modal-content bulk-upload-content">
+      <div class="modal-header">
+        <h2>Bulk Upload Ads to Multiple Accounts</h2>
+        <button class="modal-close-btn bulk-upload-close">&times;</button>
+      </div>
+
+      <div class="bulk-upload-body">
+        <!-- Step 1: Select Accounts -->
+        <div class="bulk-step" data-step="1">
+          <h3>Step 1: Select Ad Accounts</h3>
+          <p class="step-description">Choose one or more ad accounts to create ads in</p>
+
+          <div class="account-selection-container">
+            <div class="search-box">
+              <input type="text" class="account-search" placeholder="Search accounts..." />
+            </div>
+            <div class="account-list">
+              <!-- Accounts will be populated dynamically -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-select-all">Select All</button>
+            <button class="btn-secondary bulk-deselect-all">Deselect All</button>
+            <button class="btn-primary bulk-start-upload" disabled>Start Bulk Upload</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Upload Progress -->
+        <div class="bulk-step" data-step="2" style="display: none;">
+          <h3>Step 2: Uploading Ads</h3>
+          <p class="step-description">Creating ads across multiple accounts...</p>
+
+          <div class="bulk-progress-container">
+            <div class="overall-progress">
+              <h4>Overall Progress</h4>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+              </div>
+              <p class="progress-text">0 of 0 accounts completed</p>
+            </div>
+
+            <div class="account-progress-list">
+              <!-- Individual account progress will be shown here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions" style="display: none;">
+            <button class="btn-primary bulk-close-modal">Close</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Results -->
+        <div class="bulk-step" data-step="3" style="display: none;">
+          <h3>Bulk Upload Complete!</h3>
+
+          <div class="bulk-results-container">
+            <div class="results-summary">
+              <div class="result-stat success">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Ads Created</span>
+              </div>
+              <div class="result-stat failed">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Failed</span>
+              </div>
+              <div class="result-stat accounts">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Accounts</span>
+              </div>
+            </div>
+
+            <div class="results-details">
+              <h4>Details by Account</h4>
+              <div class="results-list">
+                <!-- Detailed results will be shown here -->
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-primary bulk-close-modal">Close</button>
+          </div>
         </div>
       </div>
     </div>

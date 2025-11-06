@@ -247,6 +247,33 @@ h2 {
   opacity: 1;
 }
 
+/* Create New Campaign Button */
+.create-new-campaign-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background-color: #103dee;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.create-new-campaign-btn:hover {
+  background-color: #0d32c4;
+}
+
+.create-new-campaign-btn:active {
+  transform: scale(0.98);
+}
+
 /* Campaign Search */
 .campaign-search-wrapper {
   display: flex;
@@ -369,6 +396,85 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 30px;
+}
+
+/* Campaign Creation Column */
+.campaign-creation-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.campaign-creation-column h2 {
+  font-size: 18px;
+  color: #103dee;
+  border-bottom: 1px solid #103dee;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.campaign-form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.campaign-form-container input[type="text"] {
+  padding: 12px 16px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.campaign-form-container input[type="text"]:focus {
+  border-color: #103dee;
+}
+
+.campaign-form-container input[type="text"].empty-input {
+  border-color: #ff4444;
+}
+
+.campaign-create-btn {
+  padding: 14px 20px;
+  background-color: #e5e5e5;
+  color: #999;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: not-allowed;
+  transition: all 0.2s ease;
+  margin-top: 10px;
+}
+
+.campaign-create-btn.active {
+  background-color: #103dee;
+  color: white;
+  cursor: pointer;
+}
+
+.campaign-create-btn.active:hover {
+  background-color: #0d32c4;
+}
+
+.campaign-cancel-btn {
+  padding: 12px 20px;
+  background-color: transparent;
+  color: #666;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.campaign-cancel-btn:hover {
+  background-color: #f5f5f5;
+  border-color: #999;
 }
 
 /* Ad Set List Container */
@@ -2041,4 +2147,593 @@ h2 {
   background: white;
   border-color: #103dee;
   color: #103dee;
+}
+
+/* ============================================
+   BULK UPLOAD ADS MODAL
+   ============================================ */
+
+.bulk-upload-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.bulk-upload-content {
+  background: white;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.bulk-upload-body {
+  padding: 20px;
+}
+
+.bulk-step {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.step-description {
+  color: #666;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+/* Account Selection */
+.account-selection-container {
+  border: 1px solid #e5e5e5;
+  border-radius: 0;
+  margin-bottom: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.search-box {
+  padding: 15px;
+  border-bottom: 1px solid #e5e5e5;
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 1;
+}
+
+.account-search {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 0;
+  font-size: 14px;
+}
+
+.account-list {
+  padding: 10px;
+}
+
+.account-item {
+  padding: 15px;
+  border: 1px solid #e5e5e5;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s;
+  background: white;
+}
+
+.account-item:hover {
+  background: #f5f5f5;
+  border-color: #103dee;
+}
+
+.account-item.selected {
+  background: #e3f2fd;
+  border-color: #103dee;
+  border-width: 2px;
+}
+
+.account-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.account-info {
+  flex: 1;
+}
+
+.account-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.account-id {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Bulk Actions */
+.bulk-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 20px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.btn-secondary {
+  padding: 10px 20px;
+  background: #f0f2f5;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #e4e6eb;
+}
+
+.btn-primary {
+  padding: 10px 20px;
+  background: #103dee;
+  color: white;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0d32bb;
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Configuration Step */
+.bulk-config-container {
+  margin-bottom: 20px;
+}
+
+.config-option {
+  padding: 15px;
+  border: 1px solid #e5e5e5;
+  margin-bottom: 15px;
+}
+
+.config-option label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.config-option input[type="radio"] {
+  cursor: pointer;
+}
+
+.same-count-input,
+.custom-count-container {
+  margin-left: 30px;
+}
+
+.bulk-ad-count {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 0;
+  font-size: 14px;
+  width: 150px;
+}
+
+.input-hint {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #666;
+}
+
+.custom-count-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.custom-count-item:last-child {
+  border-bottom: none;
+}
+
+.custom-account-name {
+  flex: 1;
+  font-size: 14px;
+  color: #333;
+}
+
+.custom-ad-count {
+  width: 100px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 0;
+  font-size: 14px;
+}
+
+.selected-accounts-summary {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f9f9f9;
+  border: 1px solid #e5e5e5;
+}
+
+.selected-accounts-summary h4 {
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #333;
+}
+
+.selected-accounts-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.selected-account-chip {
+  display: inline-block;
+  padding: 6px 12px;
+  background: #e3f2fd;
+  border: 1px solid #103dee;
+  margin: 4px;
+  font-size: 12px;
+  color: #333;
+}
+
+/* Progress Step */
+.bulk-progress-container {
+  margin-bottom: 20px;
+}
+
+.overall-progress {
+  padding: 20px;
+  border: 1px solid #e5e5e5;
+  background: #f9f9f9;
+  margin-bottom: 20px;
+}
+
+.overall-progress h4 {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 24px;
+  background: #e0e0e0;
+  border-radius: 0;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #28a745;
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.progress-text {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+}
+
+.account-progress-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.account-progress-item {
+  padding: 15px;
+  border: 1px solid #e5e5e5;
+  margin-bottom: 10px;
+  background: white;
+}
+
+.account-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.account-progress-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.account-progress-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.account-progress-status.pending {
+  background: #ffeaa7;
+  color: #856404;
+}
+
+.account-progress-status.processing {
+  background: #74b9ff;
+  color: #004085;
+}
+
+.account-progress-status.success {
+  background: #55efc4;
+  color: #155724;
+}
+
+.account-progress-status.failed {
+  background: #ff7675;
+  color: #721c24;
+}
+
+.account-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.account-progress-fill {
+  height: 100%;
+  background: #103dee;
+  transition: width 0.3s ease;
+}
+
+.account-progress-details {
+  font-size: 12px;
+  color: #666;
+}
+
+.account-error-message {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+  font-size: 12px;
+}
+
+/* Results Step */
+.bulk-results-container {
+  margin-bottom: 20px;
+}
+
+.results-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.result-stat {
+  padding: 20px;
+  text-align: center;
+  border: 2px solid #e5e5e5;
+  background: white;
+}
+
+.result-stat.success {
+  border-color: #28a745;
+  background: #f0fff4;
+}
+
+.result-stat.failed {
+  border-color: #dc3545;
+  background: #fff5f5;
+}
+
+.result-stat.accounts {
+  border-color: #103dee;
+  background: #f0f6ff;
+}
+
+.stat-number {
+  display: block;
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.result-stat.success .stat-number {
+  color: #28a745;
+}
+
+.result-stat.failed .stat-number {
+  color: #dc3545;
+}
+
+.result-stat.accounts .stat-number {
+  color: #103dee;
+}
+
+.stat-label {
+  display: block;
+  font-size: 14px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.results-details {
+  border: 1px solid #e5e5e5;
+  padding: 20px;
+  background: #f9f9f9;
+}
+
+.results-details h4 {
+  margin-bottom: 15px;
+  font-size: 16px;
+}
+
+.results-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.result-item {
+  padding: 15px;
+  border: 1px solid #e5e5e5;
+  margin-bottom: 10px;
+  background: white;
+}
+
+.result-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.result-account-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.result-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.result-status.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.result-status.partial {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.result-status.failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.result-stats {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  color: #666;
+}
+
+.result-stat-item {
+  display: flex;
+  gap: 5px;
+}
+
+.result-stat-item strong {
+  color: #333;
+}
+
+.result-errors {
+  margin-top: 10px;
+  padding: 10px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  font-size: 12px;
+  color: #856404;
+}
+
+.result-errors-title {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.result-error-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.result-error-list li {
+  padding: 4px 0;
+}
+
+/* Bulk Upload Ads Button */
+.bulk-upload-ads-button {
+  width: 100%;
+  padding: 15px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s;
+  margin-top: 10px;
+}
+
+.bulk-upload-ads-button:hover {
+  background: #218838;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.bulk-upload-ads-button:active {
+  transform: translateY(0);
+}
+
+/* Loading state */
+.bulk-loading {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ffffff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 8px;
+  vertical-align: middle;
 }

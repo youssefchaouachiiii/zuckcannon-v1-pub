@@ -4,7 +4,11 @@
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "axios": "^1.9.0",
     "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.4.1",
+    "better-sqlite3-session-store": "^0.1.0",
     "compression": "^1.8.1",
+    "connect-sqlite3": "^0.9.16",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
@@ -17,8 +21,8 @@
     "multer": "^2.0.1",
     "nodemon": "^3.1.10",
     "passport": "^0.7.0",
-    "passport-local": "^1.0.0",
-    "sqlite3": "^5.1.7"
+    "passport-facebook": "^3.0.0",
+    "passport-local": "^1.0.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

@@ -10,16 +10,16 @@ class ErrorHandler {
   init() {
     // Create error container if it doesn't exist
     this.createErrorContainer();
-    
+
     // Setup global error handlers
-    window.addEventListener('error', (e) => {
-      console.error('Global error:', e);
-      this.showError('An unexpected error occurred', 'error');
+    window.addEventListener("error", (e) => {
+      console.error("Global error:", e);
+      this.showError("An unexpected error occurred", "error");
     });
 
-    window.addEventListener('unhandledrejection', (e) => {
-      console.error('Unhandled promise rejection:', e);
-      this.showError('An unexpected error occurred', 'error');
+    window.addEventListener("unhandledrejection", (e) => {
+      console.error("Unhandled promise rejection:", e);
+      this.showError("An unexpected error occurred", "error");
     });
 
     // Intercept fetch errors
@@ -27,8 +27,8 @@ class ErrorHandler {
   }
 
   createErrorContainer() {
-    this.errorContainer = document.createElement('div');
-    this.errorContainer.id = 'error-container';
+    this.errorContainer = document.createElement("div");
+    this.errorContainer.id = "error-container";
     this.errorContainer.style.cssText = `
       position: fixed;
       top: 20px;
@@ -39,11 +39,11 @@ class ErrorHandler {
     document.body.appendChild(this.errorContainer);
   }
 
-  showError(message, type = 'error', duration = 5000) {
-    const errorEl = document.createElement('div');
+  showError(message, type = "error", duration = 5000) {
+    const errorEl = document.createElement("div");
     errorEl.className = `error-notification ${type}`;
     errorEl.style.cssText = `
-      background: ${type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#4caf50'};
+      background: ${type === "error" ? "#f44336" : type === "warning" ? "#ff9800" : "#4caf50"};
       color: white;
       padding: 16px;
       margin-bottom: 10px;
@@ -73,7 +73,7 @@ class ErrorHandler {
     if (duration > 0) {
       setTimeout(() => {
         if (errorEl.parentElement) {
-          errorEl.style.animation = 'slideOut 0.3s ease-out';
+          errorEl.style.animation = "slideOut 0.3s ease-out";
           setTimeout(() => errorEl.remove(), 300);
         }
       }, duration);
@@ -81,20 +81,15 @@ class ErrorHandler {
   }
 
   showSuccess(message, duration = 3000) {
-    this.showError(message, 'success', duration);
+    this.showError(message, "success", duration);
   }
 
   showWarning(message, duration = 4000) {
-    this.showError(message, 'warning', duration);
+    this.showError(message, "warning", duration);
   }
 
   escapeHtml(unsafe) {
-    return unsafe
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+    return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
   interceptFetch() {
@@ -102,26 +97,33 @@ class ErrorHandler {
     window.fetch = async (...args) => {
       try {
         const response = await originalFetch(...args);
-        
+
         // Handle non-OK responses
         if (!response.ok) {
-          const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const error = await response.json();
-            const message = error.error || error.message || `HTTP ${response.status} error`;
-            
-            // Show user-friendly error messages
-            this.handleApiError(response.status, message);
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            // Clone the response so the original can still be read by the caller
+            const clonedResponse = response.clone();
+            try {
+              const error = await clonedResponse.json();
+              const message = error.error || error.message || `HTTP ${response.status} error`;
+
+              // Show user-friendly error messages
+              this.handleApiError(response.status, message);
+            } catch (e) {
+              // If JSON parsing fails, just show the status code
+              this.handleApiError(response.status, `HTTP ${response.status} error`);
+            }
           }
         }
-        
+
         return response;
       } catch (err) {
         // Network errors
-        if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
-          this.showError('Network error: Please check your connection', 'error');
+        if (err.name === "TypeError" && err.message.includes("Failed to fetch")) {
+          this.showError("Network error: Please check your connection", "error");
         } else {
-          this.showError('Request failed: ' + err.message, 'error');
+          this.showError("Request failed: " + err.message, "error");
         }
         throw err;
       }
@@ -131,34 +133,34 @@ class ErrorHandler {
   handleApiError(status, message) {
     switch (status) {
       case 400:
-        this.showError(`Invalid request: ${message}`, 'warning');
+        this.showError(`Invalid request: ${message}`, "warning");
         break;
       case 401:
-        this.showError('Session expired. Please login again.', 'error');
-        setTimeout(() => window.location.href = '/login.html', 2000);
+        this.showError("Session expired. Please login again.", "error");
+        setTimeout(() => (window.location.href = "/login.html"), 2000);
         break;
       case 403:
-        this.showError('Access denied', 'error');
+        this.showError("Access denied", "error");
         break;
       case 404:
-        this.showError('Resource not found', 'warning');
+        this.showError("Resource not found", "warning");
         break;
       case 429:
-        this.showError('Too many requests. Please slow down.', 'warning');
+        this.showError("Too many requests. Please slow down.", "warning");
         break;
       case 500:
       case 502:
       case 503:
-        this.showError('Server error. Please try again later.', 'error');
+        this.showError("Server error. Please try again later.", "error");
         break;
       default:
-        this.showError(message || `Error: ${status}`, 'error');
+        this.showError(message || `Error: ${status}`, "error");
     }
   }
 }
 
 // CSS animations
-const style = document.createElement('style');
+const style = document.createElement("style");
 style.textContent = `
   @keyframes slideIn {
     from {
@@ -188,6 +190,6 @@ document.head.appendChild(style);
 window.errorHandler = new ErrorHandler();
 
 // Helper functions for manual error handling
-window.showError = (message, duration) => window.errorHandler.showError(message, 'error', duration);
+window.showError = (message, duration) => window.errorHandler.showError(message, "error", duration);
 window.showSuccess = (message, duration) => window.errorHandler.showSuccess(message, duration);
 window.showWarning = (message, duration) => window.errorHandler.showWarning(message, duration);
