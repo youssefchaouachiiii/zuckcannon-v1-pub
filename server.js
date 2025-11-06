@@ -3845,6 +3845,9 @@ app.use("/creative-library", express.static(paths.creativeLibrary));
 
 // Global error handler middleware (must be last)
 app.use((err, req, res, next) => {
+  // Determine the status code (default to 500 if not set)
+  const statusCode = err.status || err.statusCode || 500;
+  
   const errorDetails = {
     error: err.message,
     stack: err.stack,
@@ -3856,8 +3859,10 @@ app.use((err, req, res, next) => {
 
   console.error("Unhandled error:", errorDetails);
 
-  res.status(err.status).json({
+  res.status(statusCode).json({
     error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString(),
   });
 });
 
