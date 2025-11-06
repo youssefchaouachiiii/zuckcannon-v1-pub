@@ -3856,10 +3856,8 @@ app.use((err, req, res, next) => {
 
   console.error("Unhandled error:", errorDetails);
 
-  res.status(err.status || 500).json({
-    error: "Internal server error",
-    message: err.message,
-    stack: err.stack,
+  res.status(err.status).json({
+    error: err.message,
   });
 });
 
