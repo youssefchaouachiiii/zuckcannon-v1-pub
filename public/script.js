@@ -1009,9 +1009,17 @@ class SingleSelectGroup {
 
       // Trigger background refresh to update cache without disrupting UI
       fetch("/api/refresh-meta-cache", { method: "POST" })
-        .then((response) => response.json())
+        .then((response) => {
+          if (!response.ok) {
+            console.warn(`Refresh returned status ${response.status}`);
+            return null;
+          }
+          return response.json();
+        })
         .then((result) => {
-          console.log("Background refresh triggered after ad set duplication:", result);
+          if (result) {
+            console.log("Background refresh triggered after ad set duplication:", result);
+          }
         })
         .catch((err) => console.error("Failed to trigger refresh:", err));
     } catch (error) {
@@ -1848,9 +1856,17 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
 
     // Trigger background refresh to update cache without page reload
     fetch("/api/refresh-meta-cache", { method: "POST" })
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) {
+          console.warn(`Refresh returned status ${response.status}`);
+          return null;
+        }
+        return response.json();
+      })
       .then((result) => {
-        console.log("Background refresh triggered:", result);
+        if (result) {
+          console.log("Background refresh triggered:", result);
+        }
       })
       .catch((err) => console.error("Failed to trigger refresh:", err));
   } catch (error) {
@@ -2006,8 +2022,18 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
 
       // Trigger background refresh
       fetch("/api/refresh-meta-cache", { method: "POST" })
-        .then((response) => response.json())
-        .then((result) => console.log("Background refresh triggered:", result))
+        .then((response) => {
+          if (!response.ok) {
+            console.warn(`Refresh returned status ${response.status}`);
+            return null;
+          }
+          return response.json();
+        })
+        .then((result) => {
+          if (result) {
+            console.log("Background refresh triggered:", result);
+          }
+        })
         .catch((err) => console.error("Failed to trigger refresh:", err));
     } catch (error) {
       console.error("Error creating campaign:", error);
@@ -5211,6 +5237,11 @@ async function refreshMetaDataManually() {
     }
 
     const response = await fetch("/api/refresh-meta-cache", { method: "POST" });
+
+    if (!response.ok) {
+      throw new Error(`Refresh failed with status ${response.status}`);
+    }
+
     const result = await response.json();
 
     if (result.status === "success") {
@@ -5635,8 +5666,18 @@ function initializeCreateCampaignDialog() {
 
         // Trigger background refresh
         fetch("/api/refresh-meta-cache", { method: "POST" })
-          .then((response) => response.json())
-          .then((result) => console.log("Background refresh triggered:", result))
+          .then((response) => {
+            if (!response.ok) {
+              console.warn(`Refresh returned status ${response.status}`);
+              return null;
+            }
+            return response.json();
+          })
+          .then((result) => {
+            if (result) {
+              console.log("Background refresh triggered:", result);
+            }
+          })
           .catch((err) => console.error("Failed to trigger refresh:", err));
       } catch (error) {
         console.error("Error creating campaign:", error);
