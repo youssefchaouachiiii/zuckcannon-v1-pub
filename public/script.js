@@ -967,7 +967,37 @@ class SingleSelectGroup {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to duplicate ad set");
+        let errorMessage = "Failed to duplicate ad set";
+
+        try {
+          const errorData = await response.json();
+
+          // Provide specific, actionable error messages
+          if (response.status === 403 && errorData.needsAuth) {
+            errorMessage = "Please reconnect your Facebook account to continue";
+          } else if (response.status === 403) {
+            errorMessage = "Authentication failed. Please log in again.";
+          } else if (response.status === 401) {
+            errorMessage = "Your session has expired. Please refresh the page.";
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+          } else if (errorData.details) {
+            errorMessage = `Ad set duplication failed: ${errorData.details}`;
+          }
+
+          // Log full error details for debugging
+          console.error("Ad set duplication error details:", {
+            status: response.status,
+            statusText: response.statusText,
+            errorData: errorData,
+          });
+        } catch (parseError) {
+          // If response isn't JSON, use generic message
+          console.error("Failed to parse error response:", parseError);
+          errorMessage = `Ad set duplication failed (HTTP ${response.status})`;
+        }
+
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -1024,7 +1054,15 @@ class SingleSelectGroup {
         .catch((err) => console.error("Failed to trigger refresh:", err));
     } catch (error) {
       console.error("Error duplicating ad set:", error);
-      alert("Failed to duplicate ad set. Please try again.");
+
+      // Display user-friendly error message
+      const errorMessage = error.message || "Failed to duplicate ad set. Please try again.";
+
+      if (window.showError) {
+        window.showError(errorMessage, 5000);
+      } else {
+        alert(errorMessage);
+      }
 
       // Reset button
       proceedBtn.disabled = false;
@@ -1795,7 +1833,37 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
     });
 
     if (!response.ok) {
-      throw new Error("Failed to duplicate campaign");
+      let errorMessage = "Failed to duplicate campaign";
+
+      try {
+        const errorData = await response.json();
+
+        // Provide specific, actionable error messages
+        if (response.status === 403 && errorData.needsAuth) {
+          errorMessage = "Please reconnect your Facebook account to continue";
+        } else if (response.status === 403) {
+          errorMessage = "Authentication failed. Please log in again.";
+        } else if (response.status === 401) {
+          errorMessage = "Your session has expired. Please refresh the page.";
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        } else if (errorData.details) {
+          errorMessage = `Campaign duplication failed: ${errorData.details}`;
+        }
+
+        // Log full error details for debugging
+        console.error("Campaign duplication error details:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData,
+        });
+      } catch (parseError) {
+        // If response isn't JSON, use generic message
+        console.error("Failed to parse error response:", parseError);
+        errorMessage = `Campaign duplication failed (HTTP ${response.status})`;
+      }
+
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -1871,10 +1939,14 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
       .catch((err) => console.error("Failed to trigger refresh:", err));
   } catch (error) {
     console.error("Error duplicating campaign:", error);
+
+    // Display user-friendly error message
+    const errorMessage = error.message || "Failed to duplicate campaign. Please try again.";
+
     if (window.showError) {
-      window.showError("Failed to duplicate campaign. Please try again.", 5000);
+      window.showError(errorMessage, 5000);
     } else {
-      alert("Failed to duplicate campaign. Please try again.");
+      alert(errorMessage);
     }
 
     // Reset button

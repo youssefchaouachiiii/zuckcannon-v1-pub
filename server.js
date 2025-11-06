@@ -76,22 +76,40 @@ app.use(compression());
 // Configure CORS
 const corsOptions = {
   origin: function (origin, callback) {
-    // In production, use FRONTEND_URL from environment
-    const allowedOrigins = isProduction
-      ? process.env.FRONTEND_URL
-        ? [process.env.FRONTEND_URL, process.env.FRONTEND_URL.replace("https://", "https://www.")]
-        : ["*"]
-      : ["http://localhost:3000", "http://localhost:6969", "http://localhost:5173"];
+    // Production: Use FRONTEND_URL from environment
+    let allowedOrigins;
+    
+    if (process.env.FRONTEND_URL) {
+      const baseUrl = process.env.FRONTEND_URL;
+      allowedOrigins = [
+        baseUrl,
+        baseUrl.replace("https://", "https://www."),
+        baseUrl.replace("http://", "http://www."),
+      ];
+    } else {
+      console.warn("⚠️  FRONTEND_URL not set. Allowing all origins (not recommended for production)");
+      allowedOrigins = ["*"];
+    }
 
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (mobile apps, Postman, same-origin)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-    // Allow all origins if * is specified (not recommended for production)
-    if (allowedOrigins.includes("*")) return callback(null, true);
+    // Allow all origins if * is specified
+    if (allowedOrigins.includes("*")) {
+      return callback(null, true);
+    }
 
+    // Check if origin is allowed
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      // Debug-friendly error logging for production
+      console.error(`🚫 CORS blocked: origin="${origin}"`);
+      console.error(`   Allowed: [${allowedOrigins.join(", ")}]`);
+      console.error(`   💡 Fix: Add "${origin}" to FRONTEND_URL or update your environment config`);
+      
       callback(new Error("Not allowed by CORS"));
     }
   },
