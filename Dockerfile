@@ -17,7 +17,7 @@ COPY . .
 RUN mkdir -p data uploads creative-library
 
 # Expose application port
-EXPOSE 6969
+EXPOSE 6970
 
 # Start the application
 CMD ["sh", "-c", "node init-directories.js && node server.js"]

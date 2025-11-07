@@ -5913,7 +5913,7 @@ function getCurrentAdData() {
     const assets = appState.getState().uploadedAssets || [];
 
     // Get selected adset
-    const adsetId = window.selectedAdSet || "";
+    const adsetId = appState.getState().adSetConfig?.id || "";
 
     // Log current state for debugging
     console.log("Current ad data state:", {

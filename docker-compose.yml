@@ -4,12 +4,12 @@ services:
   app:
     build: .
     ports:
-      - "6969:6969"
+      - "6970:6970"
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
-      - FRONTEND_URL=https://adgen.sigmagrowthpartners.com
+      - NODE_ENV=development
+      - FRONTEND_URL=https://staging-adgen.sigmagrowthpartners.com
     volumes:
       - app_data:/data
     networks:
