@@ -5409,25 +5409,33 @@ async function refreshMetaDataManually() {
       refreshBtn.disabled = true;
     }
 
-    const response = await fetch("/api/refresh-meta-cache", { method: "POST" });
-
-    if (!response.ok) {
-      throw new Error(`Refresh failed with status ${response.status}`);
+    // Show a notification that refresh has started
+    if (window.showSuccess) {
+      window.showSuccess("Refreshing data from Facebook...", 2000);
     }
 
-    const result = await response.json();
+    // Directly fetch the fresh data, forcing a refresh from the source
+    const freshData = await fetchMetaData(true);
 
-    if (result.status === "success") {
-      // Data will be updated via SSE, no need to reload
-      console.log("Manual refresh completed successfully");
+    if (freshData) {
+      // Once data is fetched, update the UI using the existing function
+      updateUIWithFreshData(freshData);
 
-      // Show a temporary success indicator
-      if (window.showSuccess) {
-        window.showSuccess("Refreshing data from Facebook...", 2000);
-      }
-    } else if (result.status === "already_refreshing") {
-      // Just log it, no alert
-      console.log("A refresh is already in progress");
+      // Show a completion notification, similar to the SSE one
+      const indicator = document.createElement("div");
+      indicator.style = "position: fixed; bottom: 10px; right: 10px; color: #28a745; font-size: 12px; z-index: 10;";
+      indicator.textContent = "Data updated";
+      document.body.appendChild(indicator);
+      setTimeout(() => indicator.remove(), 1000);
+
+      const zuck = document.createElement("img");
+      zuck.style = "position: fixed; bottom: 35px; right: 10px; width: 54px; z-index: 10;";
+      zuck.src = "icons/favi.png";
+      document.body.appendChild(zuck);
+      setTimeout(() => zuck.remove(), 1000);
+    } else {
+      // Throw an error if no data is returned
+      throw new Error("Refresh completed but returned no data.");
     }
   } catch (error) {
     console.error("Manual refresh failed:", error);
