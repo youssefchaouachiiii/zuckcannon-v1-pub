@@ -2354,82 +2354,73 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         console.log(`Created ${batchOperations.length} ad set duplication operations`);
 
-        // STEP 4: SEND ASYNC BATCH REQUEST FOR AD SETS
-        const FormData = (await import('form-data')).default;
-        const formData = new FormData();
-        
-        formData.append('access_token', userAccessToken);
-        formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets`);
-        formData.append('adbatch', JSON.stringify(batchOperations));
+        // STEP 4: CHUNK AND SEND ASYNC BATCH REQUESTS FOR AD SETS
+        const chunkSize = 2; // Max 2 copy operations per batch
+        const batchChunks = [];
+        for (let i = 0; i < batchOperations.length; i += chunkSize) {
+          batchChunks.push(batchOperations.slice(i, i + chunkSize));
+        }
 
-        console.log("Sending async batch request for ad sets:", {
-          endpoint: `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-          operationsCount: batchOperations.length,
+        console.log(`Split ad set operations into ${batchChunks.length} chunks of size ${chunkSize}`);
+
+        const batchPromises = batchChunks.map(async (chunk, index) => {
+          const FormData = (await import('form-data')).default;
+          const formData = new FormData();
+          
+          formData.append('access_token', userAccessToken);
+          formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets (Part ${index + 1}/${batchChunks.length})`);
+          formData.append('adbatch', JSON.stringify(chunk));
+
+          console.log(`Sending async batch request for ad sets (Part ${index + 1}/${batchChunks.length})`);
+
+          const batchResponse = await axios.post(
+            `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+            formData,
+            {
+              headers: {
+                ...formData.getHeaders(),
+              },
+            }
+          );
+
+          // Extract batch request ID from potentially varied response formats
+          let batchRequestId;
+          if (typeof batchResponse.data === 'string') {
+            batchRequestId = batchResponse.data;
+          } else if (batchResponse.data.id) {
+            batchRequestId = batchResponse.data.id;
+          } else if (batchResponse.data.async_batch_request_id) {
+            batchRequestId = batchResponse.data.async_batch_request_id;
+          }
+          
+          if (!batchRequestId) {
+             console.error(`No batch request ID in response for chunk ${index + 1}:`, batchResponse.data);
+             throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
+          }
+          
+          console.log(`✅ Async batch request for chunk ${index + 1} created with ID: ${batchRequestId}`);
+          return batchRequestId;
         });
 
-        const batchResponse = await axios.post(
-          `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-          formData,
-          {
-            headers: {
-              ...formData.getHeaders(),
-            },
-          }
-        );
+        const batchRequestIds = await Promise.all(batchPromises);
 
-        console.log("Async batch request created - Response:", JSON.stringify(batchResponse.data, null, 2));
-
-        // Extract batch request ID
-        let batchRequestId;
-        
-        if (typeof batchResponse.data === 'string') {
-          batchRequestId = batchResponse.data;
-        } else if (batchResponse.data.id) {
-          batchRequestId = batchResponse.data.id;
-        } else if (batchResponse.data.async_batch_request_id) {
-          batchRequestId = batchResponse.data.async_batch_request_id;
-        } else if (Array.isArray(batchResponse.data) && batchResponse.data.length > 0) {
-          const firstItem = batchResponse.data[0];
-          if (firstItem.body) {
-            try {
-              const parsedBody = JSON.parse(firstItem.body);
-              if (parsedBody.id) {
-                batchRequestId = parsedBody.id;
-              }
-            } catch (e) {
-              console.error("Failed to parse batch response body:", e);
-            }
-          }
-        }
-
-        if (!batchRequestId) {
-          console.error("No batch request ID in response:", batchResponse.data);
-          return res.status(500).json({
-            error: "Async batch request created but no ID returned",
-            details: batchResponse.data,
-            newCampaignId: newCampaignId,
-            hint: "The campaign shell was created, but the ad set duplication status is unknown.",
-          });
-        }
-
-        console.log("✅ Async batch request created with ID:", batchRequestId);
+        console.log("✅ All async batch requests created with IDs:", batchRequestIds);
 
         // STEP 5: RETURN SUCCESS WITH TRACKING INFO
         return res.json({
           success: true,
-          mode: "async_manual",
+          mode: "async_manual_chunked",
           newCampaignId: newCampaignId,
           originalCampaignId: campaign_id,
-          batchRequestId: batchRequestId,
+          batchRequestIds: batchRequestIds, // Return array of IDs
           structure: {
             adsets: adsetCount,
             ads: totalAdsCount,
             totalChildObjects: totalChildObjects,
           },
-          message: `Campaign shell created. Duplicating ${adsetCount} ad sets with ${totalAdsCount} ads asynchronously.`,
-          statusCheckEndpoint: `/api/batch-request-status/${batchRequestId}`,
-          listAllBatchRequests: `/api/batch-requests/${normalizedAccountId}`,
-          note: "Ad sets are being duplicated. Once complete, ads will be duplicated into the new ad sets. This may take 1-5 minutes.",
+          message: `Campaign shell created. Duplicating ${adsetCount} ad sets in ${batchChunks.length} batches.`,
+          statusCheckEndpoint: `/api/batch-request-status/`, // Note: Client needs to add the ID
+          note: "Ad sets are being duplicated in chunks. This may take 1-5 minutes.",
         });
       } catch (error) {
         console.error("Async manual duplication failed:", error.response?.data || error.message);
