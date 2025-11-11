@@ -2355,7 +2355,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         console.log(`Created ${batchOperations.length} ad set duplication operations`);
 
         // STEP 4: CHUNK AND SEND ASYNC BATCH REQUESTS FOR AD SETS
-        const chunkSize = 2; // Max 2 copy operations per batch
+        const chunkSize = 1; // Max 1 copy operation per batch for maximum safety
         const batchChunks = [];
         for (let i = 0; i < batchOperations.length; i += chunkSize) {
           batchChunks.push(batchOperations.slice(i, i + chunkSize));
