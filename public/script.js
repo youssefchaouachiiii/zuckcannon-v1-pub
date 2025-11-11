@@ -5524,77 +5524,62 @@ function forceMetaDataRefreshOnNextLoad() {
 function updateUIWithFreshData(freshData) {
   // Store the current selections
   const currentState = appState.getState();
-  const selectedAccount = currentState.selectedAccount;
-  const selectedCampaign = currentState.selectedCampaign;
-  const selectedAction = currentState.selectedAction;
+  const selectedAccountId = currentState.selectedAccount;
+  const selectedCampaignId = currentState.selectedCampaign;
 
-  // Update the global data
-  if (freshData.campaigns) {
-    // Update campaign data globally
-    window.campaignsData = freshData.campaigns;
+  // --- 1. Clear existing lists ---
+  const adAccList = document.querySelector("#ad-acc-list");
+  if (adAccList) adAccList.innerHTML = '';
 
-    // If a campaign is selected, check if it still exists
-    if (selectedCampaign) {
-      const campaignStillExists = freshData.campaigns.some((c) => c.id === selectedCampaign);
-      if (!campaignStillExists) {
-        // Campaign was deleted, update the UI
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
-        if (campaignElement) {
-          campaignElement.remove();
-        }
-
-        // Clear downstream selections
-        appState.updateState("selectedCampaign", null);
-        const actionColumn = document.querySelector(".action-column");
-        if (actionColumn) {
-          actionColumn.style.display = "none";
-        }
-      } else {
-        // Update campaign info if it changed
-        const updatedCampaign = freshData.campaigns.find((c) => c.id === selectedCampaign);
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
-        if (campaignElement && updatedCampaign) {
-          // Update campaign name if changed
-          const nameElement = campaignElement.querySelector("h3");
-          if (nameElement && nameElement.textContent !== updatedCampaign.name) {
-            nameElement.textContent = updatedCampaign.name;
-          }
-
-          // Update status, spend, clicks
-          const listItems = campaignElement.querySelectorAll("li");
-          if (listItems[0]) listItems[0].textContent = updatedCampaign.status || "UNKNOWN";
-          if (listItems[1]) listItems[1].textContent = `Spend: ${updatedCampaign.insights?.spend || "N/A"}`;
-          if (listItems[2]) listItems[2].textContent = `Clicks: ${updatedCampaign.insights?.clicks || "N/A"}`;
-        }
-      }
-    }
-
-    // Check for new campaigns to add
-    if (selectedAccount) {
-      const accountCampaigns = freshData.campaigns.filter((c) => c.account_id === selectedAccount);
-      accountCampaigns.forEach((campaign) => {
-        const existingElement = document.querySelector(`.campaign[data-campaign-id="${campaign.id}"]`);
-        if (!existingElement) {
-          // This is a new campaign, add it to the UI
-          addCampaignToUI(campaign);
-        }
-      });
-    }
+  const campaignColumn = document.querySelector(".campaign-column");
+  const campaignSelection = campaignColumn.querySelector(".campaign-selection");
+  if (campaignSelection) {
+      // Instead of removing, just clear the content to preserve event listeners on parent
+      campaignSelection.innerHTML = '';
   }
 
-  // Update pixels if provided
-  if (freshData.pixels) {
-    window.pixelsData = freshData.pixels;
-  }
+  const pixelDropdownOptions = document.querySelector(".dropdown-options.pixel");
+  if (pixelDropdownOptions) pixelDropdownOptions.innerHTML = '';
+  
+  const pagesDropdownOptions = document.querySelectorAll(".dropdown-options.pages");
+  pagesDropdownOptions.forEach(dropdown => dropdown.innerHTML = '');
 
-  // Update ad accounts if provided
+  // --- 2. Repopulate with fresh data ---
   if (freshData.adAccounts) {
+    populateAdAccounts(freshData.adAccounts);
     window.adAccountsData = freshData.adAccounts;
   }
-
-  // Update pages if provided
+  if (freshData.campaigns) {
+    populateCampaigns(freshData.campaigns);
+    window.campaignsData = freshData.campaigns;
+  }
+  if (freshData.pixels) {
+    populatePixels(freshData.pixels);
+    window.pixelsData = freshData.pixels;
+  }
   if (freshData.pages) {
+    populatePages(freshData.pages);
     window.pagesData = freshData.pages;
+  }
+
+  // --- 3. Re-select previous items to restore state ---
+  if (selectedAccountId) {
+    const accountElement = document.querySelector(`.account[data-campaign-id="${selectedAccountId}"]`);
+    if (accountElement) {
+      // Simulate a click to trigger all the downstream filtering and UI updates
+      accountElement.click();
+      
+      // If a campaign was also selected, find and click it after a short delay
+      // This allows the campaign list to be populated by the account click first
+      if (selectedCampaignId) {
+         setTimeout(() => {
+            const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+            if (campaignElement) {
+                campaignElement.click();
+            }
+         }, 100); // 100ms delay should be enough for the DOM to update
+      }
+    }
   }
 }
 
