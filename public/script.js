@@ -302,6 +302,47 @@ function populatePages(pages) {
   });
 }
 
+// Populate campaign special ad category country dropdowns from fb-locations.json
+function populateSpecialAdCountries() {
+  const fbData = appState.getState().fbLocationsData;
+  
+  if (!fbData || !fbData.countries) {
+    console.warn("FB locations data not available for country population");
+    return;
+  }
+
+  // Find all campaign special country dropdown lists
+  const countryDropdowns = document.querySelectorAll('.dropdown-options.campaign-special-country');
+  
+  countryDropdowns.forEach(dropdown => {
+    // Keep the "None" option and add all countries
+    const noneOption = dropdown.querySelector('[data-value=""]');
+    
+    // Clear all options except "None"
+    dropdown.innerHTML = '';
+    if (noneOption) {
+      dropdown.appendChild(noneOption);
+    } else {
+      const newNoneOption = document.createElement('li');
+      newNoneOption.setAttribute('data-value', '');
+      newNoneOption.textContent = 'None';
+      dropdown.appendChild(newNoneOption);
+    }
+    
+    // Add all countries sorted alphabetically
+    const sortedCountries = [...fbData.countries].sort((a, b) => a.name.localeCompare(b.name));
+    
+    sortedCountries.forEach(country => {
+      const li = document.createElement('li');
+      li.setAttribute('data-value', country.country_code);
+      li.textContent = country.name;
+      dropdown.appendChild(li);
+    });
+  });
+  
+  console.log('Populated special ad category country dropdowns with', fbData.countries.length, 'countries');
+}
+
 // Main app initialization
 async function init() {
   try {
@@ -317,6 +358,7 @@ async function init() {
     populateCampaigns(metaResponse.campaigns);
     populatePixels(metaResponse.pixels);
     populatePages(metaResponse.pages);
+    populateSpecialAdCountries();
 
     initializeCampaignSearch();
     initializeGeoSelection();
@@ -1970,19 +2012,32 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
   createBtn.disabled = true;
   createBtn.textContent = "Create Campaign";
 
+  // Reset budget fields
+  const dailyBudgetInput = document.getElementById("create-campaign-daily-budget");
+  const lifetimeBudgetInput = document.getElementById("create-campaign-lifetime-budget");
+  
+  if (dailyBudgetInput) dailyBudgetInput.value = "";
+  if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+
   // Reset dropdowns to placeholder
   const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
   const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
+  const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
   const specialCategoriesDisplay = dialog.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
+  const specialCountryDisplay = dialog.querySelector('[data-dropdown="campaign-special-country"] .dropdown-display');
 
   objectiveDisplay.textContent = "Campaign Objective*";
   statusDisplay.textContent = "Status*";
+  if (bidStrategyDisplay) bidStrategyDisplay.textContent = "Bid Strategy (Optional)";
   specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
+  if (specialCountryDisplay) specialCountryDisplay.textContent = "Special Ad Category Country (Optional)";
 
   // Clear selected values
   delete dialog.dataset.objective;
   delete dialog.dataset.status;
+  delete dialog.dataset.bidStrategy;
   dialog.dataset.specialCategories = "[]";
+  dialog.dataset.specialCountries = "[]";
 
   // Show dialog
   dialog.style.display = "flex";
@@ -2005,9 +2060,27 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
     const status = dialog.dataset.status;
     const specialCategories = JSON.parse(dialog.dataset.specialCategories || "[]");
 
+    // Get budget values
+    const dailyBudget = document.getElementById("create-campaign-daily-budget")?.value;
+    const lifetimeBudget = document.getElementById("create-campaign-lifetime-budget")?.value;
+    
+    // Get bid strategy
+    const bidStrategy = dialog.dataset.bidStrategy;
+    
+    // Get special ad category countries
+    const specialCountries = JSON.parse(dialog.dataset.specialCountries || "[]");
+
     if (!name || !objective || !status) {
       if (window.showError) {
         window.showError("Please fill in all required fields", 3000);
+      }
+      return;
+    }
+
+    // Validate that only one budget type is used
+    if (dailyBudget && lifetimeBudget) {
+      if (window.showError) {
+        window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
       }
       return;
     }
@@ -2017,18 +2090,41 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
     createBtn.textContent = "Creating...";
 
     try {
+      // Build request body with only defined values
+      const requestBody = {
+        account_id: selectedAccount,
+        name: name,
+        objective: objective,
+        status: status,
+      };
+
+      // Add optional fields only if they have values
+      if (specialCategories.length > 0) {
+        requestBody.special_ad_categories = specialCategories;
+      }
+      
+      if (specialCountries.length > 0) {
+        requestBody.special_ad_category_country = specialCountries;
+      }
+
+      if (bidStrategy) {
+        requestBody.bid_strategy = bidStrategy;
+      }
+
+      if (dailyBudget && parseFloat(dailyBudget) > 0) {
+        requestBody.daily_budget = parseFloat(dailyBudget);
+      }
+
+      if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+        requestBody.lifetime_budget = parseFloat(lifetimeBudget);
+      }
+
       const response = await fetch("/api/create-campaign", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          account_id: selectedAccount,
-          name: name,
-          objective: objective,
-          status: status,
-          special_ad_categories: specialCategories.length > 0 ? specialCategories : undefined,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -2040,6 +2136,11 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
 
       // Hide dialog
       dialog.style.display = "none";
+
+      // Clear form
+      nameInput.value = "";
+      document.getElementById("create-campaign-daily-budget").value = "";
+      document.getElementById("create-campaign-lifetime-budget").value = "";
 
       // Add the new campaign to the list
       const newCampaignId = data.campaign_id;
@@ -2059,8 +2160,8 @@ SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
       newCampaignElement.setAttribute("data-col-id", "2");
       newCampaignElement.setAttribute("data-acc-campaign-id", selectedAccount);
       newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
-      newCampaignElement.setAttribute("data-daily-budget", "");
-      newCampaignElement.setAttribute("data-bid-strategy", "");
+      newCampaignElement.setAttribute("data-daily-budget", data.campaign.daily_budget || "");
+      newCampaignElement.setAttribute("data-bid-strategy", data.campaign.bid_strategy || "");
       newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(specialCategories));
       newCampaignElement.style.display = "none";
 
@@ -5649,17 +5750,29 @@ function initializeCreateCampaignDialog() {
       if (createBtn.disabled) return;
 
       const nameInput = column.querySelector(".config-campaign-name");
-      const budgetInput = column.querySelector(".config-campaign-budget");
+      const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
+      const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
       const objective = column.dataset.objective;
       const status = column.dataset.status;
+      const bidStrategy = column.dataset.bidStrategy;
       const specialCategories = column.dataset.specialCategories ? JSON.parse(column.dataset.specialCategories) : [];
+      const specialCountries = column.dataset.specialCountries ? JSON.parse(column.dataset.specialCountries) : [];
 
       const campaignName = nameInput.value.trim();
-      const dailyBudget = budgetInput ? budgetInput.value.trim() : "";
+      const dailyBudget = dailyBudgetInput ? dailyBudgetInput.value.trim() : "";
+      const lifetimeBudget = lifetimeBudgetInput ? lifetimeBudgetInput.value.trim() : "";
 
       if (!campaignName || !objective || !status) {
         if (window.showError) {
           window.showError("Please fill in all required fields", 3000);
+        }
+        return;
+      }
+
+      // Validate that only one budget type is used
+      if (dailyBudget && lifetimeBudget) {
+        if (window.showError) {
+          window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
         }
         return;
       }
@@ -5679,9 +5792,23 @@ function initializeCreateCampaignDialog() {
           special_ad_categories: specialCategories.length > 0 ? specialCategories : [],
         };
 
-        // Add daily budget if provided (in dollars, backend will convert to cents)
+        // Add budget fields if provided (in dollars, backend will convert to cents)
         if (dailyBudget && parseFloat(dailyBudget) > 0) {
           payload.daily_budget = parseFloat(dailyBudget);
+        }
+
+        if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+          payload.lifetime_budget = parseFloat(lifetimeBudget);
+        }
+
+        // Add bid strategy if selected
+        if (bidStrategy) {
+          payload.bid_strategy = bidStrategy;
+        }
+
+        // Add special ad category countries if selected
+        if (specialCountries.length > 0) {
+          payload.special_ad_category_country = specialCountries;
         }
 
         const response = await fetch("/api/create-campaign", {
@@ -5826,11 +5953,13 @@ function openCreateCampaignDialog() {
 
     // Reset form
     const nameInput = campaignCreationColumn.querySelector(".config-campaign-name");
-    const budgetInput = campaignCreationColumn.querySelector(".config-campaign-budget");
+    const dailyBudgetInput = campaignCreationColumn.querySelector(".config-campaign-daily-budget");
+    const lifetimeBudgetInput = campaignCreationColumn.querySelector(".config-campaign-lifetime-budget");
     const createBtn = campaignCreationColumn.querySelector(".campaign-create-btn");
 
     if (nameInput) nameInput.value = "";
-    if (budgetInput) budgetInput.value = "";
+    if (dailyBudgetInput) dailyBudgetInput.value = "";
+    if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
     if (createBtn) {
       createBtn.classList.remove("active");
       createBtn.disabled = true;
@@ -5840,6 +5969,8 @@ function openCreateCampaignDialog() {
     const objectiveDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
     const statusDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
     const specialCategoriesDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
+    const bidStrategyDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+    const specialCountriesDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-special-country"] .dropdown-display');
 
     if (objectiveDisplay) {
       objectiveDisplay.textContent = "Campaign Objective*";
@@ -5853,6 +5984,14 @@ function openCreateCampaignDialog() {
       specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
       specialCategoriesDisplay.classList.add("placeholder");
     }
+    if (bidStrategyDisplay) {
+      bidStrategyDisplay.textContent = "Bid Strategy (Optional)";
+      bidStrategyDisplay.classList.add("placeholder");
+    }
+    if (specialCountriesDisplay) {
+      specialCountriesDisplay.textContent = "Special Ad Countries (Optional)";
+      specialCountriesDisplay.classList.add("placeholder");
+    }
 
     // Clear selected states
     const allOptions = campaignCreationColumn.querySelectorAll(".dropdown-options li");
@@ -5861,7 +6000,9 @@ function openCreateCampaignDialog() {
     // Reset data attributes
     delete campaignCreationColumn.dataset.objective;
     delete campaignCreationColumn.dataset.status;
+    delete campaignCreationColumn.dataset.bidStrategy;
     campaignCreationColumn.dataset.specialCategories = "[]";
+    campaignCreationColumn.dataset.specialCountries = "[]";
 
     // Focus on name input
     setTimeout(() => {
