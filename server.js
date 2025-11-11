@@ -2129,26 +2129,84 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
     });
   }
 
-  const payload = {
-    deep_copy: deep_copy || false,
-    status_option: status_option || "PAUSED",
-    access_token: userAccessToken,
-  };
+  const normalizedAccountId = normalizeAdAccountId(account_id);
+  let adSetData = null;
+  let adsData = [];
+  let totalAdsCount = 0;
+  let totalChildObjects = 0;
 
-  const graphUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}/copies`;
+  // If deep_copy is true, fetch ad set structure to count ads
+  if (deep_copy) {
+    try {
+      // Fetch ad set details with ads
+      const adSetDetailsUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}`;
+      const adSetResponse = await axios.get(adSetDetailsUrl, {
+        params: {
+          fields: "name,ads{id,name}",
+          access_token: userAccessToken,
+        },
+      });
+
+      adSetData = adSetResponse.data;
+      adsData = adSetData.ads?.data || [];
+      totalAdsCount = adsData.length;
+
+      // Total child objects = ads only (ad set itself is not counted as child)
+      totalChildObjects = totalAdsCount;
+
+      console.log(`Ad Set ${ad_set_id} structure:`, {
+        name: adSetData.name,
+        ads: totalAdsCount,
+        totalChildObjects: totalChildObjects,
+      });
+    } catch (err) {
+      console.error("Failed to fetch ad set structure:", err.response?.data || err.message);
+      return res.status(500).json({
+        error: "Failed to fetch ad set structure",
+        details: err.response?.data || err.message,
+      });
+    }
+  }
+
+  // Determine if async batch is needed. For /copies endpoint, >2 ads require batch request
+  // Facebook limit: total objects (ad set + ads) must be < 3
+  const needsAsync = deep_copy && totalChildObjects > 2;
+
+  console.log(`Duplicating ad set ${ad_set_id}:`, {
+    deepCopy: deep_copy,
+    totalAdsCount,
+    totalChildObjects,
+    needsAsync,
+    mode: needsAsync ? "asynchronous (manual batch)" : "synchronous (/copies endpoint)",
+  });
 
   try {
-    const response = await axios.post(graphUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    if (needsAsync) {
+      // ASYNC/BATCH REQUEST FOR AD SET - Manual approach:
+      // 1. Create new ad set shell with /copies but deep_copy=false
+      // 2. Duplicate ads into new ad set using async batch
+      // 3. Return batch request ID for status tracking
 
-    if (response.status === 200 && response.data) {
-      console.log(`Successfully duplicated ad set ${ad_set_id}`);
+      console.log(`Using MANUAL ASYNC duplication for ad set ${ad_set_id} with ${totalChildObjects} ads`);
 
-      const newAdSetId = response.data.copied_adset_id || response.data.id;
+      // STEP 1: CREATE NEW AD SET SHELL (shallow copy)
+      const shallowPayload = {
+        deep_copy: false,
+        status_option: status_option || "PAUSED",
+        access_token: userAccessToken,
+      };
 
+      const graphUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}/copies`;
+      const shallowResponse = await axios.post(graphUrl, shallowPayload, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const newAdSetId = shallowResponse.data.copied_adset_id || shallowResponse.data.id;
+      console.log(`✅ Created new ad set shell: ${newAdSetId}`);
+
+      // Update the name if provided
       if (name && newAdSetId) {
         try {
           const updateUrl = `https://graph.facebook.com/${api_version}/${newAdSetId}`;
@@ -2162,6 +2220,71 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         }
       }
 
+      // STEP 2: BUILD BATCH OPERATIONS FOR ADS
+      const batchOperations = [];
+
+      adsData.forEach((ad, index) => {
+        batchOperations.push({
+          name: `duplicate-ad-${ad.id}-${index}`,
+          relative_url: `${ad.id}/copies`,
+          body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
+        });
+      });
+
+      console.log(`Created ${batchOperations.length} ad duplication operations`);
+
+      // STEP 3: CHUNK AND SEND ASYNC BATCH REQUESTS FOR ADS
+      const chunkSize = 1; // Max 1 copy operation per batch for maximum safety
+      const batchChunks = [];
+      for (let i = 0; i < batchOperations.length; i += chunkSize) {
+        batchChunks.push(batchOperations.slice(i, i + chunkSize));
+      }
+
+      console.log(`Split ad operations into ${batchChunks.length} chunks of size ${chunkSize}`);
+
+      const batchPromises = batchChunks.map(async (chunk, index) => {
+        const FormData = (await import('form-data')).default;
+        const formData = new FormData();
+
+        formData.append('access_token', userAccessToken);
+        formData.append('name', `Duplicate Ad Set ${ad_set_id} - Ads (Part ${index + 1}/${batchChunks.length})`);
+        formData.append('batch', JSON.stringify(chunk));
+        formData.append('is_parallel', 'true');
+
+        console.log(`Sending async batch request for ads (Part ${index + 1}/${batchChunks.length})`);
+
+        const batchResponse = await axios.post(
+          `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+          formData,
+          {
+            headers: {
+              ...formData.getHeaders(),
+            },
+          }
+        );
+
+        // Extract batch request ID
+        let batchRequestId;
+        if (typeof batchResponse.data === 'string') {
+          batchRequestId = batchResponse.data;
+        } else if (batchResponse.data.id) {
+          batchRequestId = batchResponse.data.id;
+        } else if (batchResponse.data.async_batch_request_id) {
+          batchRequestId = batchResponse.data.async_batch_request_id;
+        }
+
+        if (!batchRequestId) {
+           console.error(`No batch request ID in response for chunk ${index + 1}:`, batchResponse.data);
+           throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
+        }
+
+        console.log(`✅ Async batch request for chunk ${index + 1} created with ID: ${batchRequestId}`);
+        return batchRequestId;
+      });
+
+      const batchRequestIds = await Promise.all(batchPromises);
+      console.log("✅ All async batch requests created with IDs:", batchRequestIds);
+
       // Add the new ad set to the cache
       if (campaign_id && account_id) {
         const newAdSet = {
@@ -2174,15 +2297,78 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         await FacebookCacheDB.addAdSetToCampaign(campaign_id, newAdSet);
       }
 
-      // Return success
-      res.status(200).json({
+      // STEP 4: RETURN SUCCESS WITH TRACKING INFO
+      return res.json({
+        success: true,
+        mode: "async_manual_chunked",
         id: newAdSetId,
         original_id: ad_set_id,
-        success: true,
+        batchRequestIds: batchRequestIds,
+        structure: {
+          ads: totalAdsCount,
+          totalChildObjects: totalChildObjects,
+        },
+        message: `Ad set shell created. Duplicating ${totalAdsCount} ads in ${batchChunks.length} batches.`,
+        statusCheckEndpoint: `/api/batch-request-status/`,
+        note: "Ads are being duplicated in chunks. This may take 1-5 minutes.",
       });
     } else {
-      console.log("Unexpected response from Facebook API:", response.data);
-      res.status(400).json({ error: "Failed to duplicate ad set" });
+      // Use sync API for ≤2 ads
+      const payload = {
+        deep_copy: deep_copy || false,
+        status_option: status_option || "PAUSED",
+        access_token: userAccessToken,
+      };
+
+      const graphUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}/copies`;
+
+      const response = await axios.post(graphUrl, payload, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 200 && response.data) {
+        console.log(`Successfully duplicated ad set ${ad_set_id}`);
+
+        const newAdSetId = response.data.copied_adset_id || response.data.id;
+
+        if (name && newAdSetId) {
+          try {
+            const updateUrl = `https://graph.facebook.com/${api_version}/${newAdSetId}`;
+            await axios.post(updateUrl, {
+              name: name,
+              access_token: userAccessToken,
+            });
+            console.log(`Updated ad set name to: ${name}`);
+          } catch (updateErr) {
+            console.log("Warning: Could not update ad set name:", updateErr.response?.data || updateErr.message);
+          }
+        }
+
+        // Add the new ad set to the cache
+        if (campaign_id && account_id) {
+          const newAdSet = {
+            id: newAdSetId,
+            name: name || `Copy of ${ad_set_id}`,
+            account_id: account_id,
+            campaign_id: campaign_id,
+          };
+
+          await FacebookCacheDB.addAdSetToCampaign(campaign_id, newAdSet);
+        }
+
+        // Return success
+        res.status(200).json({
+          id: newAdSetId,
+          original_id: ad_set_id,
+          success: true,
+          mode: "sync",
+        });
+      } else {
+        console.log("Unexpected response from Facebook API:", response.data);
+        res.status(400).json({ error: "Failed to duplicate ad set" });
+      }
     }
   } catch (err) {
     console.log("Error duplicating ad set:", err.response?.data || err.message);
@@ -2369,7 +2555,8 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           
           formData.append('access_token', userAccessToken);
           formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets (Part ${index + 1}/${batchChunks.length})`);
-          formData.append('adbatch', JSON.stringify(chunk));
+          formData.append('batch', JSON.stringify(chunk)); // ✅ FIX: Use 'batch' instead of 'adbatch'
+          formData.append('is_parallel', 'true'); // Recommended for independent operations
 
           console.log(`Sending async batch request for ad sets (Part ${index + 1}/${batchChunks.length})`);
 
