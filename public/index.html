@@ -101,9 +101,31 @@
           </div>
         </div>
 
-        <!-- Daily Budget (Optional) -->
-        <input type="number" placeholder="Daily Budget (Optional, e.g., 10 for $10)" class="config-campaign-budget"
-          step="0.01" min="0" />
+        <!-- Budget Options -->
+        <input type="number" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+          class="config-campaign-daily-budget" step="0.01" min="0" />
+        <input type="number" placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)"
+          class="config-campaign-lifetime-budget" step="0.01" min="0" />
+
+        <!-- Bid Strategy dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+              <span class="dropdown-display placeholder">Bid Strategy (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-bid-strategy">
+              <li data-value="">None</li>
+              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+              <li data-value="COST_CAP">Cost Cap</li>
+              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+            </ul>
+          </div>
+        </div>
 
         <!-- Special Categories dropdown -->
         <div class="dropdown-container">
@@ -117,10 +139,28 @@
             </div>
             <ul class="dropdown-options campaign-special-categories" data-multiple="true">
               <li data-value="">None - If none of the categories apply</li>
-              <li data-value="CREDIT">Financial products and services</li>
               <li data-value="EMPLOYMENT">Employment</li>
               <li data-value="HOUSING">Housing</li>
-              <li data-value="ISSUES_ELECTIONS_POLITICS">Social issues, elections or politics</li>
+              <li data-value="FINANCIAL_PRODUCTS_SERVICES">Financial Products & Services</li>
+              <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
+              <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Special Ad Category Country dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-country">
+              <span class="dropdown-display placeholder">Special Ad Category Country (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-country" data-multiple="true">
+              <li data-value="">None</li>
+              <!-- Countries will be populated dynamically from fb-locations.json -->
             </ul>
           </div>
         </div>
@@ -521,6 +561,32 @@
           </div>
         </div>
 
+        <!-- Budget Options -->
+        <input type="number" id="create-campaign-daily-budget" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+          step="0.01" min="0">
+        <input type="number" id="create-campaign-lifetime-budget"
+          placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)" step="0.01" min="0">
+
+        <!-- Bid Strategy dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+              <span class="dropdown-display">Bid Strategy (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-bid-strategy">
+              <li data-value="">None</li>
+              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+              <li data-value="COST_CAP">Cost Cap</li>
+              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-special-categories">
@@ -531,12 +597,29 @@
               </svg>
             </div>
             <ul class="dropdown-options campaign-special-categories" data-multiple="true">
-              <li data-value="">None</li>
-              <li data-value="CREDIT">Credit</li>
+              <li data-value="">None - If none of the categories apply</li>
               <li data-value="EMPLOYMENT">Employment</li>
               <li data-value="HOUSING">Housing</li>
+              <li data-value="FINANCIAL_PRODUCTS_SERVICES">Financial Products & Services</li>
               <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
               <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Special Ad Category Country dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-country">
+              <span class="dropdown-display">Special Ad Category Country (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-country" data-multiple="true">
+              <li data-value="">None</li>
+              <!-- Countries will be populated dynamically from fb-locations.json -->
             </ul>
           </div>
         </div>

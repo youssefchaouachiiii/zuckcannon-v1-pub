@@ -720,6 +720,14 @@ h2 {
   background-color: #e8f2ff;
   color: #103dee;
 }
+
+/* Special Ad Category Country dropdown - limit height and make scrollable */
+.dropdown-options.campaign-special-country {
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Creative Upload */
 .creative-upload h2 {
   margin-bottom: 20px;

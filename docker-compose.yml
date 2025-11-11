@@ -11,9 +11,13 @@ services:
       - NODE_ENV=development
       - FRONTEND_URL=https://staging-adgen.sigmagrowthpartners.com
     volumes:
+      - .:/usr/src/app
       - app_data:/data
+      - /usr/src/app/node_modules
     networks:
       - shared_n8n
+    command: sh -c "npm install && npm run dev"
+
 
 networks:
   shared_n8n:

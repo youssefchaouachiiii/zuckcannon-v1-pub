@@ -1747,7 +1747,41 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
 // Create new ad campaign
 app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createCampaign, async (req, res) => {
   try {
-    const { account_id, name, objective, daily_budget, status, special_ad_categories } = req.body;
+    const {
+      account_id,
+      name,
+      objective,
+      status,
+      // Budget options
+      daily_budget,
+      lifetime_budget,
+      spend_cap,
+      // Special categories
+      special_ad_categories,
+      special_ad_category,
+      special_ad_category_country,
+      // Bid strategy
+      bid_strategy,
+      // Advanced options
+      adlabels,
+      adset_bid_amounts,
+      adset_budgets,
+      budget_rebalance_flag,
+      campaign_optimization_type,
+      execution_options,
+      is_adset_budget_sharing_enabled,
+      is_skadnetwork_attribution,
+      is_using_l3_schedule,
+      iterative_split_test_configs,
+      // Promoted object
+      promoted_object,
+      // Smart promotion
+      smart_promotion_type,
+      // Timing
+      start_time,
+      stop_time,
+    } = req.body;
+
     const userAccessToken = req.user.facebook_access_token;
 
     if (!userAccessToken) {
@@ -1772,18 +1806,117 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
 
     // Use URLSearchParams for proper serialization (matches Meta's official SDK)
     const formData = new URLSearchParams();
+
+    // Required fields
     formData.append("name", name);
     formData.append("objective", objective);
     formData.append("status", status || "PAUSED");
     formData.append("access_token", userAccessToken);
 
-    // Meta requires special_ad_categories as JSON array (empty array [] by default per official SDK)
-    formData.append("special_ad_categories", JSON.stringify(special_ad_categories || []));
+    // Determine if campaign-level budget is being used
+    const hasCampaignBudget = !!(daily_budget || lifetime_budget);
 
-    // Add daily_budget if provided (Meta expects string in cents, e.g., '1000' for $10.00)
+    // Budget fields
     if (daily_budget) {
       const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
       formData.append("daily_budget", budgetInCents.toString());
+    }
+
+    if (lifetime_budget) {
+      const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+      formData.append("lifetime_budget", budgetInCents.toString());
+    }
+
+    if (spend_cap) {
+      const capInCents = Math.round(parseFloat(spend_cap) * 100);
+      formData.append("spend_cap", capInCents.toString());
+    }
+
+    // Special ad categories (Meta requires JSON array)
+    if (special_ad_categories) {
+      formData.append("special_ad_categories", JSON.stringify(special_ad_categories));
+    } else if (special_ad_category) {
+      // Handle singular form
+      formData.append("special_ad_category", special_ad_category);
+    } else {
+      // Default to empty array per official SDK
+      formData.append("special_ad_categories", JSON.stringify([]));
+    }
+
+    // Special ad category country
+    if (special_ad_category_country && special_ad_category_country.length > 0) {
+      formData.append("special_ad_category_country", JSON.stringify(special_ad_category_country));
+    }
+
+    // Bid strategy
+    if (bid_strategy) {
+      formData.append("bid_strategy", bid_strategy);
+    }
+
+    // Advanced campaign options
+    if (adlabels) {
+      formData.append("adlabels", JSON.stringify(adlabels));
+    }
+
+    if (adset_bid_amounts) {
+      formData.append("adset_bid_amounts", JSON.stringify(adset_bid_amounts));
+    }
+
+    if (adset_budgets) {
+      formData.append("adset_budgets", JSON.stringify(adset_budgets));
+    }
+
+    if (budget_rebalance_flag !== undefined) {
+      formData.append("budget_rebalance_flag", budget_rebalance_flag.toString());
+    }
+
+    if (campaign_optimization_type) {
+      formData.append("campaign_optimization_type", campaign_optimization_type);
+    }
+
+    if (execution_options && execution_options.length > 0) {
+      formData.append("execution_options", JSON.stringify(execution_options));
+    }
+
+    // Meta API requirement: is_adset_budget_sharing_enabled MUST be set when NOT using campaign budget
+    // If not using campaign-level budget, default to false unless explicitly provided
+    if (!hasCampaignBudget) {
+      const budgetSharingValue = is_adset_budget_sharing_enabled !== undefined ? is_adset_budget_sharing_enabled : false;
+      formData.append("is_adset_budget_sharing_enabled", budgetSharingValue.toString());
+    } else if (is_adset_budget_sharing_enabled !== undefined) {
+      // Only set if explicitly provided when using campaign budget
+      formData.append("is_adset_budget_sharing_enabled", is_adset_budget_sharing_enabled.toString());
+    }
+
+    if (is_skadnetwork_attribution !== undefined) {
+      formData.append("is_skadnetwork_attribution", is_skadnetwork_attribution.toString());
+    }
+
+    if (is_using_l3_schedule !== undefined) {
+      formData.append("is_using_l3_schedule", is_using_l3_schedule.toString());
+    }
+
+    if (iterative_split_test_configs) {
+      formData.append("iterative_split_test_configs", JSON.stringify(iterative_split_test_configs));
+    }
+
+    // Promoted object
+    if (promoted_object) {
+      formData.append("promoted_object", JSON.stringify(promoted_object));
+    }
+
+    // Smart promotion type
+    if (smart_promotion_type) {
+      formData.append("smart_promotion_type", smart_promotion_type);
+    }
+
+    // Timing
+    if (start_time) {
+      formData.append("start_time", start_time);
+    }
+
+    if (stop_time) {
+      formData.append("stop_time", stop_time);
     }
 
     console.log("Creating campaign:", {
@@ -1792,6 +1925,15 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       objective,
       status: status || "PAUSED",
       account: formattedAccountId,
+      hasCampaignBudget,
+      budgetSharing: !hasCampaignBudget ? (is_adset_budget_sharing_enabled !== undefined ? is_adset_budget_sharing_enabled : false) : "N/A",
+      hasAdvancedOptions: !!(
+        adlabels ||
+        adset_bid_amounts ||
+        adset_budgets ||
+        campaign_optimization_type ||
+        promoted_object
+      ),
     });
 
     const response = await axios.post(campaignUrl, formData, {
@@ -1805,7 +1947,8 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
     const detailsResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "id,account_id,name,objective,status,daily_budget,bid_strategy,created_time,special_ad_categories",
+        fields:
+          "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time",
         access_token: userAccessToken,
       },
     });
@@ -2061,35 +2204,292 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     });
   }
 
-  const payload = {
-    deep_copy: deep_copy || false,
-    status_option: status_option || "PAUSED",
-    rename_options: {
-      rename_strategy: "ONLY_TOP_LEVEL_RENAME",
-      rename_suffix: " - Copy",
-    },
-    access_token: userAccessToken,
-  };
-
-  const graphUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/copies`;
+  const normalizedAccountId = normalizeAdAccountId(account_id);
 
   try {
-    const response = await axios.post(graphUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-      },
+    let campaignData = null;
+    let adsetsData = [];
+    let adsData = [];
+    let adsetCount = 0;
+    let totalAdsCount = 0;
+    let totalChildObjects = 0;
+    
+    if (deep_copy) {
+      try {
+        // Fetch campaign details with all necessary fields
+        const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+        const campaignResponse = await axios.get(campaignDetailsUrl, {
+          params: {
+            fields: "name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,special_ad_categories,special_ad_category_country,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,adsets{id,name,ads{id,name}}",
+            access_token: userAccessToken,
+          },
+        });
+        
+        campaignData = campaignResponse.data;
+        adsetsData = campaignData.adsets?.data || [];
+        adsetCount = adsetsData.length;
+        
+        // Count total ads across all ad sets and collect ad data
+        adsetsData.forEach(adset => {
+          const ads = adset.ads?.data || [];
+          totalAdsCount += ads.length;
+          adsData.push(...ads.map(ad => ({ ...ad, adset_id: adset.id })));
+        });
+        
+        // Total child objects = ad sets + ads
+        totalChildObjects = adsetCount + totalAdsCount;
+        
+        console.log(`Campaign ${campaign_id} structure:`, {
+          name: campaignData.name,
+          adsets: adsetCount,
+          ads: totalAdsCount,
+          totalChildObjects: totalChildObjects,
+        });
+      } catch (err) {
+        console.error("Failed to fetch campaign structure:", err.response?.data || err.message);
+        return res.status(500).json({
+          error: "Failed to fetch campaign structure",
+          details: err.response?.data || err.message,
+        });
+      }
+    }
+
+    // Determine if its need async. For /copies endpoint, >3 child objects use Batch Request
+    const needsAsync = deep_copy && totalChildObjects > 3;
+
+    console.log(`Duplicating campaign ${campaign_id}:`, {
+      deepCopy: deep_copy,
+      adsetCount,
+      totalAdsCount,
+      totalChildObjects,
+      needsAsync,
+      mode: needsAsync ? "asynchronous (manual batch)" : "synchronous (/copies endpoint)",
     });
 
+    let response;
+
+    if (needsAsync) {
+      // ASYNC/BATCH REQUEST FOR CAMPAIGN Algorithm, avoid the /copies endpoint entirely and build the campaign manually:
+      // 1. Fetch campaign structure (ad sets + ads) done above
+      // 2. Create new campaign shell (sync)
+      // 3. Duplicate ad sets into new campaign (async batch)
+      // 4. Duplicate ads into new ad sets (async batch)
+      // 5. Return batch request ID for status tracking
+      
+      console.log(`Using MANUAL ASYNC duplication for campaign ${campaign_id} with ${totalChildObjects} child objects`);
+
+      try {
+        // STEP 2: CREATE NEW CAMPAIGN SHELL
+        const nameSuffix = name ? ` - ${name.split(' - ').pop()}` : " - Copy";
+        const newCampaignName = name || `${campaignData.name}${nameSuffix}`;
+        
+        const newCampaignPayload = {
+          name: newCampaignName,
+          objective: campaignData.objective,
+          status: status_option || "PAUSED",
+          access_token: userAccessToken,
+        };
+
+        // Copy optional campaign fields if they exist
+        if (campaignData.daily_budget) newCampaignPayload.daily_budget = campaignData.daily_budget;
+        if (campaignData.lifetime_budget) newCampaignPayload.lifetime_budget = campaignData.lifetime_budget;
+        if (campaignData.spend_cap) newCampaignPayload.spend_cap = campaignData.spend_cap;
+        if (campaignData.bid_strategy) newCampaignPayload.bid_strategy = campaignData.bid_strategy;
+        
+        // Debug log to see what we're getting from the source campaign
+        console.log("Source campaign special_ad_categories:", {
+          value: campaignData.special_ad_categories,
+          type: typeof campaignData.special_ad_categories,
+          isArray: Array.isArray(campaignData.special_ad_categories),
+          length: campaignData.special_ad_categories?.length,
+        });
+        
+        // Only include special_ad_categories if it has values
+        if (campaignData.special_ad_categories && 
+            Array.isArray(campaignData.special_ad_categories) && 
+            campaignData.special_ad_categories.length > 0) {
+          newCampaignPayload.special_ad_categories = campaignData.special_ad_categories;
+        }
+        // If special_ad_category_country exists, copy it too
+        if (campaignData.special_ad_category_country && 
+            Array.isArray(campaignData.special_ad_category_country) && 
+            campaignData.special_ad_category_country.length > 0) {
+          newCampaignPayload.special_ad_category_country = campaignData.special_ad_category_country;
+        } else {
+          // If not present in source, default to empty array
+          newCampaignPayload.special_ad_categories = [];
+        }
+        
+        // Only include special_ad_category_country if it has values
+        if (campaignData.special_ad_category_country && Array.isArray(campaignData.special_ad_category_country) && campaignData.special_ad_category_country.length > 0) {
+          newCampaignPayload.special_ad_category_country = campaignData.special_ad_category_country;
+        }
+
+        console.log("Creating new campaign shell:", newCampaignName);
+        console.log("New campaign payload:", JSON.stringify(newCampaignPayload, null, 2));
+        
+        const createCampaignUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/campaigns`;
+        const campaignCreateResponse = await axios.post(
+          createCampaignUrl,
+          new URLSearchParams(newCampaignPayload),
+          {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          }
+        );
+
+        const newCampaignId = campaignCreateResponse.data.id;
+        console.log(`✅ Created new campaign: ${newCampaignId}`);
+
+        // STEP 3: BUILD BATCH OPERATIONS FOR AD SETS
+        const batchOperations = [];
+        
+        // Create operations to duplicate each ad set into the new campaign
+        adsetsData.forEach((adset, index) => {
+          batchOperations.push({
+            name: `duplicate-adset-${adset.id}-${index}`,
+            relative_url: `${adset.id}/copies`,
+            body: `deep_copy=false&status_option=${status_option || "PAUSED"}&campaign_id=${newCampaignId}`,
+          });
+        });
+
+        console.log(`Created ${batchOperations.length} ad set duplication operations`);
+
+        // STEP 4: SEND ASYNC BATCH REQUEST FOR AD SETS
+        const FormData = (await import('form-data')).default;
+        const formData = new FormData();
+        
+        formData.append('access_token', userAccessToken);
+        formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets`);
+        formData.append('adbatch', JSON.stringify(batchOperations));
+
+        console.log("Sending async batch request for ad sets:", {
+          endpoint: `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+          operationsCount: batchOperations.length,
+        });
+
+        const batchResponse = await axios.post(
+          `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+          formData,
+          {
+            headers: {
+              ...formData.getHeaders(),
+            },
+          }
+        );
+
+        console.log("Async batch request created - Response:", JSON.stringify(batchResponse.data, null, 2));
+
+        // Extract batch request ID
+        let batchRequestId;
+        
+        if (typeof batchResponse.data === 'string') {
+          batchRequestId = batchResponse.data;
+        } else if (batchResponse.data.id) {
+          batchRequestId = batchResponse.data.id;
+        } else if (batchResponse.data.async_batch_request_id) {
+          batchRequestId = batchResponse.data.async_batch_request_id;
+        } else if (Array.isArray(batchResponse.data) && batchResponse.data.length > 0) {
+          const firstItem = batchResponse.data[0];
+          if (firstItem.body) {
+            try {
+              const parsedBody = JSON.parse(firstItem.body);
+              if (parsedBody.id) {
+                batchRequestId = parsedBody.id;
+              }
+            } catch (e) {
+              console.error("Failed to parse batch response body:", e);
+            }
+          }
+        }
+
+        if (!batchRequestId) {
+          console.error("No batch request ID in response:", batchResponse.data);
+          return res.status(500).json({
+            error: "Async batch request created but no ID returned",
+            details: batchResponse.data,
+            newCampaignId: newCampaignId,
+            hint: "The campaign shell was created, but the ad set duplication status is unknown.",
+          });
+        }
+
+        console.log("✅ Async batch request created with ID:", batchRequestId);
+
+        // STEP 5: RETURN SUCCESS WITH TRACKING INFO
+        return res.json({
+          success: true,
+          mode: "async_manual",
+          newCampaignId: newCampaignId,
+          originalCampaignId: campaign_id,
+          batchRequestId: batchRequestId,
+          structure: {
+            adsets: adsetCount,
+            ads: totalAdsCount,
+            totalChildObjects: totalChildObjects,
+          },
+          message: `Campaign shell created. Duplicating ${adsetCount} ad sets with ${totalAdsCount} ads asynchronously.`,
+          statusCheckEndpoint: `/api/batch-request-status/${batchRequestId}`,
+          listAllBatchRequests: `/api/batch-requests/${normalizedAccountId}`,
+          note: "Ad sets are being duplicated. Once complete, ads will be duplicated into the new ad sets. This may take 1-5 minutes.",
+        });
+      } catch (error) {
+        console.error("Async manual duplication failed:", error.response?.data || error.message);
+        return res.status(500).json({
+          error: "Failed to create async duplication",
+          details: error.response?.data || error.message,
+        });
+      }
+    } else {
+      // Use sync API for ≤3 child objects
+      const payload = {
+        deep_copy: deep_copy || false,
+        status_option: status_option || "PAUSED",
+        rename_options: {
+          rename_strategy: "ONLY_TOP_LEVEL_RENAME",
+          rename_suffix: " - Copy",
+        },
+        access_token: userAccessToken,
+      };
+
+      const graphUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/copies`;
+
+      response = await axios.post(graphUrl, payload, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
     if (response.status === 200 && response.data) {
-      console.log(`Successfully duplicated campaign ${campaign_id}`);
+      console.log(`Successfully initiated campaign duplication for ${campaign_id}`);
       console.log("Facebook API response:", JSON.stringify(response.data, null, 2));
 
+      // Handle async response and heck for async indicators: async_request_id, job_id, request_id, etc.
+      const asyncId = response.data.async_request_id || response.data.job_id || response.data.request_id;
+      
+      if (needsAsync && asyncId) {
+        return res.status(202).json({
+          success: true,
+          isAsync: true,
+          async_request_id: asyncId,
+          original_id: campaign_id,
+          message: `Campaign duplication in progress (${adsetCount} ad sets, ${totalAdsCount} ads). The process is running asynchronously.`,
+          estimatedTime: "1-5 minutes",
+          adsetCount,
+          totalAdsCount,
+          totalChildObjects,
+          note: "You can check the campaign list to see when the new campaign appears.",
+        });
+      }
+
+      // Handle synchronous response
       const newCampaignId = response.data.copied_campaign_id || response.data.id || response.data.campaign_id;
 
       if (!newCampaignId) {
         console.error("No campaign ID found in response:", response.data);
-        res.status(400).json({ error: "Campaign duplicated but ID not found in response" });
-        return;
+        return res.status(400).json({ 
+          error: "Campaign duplicated but ID not found in response",
+          responseData: response.data,
+        });
       }
 
       if (name && newCampaignId) {
@@ -2124,6 +2524,8 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         id: newCampaignId,
         original_id: campaign_id,
         success: true,
+        isAsync: false,
+        adsetCount,
       });
     } else {
       console.log("Unexpected response from Facebook API:", response.data);
@@ -2131,8 +2533,135 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     }
   } catch (err) {
     console.log("Error duplicating campaign:", err.response?.data || err.message);
+    
+    // Check for violation errors related to child limits
+    const errorMessage = err.response?.data?.error?.message || "";
+    if (errorMessage.toLowerCase().includes("child") || errorMessage.toLowerCase().includes("limit")) {
+      return res.status(400).json({
+        error: "Campaign duplication failed due to Meta API limits",
+        suggestion: "The campaign may have too many child ads. Try with deep_copy=false or contact support.",
+        details: err.response?.data?.error || err.message,
+      });
+    }
+
     res.status(400).json({
       error: "Error duplicating campaign",
+      details: err.response?.data?.error || err.message,
+    });
+  }
+});
+
+// List all batch requests for an ad account
+app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, res) => {
+  const { account_id } = req.params;
+  const userAccessToken = req.user?.facebook_access_token;
+  const isCompleted = req.query.is_completed; // Optional filter
+
+  if (!userAccessToken) {
+    return res.status(403).json({
+      error: "Facebook account not connected",
+      needsAuth: true,
+    });
+  }
+
+  try {
+    const normalizedAccountId = normalizeAdAccountId(account_id);
+    const listUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`;
+    
+    const params = {
+      fields: "id,name,is_completed,total_count,success_count,error_count,in_progress_count,initial_count",
+      access_token: userAccessToken,
+    };
+
+    if (isCompleted !== undefined) {
+      params.is_completed = isCompleted;
+    }
+
+    const response = await axios.get(listUrl, { params });
+
+    res.json({
+      account_id: `act_${normalizedAccountId}`,
+      batch_requests: response.data.data || [],
+      paging: response.data.paging,
+    });
+  } catch (err) {
+    console.error("Error listing batch requests:", err.response?.data || err.message);
+    res.status(500).json({
+      error: "Failed to list batch requests",
+      details: err.response?.data?.error || err.message,
+    });
+  }
+});
+
+// Check status of async batch request
+app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (req, res) => {
+  const { batch_id } = req.params;
+  const userAccessToken = req.user?.facebook_access_token;
+
+  if (!userAccessToken) {
+    return res.status(403).json({
+      error: "Facebook account not connected",
+      needsAuth: true,
+    });
+  }
+
+  try {
+    const statusUrl = `https://graph.facebook.com/${api_version}/${batch_id}`;
+    const response = await axios.get(statusUrl, {
+      params: {
+        fields: "id,name,is_completed,total_count,success_count,error_count,in_progress_count",
+        access_token: userAccessToken,
+      },
+    });
+
+    const batchStatus = response.data;
+
+    // If completed, fetch the individual request results
+    if (batchStatus.is_completed) {
+      try {
+        const requestsUrl = `https://graph.facebook.com/${api_version}/${batch_id}/requests`;
+        const requestsResponse = await axios.get(requestsUrl, {
+          params: {
+            fields: "id,status,result",
+            access_token: userAccessToken,
+          },
+        });
+
+        const requests = requestsResponse.data.data || [];
+        const successfulRequest = requests.find((r) => r.status === "SUCCESS");
+
+        if (successfulRequest && successfulRequest.result) {
+          const newCampaignId = successfulRequest.result.copied_campaign_id || successfulRequest.result.id;
+
+          return res.json({
+            status: "completed",
+            batch_id,
+            is_completed: true,
+            success_count: batchStatus.success_count,
+            error_count: batchStatus.error_count,
+            new_campaign_id: newCampaignId,
+            details: batchStatus,
+          });
+        }
+      } catch (reqErr) {
+        console.error("Error fetching batch requests:", reqErr.message);
+      }
+    }
+
+    res.json({
+      status: batchStatus.is_completed ? "completed" : "in_progress",
+      batch_id,
+      is_completed: batchStatus.is_completed,
+      total_count: batchStatus.total_count,
+      success_count: batchStatus.success_count,
+      error_count: batchStatus.error_count,
+      in_progress_count: batchStatus.in_progress_count,
+      details: batchStatus,
+    });
+  } catch (err) {
+    console.error("Error checking batch request status:", err.response?.data || err.message);
+    res.status(500).json({
+      error: "Failed to check batch request status",
       details: err.response?.data?.error || err.message,
     });
   }
