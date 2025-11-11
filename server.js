@@ -2251,35 +2251,75 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         formData.append('batch', JSON.stringify(chunk));
         formData.append('is_parallel', 'true');
 
-        console.log(`Sending async batch request for ads (Part ${index + 1}/${batchChunks.length})`);
+        console.log(`[AD-BATCH ${index + 1}/${batchChunks.length}] Sending async batch request for ads`);
+        console.log(`[AD-BATCH ${index + 1}] Payload:`, {
+          chunk_operations: chunk.length,
+          batch_content: JSON.stringify(chunk, null, 2)
+        });
 
-        const batchResponse = await axios.post(
-          `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-          formData,
-          {
-            headers: {
-              ...formData.getHeaders(),
-            },
+        try {
+          const batchResponse = await axios.post(
+            `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+            formData,
+            {
+              headers: {
+                ...formData.getHeaders(),
+              },
+            }
+          );
+
+          // DETAILED RESPONSE LOGGING
+          console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
+            status: batchResponse.status,
+            statusText: batchResponse.statusText,
+            data_type: typeof batchResponse.data,
+            data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
+            raw_data: JSON.stringify(batchResponse.data, null, 2),
+          });
+
+          // Extract batch request ID from potentially varied response formats
+          let batchRequestId;
+          if (typeof batchResponse.data === 'string') {
+            batchRequestId = batchResponse.data;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from string response`);
+          } else if (batchResponse.data?.id) {
+            batchRequestId = batchResponse.data.id;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.id`);
+          } else if (batchResponse.data?.async_batch_request_id) {
+            batchRequestId = batchResponse.data.async_batch_request_id;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
+          } else if (batchResponse.data?.handle) {
+            batchRequestId = batchResponse.data.handle;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.handle`);
+          } else if (batchResponse.data?.batch_id) {
+            batchRequestId = batchResponse.data.batch_id;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.batch_id`);
+          } else if (Array.isArray(batchResponse.data) && batchResponse.data[0]?.id) {
+            batchRequestId = batchResponse.data[0].id;
+            console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
           }
-        );
 
-        // Extract batch request ID
-        let batchRequestId;
-        if (typeof batchResponse.data === 'string') {
-          batchRequestId = batchResponse.data;
-        } else if (batchResponse.data.id) {
-          batchRequestId = batchResponse.data.id;
-        } else if (batchResponse.data.async_batch_request_id) {
-          batchRequestId = batchResponse.data.async_batch_request_id;
+          if (!batchRequestId) {
+            console.error(`[AD-BATCH ${index + 1}] ❌ CRITICAL: No batch request ID found in response`);
+            console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
+            console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
+              hasError: !!batchResponse.data?.error,
+              error: batchResponse.data?.error,
+              allKeys: Object.keys(batchResponse.data || {}),
+            });
+            throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
+          }
+
+          console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+          return batchRequestId;
+        } catch (axiosError) {
+          console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
+            message: axiosError.message,
+            response_status: axiosError.response?.status,
+            response_data: axiosError.response?.data,
+          });
+          throw axiosError;
         }
-
-        if (!batchRequestId) {
-           console.error(`No batch request ID in response for chunk ${index + 1}:`, batchResponse.data);
-           throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
-        }
-
-        console.log(`✅ Async batch request for chunk ${index + 1} created with ID: ${batchRequestId}`);
-        return batchRequestId;
       });
 
       const batchRequestIds = await Promise.all(batchPromises);
@@ -2552,41 +2592,86 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         const batchPromises = batchChunks.map(async (chunk, index) => {
           const FormData = (await import('form-data')).default;
           const formData = new FormData();
-          
+
           formData.append('access_token', userAccessToken);
           formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets (Part ${index + 1}/${batchChunks.length})`);
-          formData.append('batch', JSON.stringify(chunk)); // ✅ FIX: Use 'batch' instead of 'adbatch'
-          formData.append('is_parallel', 'true'); // Recommended for independent operations
+          formData.append('batch', JSON.stringify(chunk));
+          formData.append('is_parallel', 'true');
 
-          console.log(`Sending async batch request for ad sets (Part ${index + 1}/${batchChunks.length})`);
+          console.log(`[BATCH ${index + 1}/${batchChunks.length}] Sending async batch request for ad sets`);
+          console.log(`[BATCH ${index + 1}] Payload:`, {
+            chunk_operations: chunk.length,
+            batch_content: JSON.stringify(chunk, null, 2)
+          });
 
-          const batchResponse = await axios.post(
-            `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-            formData,
-            {
-              headers: {
-                ...formData.getHeaders(),
-              },
+          try {
+            const batchResponse = await axios.post(
+              `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+              formData,
+              {
+                headers: {
+                  ...formData.getHeaders(),
+                },
+              }
+            );
+
+            // DETAILED RESPONSE LOGGING
+            console.log(`[BATCH ${index + 1}] Facebook API Response:`, {
+              status: batchResponse.status,
+              statusText: batchResponse.statusText,
+              headers: batchResponse.headers,
+              data_type: typeof batchResponse.data,
+              data_is_string: typeof batchResponse.data === 'string',
+              data_is_object: typeof batchResponse.data === 'object',
+              data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
+              raw_data: JSON.stringify(batchResponse.data, null, 2),
+            });
+
+            // Extract batch request ID from potentially varied response formats
+            let batchRequestId;
+            if (typeof batchResponse.data === 'string') {
+              batchRequestId = batchResponse.data;
+              console.log(`[BATCH ${index + 1}] ID extracted from string response`);
+            } else if (batchResponse.data?.id) {
+              batchRequestId = batchResponse.data.id;
+              console.log(`[BATCH ${index + 1}] ID extracted from data.id`);
+            } else if (batchResponse.data?.async_batch_request_id) {
+              batchRequestId = batchResponse.data.async_batch_request_id;
+              console.log(`[BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
+            } else if (batchResponse.data?.handle) {
+              batchRequestId = batchResponse.data.handle;
+              console.log(`[BATCH ${index + 1}] ID extracted from data.handle`);
+            } else if (batchResponse.data?.batch_id) {
+              batchRequestId = batchResponse.data.batch_id;
+              console.log(`[BATCH ${index + 1}] ID extracted from data.batch_id`);
+            } else if (Array.isArray(batchResponse.data) && batchResponse.data[0]?.id) {
+              batchRequestId = batchResponse.data[0].id;
+              console.log(`[BATCH ${index + 1}] ID extracted from array[0].id`);
             }
-          );
 
-          // Extract batch request ID from potentially varied response formats
-          let batchRequestId;
-          if (typeof batchResponse.data === 'string') {
-            batchRequestId = batchResponse.data;
-          } else if (batchResponse.data.id) {
-            batchRequestId = batchResponse.data.id;
-          } else if (batchResponse.data.async_batch_request_id) {
-            batchRequestId = batchResponse.data.async_batch_request_id;
+            if (!batchRequestId) {
+              console.error(`[BATCH ${index + 1}] ❌ CRITICAL: No batch request ID found in response`);
+              console.error(`[BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
+              console.error(`[BATCH ${index + 1}] Response structure analysis:`, {
+                hasError: !!batchResponse.data?.error,
+                error: batchResponse.data?.error,
+                allKeys: Object.keys(batchResponse.data || {}),
+                allValues: Object.values(batchResponse.data || {}),
+              });
+              throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
+            }
+
+            console.log(`[BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+            return batchRequestId;
+          } catch (axiosError) {
+            console.error(`[BATCH ${index + 1}] ❌ Request failed:`, {
+              message: axiosError.message,
+              response_status: axiosError.response?.status,
+              response_data: axiosError.response?.data,
+              config_url: axiosError.config?.url,
+            });
+            throw axiosError;
           }
-          
-          if (!batchRequestId) {
-             console.error(`No batch request ID in response for chunk ${index + 1}:`, batchResponse.data);
-             throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
-          }
-          
-          console.log(`✅ Async batch request for chunk ${index + 1} created with ID: ${batchRequestId}`);
-          return batchRequestId;
         });
 
         const batchRequestIds = await Promise.all(batchPromises);
