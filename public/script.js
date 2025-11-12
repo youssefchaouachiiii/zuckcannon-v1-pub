@@ -26,7 +26,7 @@ async function extractErrorMessage(responseOrError) {
     }
 
     // If it's already a parsed object
-    if (typeof responseOrError === 'object') {
+    if (typeof responseOrError === "object") {
       return responseOrError.error_user_msg || responseOrError.message || responseOrError.error || "An error occurred. Please try again.";
     }
 
@@ -339,42 +339,42 @@ function populatePages(pages) {
 // Populate campaign special ad category country dropdowns from fb-locations.json
 function populateSpecialAdCountries() {
   const fbData = appState.getState().fbLocationsData;
-  
+
   if (!fbData || !fbData.countries) {
     console.warn("FB locations data not available for country population");
     return;
   }
 
   // Find all campaign special country dropdown lists
-  const countryDropdowns = document.querySelectorAll('.dropdown-options.campaign-special-country');
-  
-  countryDropdowns.forEach(dropdown => {
+  const countryDropdowns = document.querySelectorAll(".dropdown-options.campaign-special-country");
+
+  countryDropdowns.forEach((dropdown) => {
     // Keep the "None" option and add all countries
     const noneOption = dropdown.querySelector('[data-value=""]');
-    
+
     // Clear all options except "None"
-    dropdown.innerHTML = '';
+    dropdown.innerHTML = "";
     if (noneOption) {
       dropdown.appendChild(noneOption);
     } else {
-      const newNoneOption = document.createElement('li');
-      newNoneOption.setAttribute('data-value', '');
-      newNoneOption.textContent = 'None';
+      const newNoneOption = document.createElement("li");
+      newNoneOption.setAttribute("data-value", "");
+      newNoneOption.textContent = "None";
       dropdown.appendChild(newNoneOption);
     }
-    
+
     // Add all countries sorted alphabetically
     const sortedCountries = [...fbData.countries].sort((a, b) => a.name.localeCompare(b.name));
-    
-    sortedCountries.forEach(country => {
-      const li = document.createElement('li');
-      li.setAttribute('data-value', country.country_code);
+
+    sortedCountries.forEach((country) => {
+      const li = document.createElement("li");
+      li.setAttribute("data-value", country.country_code);
       li.textContent = country.name;
       dropdown.appendChild(li);
     });
   });
-  
-  console.log('Populated special ad category country dropdowns with', fbData.countries.length, 'countries');
+
+  console.log("Populated special ad category country dropdowns with", fbData.countries.length, "countries");
 }
 
 // Main app initialization
@@ -1041,6 +1041,10 @@ class SingleSelectGroup {
           account_id: appState.getState().selectedAccount,
         }),
       });
+
+      if (response.ok) {
+        window.showSuccess(`Ad set has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
+      }
 
       if (!response.ok) {
         let errorMessage = "Failed to duplicate ad set";
@@ -2000,7 +2004,7 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
 
     // Show success message
     if (window.showSuccess) {
-      window.showSuccess(`Campaign "${newName}" has been successfully duplicated!`, 4000);
+      window.showSuccess(`Campaign "${newName}" has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
     }
 
     // Trigger background refresh to update cache without page reload
@@ -5328,20 +5332,20 @@ function updateUIWithFreshData(freshData) {
 
   // --- 1. Clear existing lists ---
   const adAccList = document.querySelector("#ad-acc-list");
-  if (adAccList) adAccList.innerHTML = '';
+  if (adAccList) adAccList.innerHTML = "";
 
   const campaignColumn = document.querySelector(".campaign-column");
   const campaignSelection = campaignColumn.querySelector(".campaign-selection");
   if (campaignSelection) {
-      // Instead of removing, just clear the content to preserve event listeners on parent
-      campaignSelection.innerHTML = '';
+    // Instead of removing, just clear the content to preserve event listeners on parent
+    campaignSelection.innerHTML = "";
   }
 
   const pixelDropdownOptions = document.querySelector(".dropdown-options.pixel");
-  if (pixelDropdownOptions) pixelDropdownOptions.innerHTML = '';
-  
+  if (pixelDropdownOptions) pixelDropdownOptions.innerHTML = "";
+
   const pagesDropdownOptions = document.querySelectorAll(".dropdown-options.pages");
-  pagesDropdownOptions.forEach(dropdown => dropdown.innerHTML = '');
+  pagesDropdownOptions.forEach((dropdown) => (dropdown.innerHTML = ""));
 
   // --- 2. Repopulate with fresh data ---
   if (freshData.adAccounts) {
@@ -5367,16 +5371,16 @@ function updateUIWithFreshData(freshData) {
     if (accountElement) {
       // Simulate a click to trigger all the downstream filtering and UI updates
       accountElement.click();
-      
+
       // If a campaign was also selected, find and click it after a short delay
       // This allows the campaign list to be populated by the account click first
       if (selectedCampaignId) {
-         setTimeout(() => {
-            const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
-            if (campaignElement) {
-                campaignElement.click();
-            }
-         }, 100); // 100ms delay should be enough for the DOM to update
+        setTimeout(() => {
+          const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+          if (campaignElement) {
+            campaignElement.click();
+          }
+        }, 100); // 100ms delay should be enough for the DOM to update
       }
     }
   }
@@ -5438,18 +5442,18 @@ function initializeCreateCampaignDialog() {
       if (e.target.classList.contains("create-new-campaign-btn") || e.target.closest(".create-new-campaign-btn")) {
         e.preventDefault();
         e.stopPropagation();
-        
+
         const campaignCreationColumn = document.getElementById("col-2-5");
         if (campaignCreationColumn) {
           campaignCreationColumn.style.display = "block";
-          
+
           // Make create button active and enabled
           const createBtn = document.querySelector(".campaign-create-btn");
           if (createBtn) {
             createBtn.classList.add("active");
             createBtn.disabled = false;
           }
-          
+
           resetCampaignCreationForm();
         } else {
           console.error("col-2-5 not found");
@@ -5471,7 +5475,7 @@ function initializeCreateCampaignDialog() {
           if (col) {
             col.style.display = "none";
             console.log("✓ Column hidden");
-            
+
             // Remove active class and disable create button
             const createBtn = document.querySelector(".campaign-create-btn");
             if (createBtn) {
@@ -5501,7 +5505,6 @@ function initializeCreateCampaignDialog() {
       }
     };
     setupCreateButton();
-
   }, 500); // Wait for DOM to settle
 }
 
@@ -5557,7 +5560,7 @@ async function handleCampaignCreation() {
   const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
   const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
   const createBtn = column.querySelector(".campaign-create-btn");
-  
+
   if (!createBtn) {
     console.error("Create button not found in campaign creation column");
     return;
@@ -5567,23 +5570,23 @@ async function handleCampaignCreation() {
   const objectiveDisplay = column.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
   const statusDisplay = column.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
   const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
-  
+
   const objective = objectiveDisplay?.dataset.value;
   const status = statusDisplay?.dataset.value;
   const bidStrategy = bidStrategyDisplay?.dataset.value;
-  
+
   // Get special categories
-  const specialCategoriesOptions = column.querySelectorAll('.dropdown-options.campaign-special-categories li.selected');
+  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
   const specialCategories = Array.from(specialCategoriesOptions)
-    .map(opt => opt.dataset.value)
-    .filter(val => val !== "");
-  
+    .map((opt) => opt.dataset.value)
+    .filter((val) => val !== "");
+
   // Get special countries
-  const specialCountryOptions = column.querySelectorAll('.dropdown-options.campaign-special-country li.selected');
+  const specialCountryOptions = column.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
   const specialCountries = Array.from(specialCountryOptions)
-    .map(opt => opt.dataset.value)
-    .filter(val => val !== "");
-  
+    .map((opt) => opt.dataset.value)
+    .filter((val) => val !== "");
+
   const dailyBudget = dailyBudgetInput?.value;
   const lifetimeBudget = lifetimeBudgetInput?.value;
 
@@ -5667,7 +5670,7 @@ async function handleCampaignCreation() {
 
     // Hide campaign creation column
     column.style.display = "none";
-    
+
     // Deactivate and disable create button when hiding column
     const createBtn = column.querySelector(".campaign-create-btn");
     if (createBtn) {
@@ -5735,7 +5738,6 @@ async function handleCampaignCreation() {
         }
       })
       .catch((err) => console.error("Failed to trigger refresh:", err));
-
   } catch (error) {
     console.error("Error creating campaign:", error);
     if (window.showError) {
@@ -5819,7 +5821,7 @@ function openCreateCampaignDialog() {
   // Show dialog
   dialog.style.display = "flex";
   console.log("Dialog display set to flex");
-  
+
   setTimeout(() => {
     if (nameInput) nameInput.focus();
   }, 100);
@@ -5875,8 +5877,8 @@ function openCreateCampaignDialog() {
 
   // Setup dropdown listeners to enable/disable create button
   const allOptionsForValidation = dialog.querySelectorAll(".dropdown-options li");
-  allOptionsForValidation.forEach(option => {
-    option.addEventListener('click', () => {
+  allOptionsForValidation.forEach((option) => {
+    option.addEventListener("click", () => {
       setTimeout(() => {
         if (createBtn && nameInput) {
           const objective = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display').dataset.value;
@@ -5895,23 +5897,23 @@ function openCreateCampaignDialog() {
       const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
       const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
       const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
-      
+
       const objective = objectiveDisplay?.dataset.value;
       const status = statusDisplay?.dataset.value;
       const bidStrategy = bidStrategyDisplay?.dataset.value;
-      
+
       // Get special categories
-      const specialCategoriesOptions = dialog.querySelectorAll('.dropdown-options.campaign-special-categories li.selected');
+      const specialCategoriesOptions = dialog.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
       const specialCategories = Array.from(specialCategoriesOptions)
-        .map(opt => opt.dataset.value)
-        .filter(val => val !== "");
-      
+        .map((opt) => opt.dataset.value)
+        .filter((val) => val !== "");
+
       // Get special countries
-      const specialCountryOptions = dialog.querySelectorAll('.dropdown-options.campaign-special-country li.selected');
+      const specialCountryOptions = dialog.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
       const specialCountries = Array.from(specialCountryOptions)
-        .map(opt => opt.dataset.value)
-        .filter(val => val !== "");
-      
+        .map((opt) => opt.dataset.value)
+        .filter((val) => val !== "");
+
       const dailyBudget = dailyBudgetInput?.value;
       const lifetimeBudget = lifetimeBudgetInput?.value;
 
