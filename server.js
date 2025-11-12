@@ -2122,6 +2122,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body;
   const userAccessToken = req.user?.facebook_access_token;
 
+  console.log("anjay deep," + deep_copy)
   if (!userAccessToken) {
     return res.status(403).json({
       error: "Facebook account not connected",
@@ -2180,6 +2181,8 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
     mode: needsAsync ? "asynchronous (manual batch)" : "synchronous (/copies endpoint)",
   });
 
+
+  console.log("anjay async," + needsAsync)
   try {
     if (needsAsync) {
       // ASYNC/BATCH REQUEST FOR AD SET - Manual approach:
@@ -2196,12 +2199,16 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         access_token: userAccessToken,
       };
 
+      console.log("anjay")
+
       const graphUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}/copies`;
       const shallowResponse = await axios.post(graphUrl, shallowPayload, {
         headers: {
           "Content-Type": "application/json",
         },
       });
+
+      console.log("anjay done")
 
       const newAdSetId = shallowResponse.data.copied_adset_id || shallowResponse.data.id;
       console.log(`✅ Created new ad set shell: ${newAdSetId}`);
