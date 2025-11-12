@@ -2225,7 +2225,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
       adsData.forEach((ad, index) => {
         batchOperations.push({
-          name: `duplicate-ad-${ad.id}-${index}`,
+          method: "POST",  // ✅ Required by Facebook Batch API
           relative_url: `${ad.id}/copies`,
           body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
         });
@@ -2243,30 +2243,34 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       console.log(`Split ad operations into ${batchChunks.length} chunks of size ${chunkSize}`);
 
       const batchPromises = batchChunks.map(async (chunk, index) => {
-        const FormData = (await import('form-data')).default;
-        const formData = new FormData();
+        // Retry function for failed batch requests
+        const sendBatchWithRetry = async (retryCount = 0) => {
+          const FormData = (await import('form-data')).default;
+          const formData = new FormData();
 
-        formData.append('access_token', userAccessToken);
-        formData.append('name', `Duplicate Ad Set ${ad_set_id} - Ads (Part ${index + 1}/${batchChunks.length})`);
-        formData.append('batch', JSON.stringify(chunk));
-        formData.append('is_parallel', 'true');
+          formData.append('access_token', userAccessToken);
+          formData.append('name', `Duplicate Ad Set ${ad_set_id} - Ads (Part ${index + 1}/${batchChunks.length})`);
+          formData.append('batch', JSON.stringify(chunk));
+          formData.append('is_parallel', 'true');
 
-        console.log(`[AD-BATCH ${index + 1}/${batchChunks.length}] Sending async batch request for ads`);
-        console.log(`[AD-BATCH ${index + 1}] Payload:`, {
-          chunk_operations: chunk.length,
-          batch_content: JSON.stringify(chunk, null, 2)
-        });
+          const retryLabel = retryCount > 0 ? ` (Retry ${retryCount})` : '';
+          console.log(`[AD-BATCH ${index + 1}/${batchChunks.length}]${retryLabel} Sending async batch request for ads`);
+          console.log(`[AD-BATCH ${index + 1}] Payload:`, {
+            chunk_operations: chunk.length,
+            batch_content: JSON.stringify(chunk, null, 2)
+          });
 
-        try {
-          const batchResponse = await axios.post(
-            `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-            formData,
-            {
-              headers: {
-                ...formData.getHeaders(),
-              },
-            }
-          );
+          try {
+            const batchResponse = await axios.post(
+              `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+              formData,
+              {
+                headers: {
+                  ...formData.getHeaders(),
+                },
+                timeout: 30000, // 30 second timeout
+              }
+            );
 
           // DETAILED RESPONSE LOGGING
           console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
@@ -2299,27 +2303,47 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
           }
 
-          if (!batchRequestId) {
-            console.error(`[AD-BATCH ${index + 1}] ❌ CRITICAL: No batch request ID found in response`);
-            console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
-            console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
-              hasError: !!batchResponse.data?.error,
-              error: batchResponse.data?.error,
-              allKeys: Object.keys(batchResponse.data || {}),
-            });
-            throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
-          }
+            if (!batchRequestId) {
+              console.error(`[AD-BATCH ${index + 1}] ❌ No batch request ID found in response`);
+              console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
+              console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
+                hasError: !!batchResponse.data?.error,
+                error: batchResponse.data?.error,
+                allKeys: Object.keys(batchResponse.data || {}),
+              });
 
-          console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
-          return batchRequestId;
-        } catch (axiosError) {
-          console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
-            message: axiosError.message,
-            response_status: axiosError.response?.status,
-            response_data: axiosError.response?.data,
-          });
-          throw axiosError;
-        }
+              // ✅ Retry logic if no ID returned
+              if (retryCount < 2) {
+                console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return sendBatchWithRetry(retryCount + 1);
+              }
+
+              throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
+            }
+
+            console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+            return batchRequestId;
+          } catch (axiosError) {
+            console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
+              message: axiosError.message,
+              response_status: axiosError.response?.status,
+              response_data: axiosError.response?.data,
+            });
+
+            // ✅ Retry on network errors
+            if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
+              console.warn(`[AD-BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              return sendBatchWithRetry(retryCount + 1);
+            }
+
+            throw axiosError;
+          }
+        };
+
+        // Start the batch request with retry capability
+        return sendBatchWithRetry();
       });
 
       const batchRequestIds = await Promise.all(batchPromises);
@@ -2572,7 +2596,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         // Create operations to duplicate each ad set into the new campaign
         adsetsData.forEach((adset, index) => {
           batchOperations.push({
-            name: `duplicate-adset-${adset.id}-${index}`,
+            method: "POST",  // ✅ Required by Facebook Batch API
             relative_url: `${adset.id}/copies`,
             body: `deep_copy=false&status_option=${status_option || "PAUSED"}&campaign_id=${newCampaignId}`,
           });
@@ -2590,30 +2614,34 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         console.log(`Split ad set operations into ${batchChunks.length} chunks of size ${chunkSize}`);
 
         const batchPromises = batchChunks.map(async (chunk, index) => {
-          const FormData = (await import('form-data')).default;
-          const formData = new FormData();
+          // Retry function for failed batch requests
+          const sendBatchWithRetry = async (retryCount = 0) => {
+            const FormData = (await import('form-data')).default;
+            const formData = new FormData();
 
-          formData.append('access_token', userAccessToken);
-          formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets (Part ${index + 1}/${batchChunks.length})`);
-          formData.append('batch', JSON.stringify(chunk));
-          formData.append('is_parallel', 'true');
+            formData.append('access_token', userAccessToken);
+            formData.append('name', `Duplicate Campaign ${campaign_id} - Ad Sets (Part ${index + 1}/${batchChunks.length})`);
+            formData.append('batch', JSON.stringify(chunk));
+            formData.append('is_parallel', 'true');
 
-          console.log(`[BATCH ${index + 1}/${batchChunks.length}] Sending async batch request for ad sets`);
-          console.log(`[BATCH ${index + 1}] Payload:`, {
-            chunk_operations: chunk.length,
-            batch_content: JSON.stringify(chunk, null, 2)
-          });
+            const retryLabel = retryCount > 0 ? ` (Retry ${retryCount})` : '';
+            console.log(`[BATCH ${index + 1}/${batchChunks.length}]${retryLabel} Sending async batch request for ad sets`);
+            console.log(`[BATCH ${index + 1}] Payload:`, {
+              chunk_operations: chunk.length,
+              batch_content: JSON.stringify(chunk, null, 2)
+            });
 
-          try {
-            const batchResponse = await axios.post(
-              `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-              formData,
-              {
-                headers: {
-                  ...formData.getHeaders(),
-                },
-              }
-            );
+            try {
+              const batchResponse = await axios.post(
+                `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
+                formData,
+                {
+                  headers: {
+                    ...formData.getHeaders(),
+                  },
+                  timeout: 30000, // 30 second timeout
+                }
+              );
 
             // DETAILED RESPONSE LOGGING
             console.log(`[BATCH ${index + 1}] Facebook API Response:`, {
@@ -2649,29 +2677,49 @@ app.post("/api/duplicate-campaign", async (req, res) => {
               console.log(`[BATCH ${index + 1}] ID extracted from array[0].id`);
             }
 
-            if (!batchRequestId) {
-              console.error(`[BATCH ${index + 1}] ❌ CRITICAL: No batch request ID found in response`);
-              console.error(`[BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
-              console.error(`[BATCH ${index + 1}] Response structure analysis:`, {
-                hasError: !!batchResponse.data?.error,
-                error: batchResponse.data?.error,
-                allKeys: Object.keys(batchResponse.data || {}),
-                allValues: Object.values(batchResponse.data || {}),
-              });
-              throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned`);
-            }
+              if (!batchRequestId) {
+                console.error(`[BATCH ${index + 1}] ❌ No batch request ID found in response`);
+                console.error(`[BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
+                console.error(`[BATCH ${index + 1}] Response analysis:`, {
+                  hasError: !!batchResponse.data?.error,
+                  error: batchResponse.data?.error,
+                  allKeys: Object.keys(batchResponse.data || {}),
+                  allValues: Object.values(batchResponse.data || {}),
+                });
 
-            console.log(`[BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
-            return batchRequestId;
-          } catch (axiosError) {
-            console.error(`[BATCH ${index + 1}] ❌ Request failed:`, {
-              message: axiosError.message,
-              response_status: axiosError.response?.status,
-              response_data: axiosError.response?.data,
-              config_url: axiosError.config?.url,
-            });
-            throw axiosError;
-          }
+                // ✅ Retry logic if no ID returned
+                if (retryCount < 2) {
+                  console.warn(`[BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  return sendBatchWithRetry(retryCount + 1);
+                }
+
+                throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
+              }
+
+              console.log(`[BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+              return batchRequestId;
+            } catch (axiosError) {
+              console.error(`[BATCH ${index + 1}] ❌ Request failed:`, {
+                message: axiosError.message,
+                response_status: axiosError.response?.status,
+                response_data: axiosError.response?.data,
+                config_url: axiosError.config?.url,
+              });
+
+              // ✅ Retry on network errors
+              if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
+                console.warn(`[BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return sendBatchWithRetry(retryCount + 1);
+              }
+
+              throw axiosError;
+            }
+          };
+
+          // Start the batch request with retry capability
+          return sendBatchWithRetry();
         });
 
         const batchRequestIds = await Promise.all(batchPromises);
