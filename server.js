@@ -172,14 +172,14 @@ if (isProduction) {
   sessionConfig.proxy = true; // Trust the proxy
 }
 
-console.log("Session config:", {
-  isProduction,
-  cookieSecure: sessionConfig.cookie.secure,
-  sameSite: sessionConfig.cookie.sameSite,
-  proxy: sessionConfig.proxy,
-  store: "SQLite (persistent)",
-  maxAge: "7 days",
-});
+// console.log("Session config:", {
+//   isProduction,
+//   cookieSecure: sessionConfig.cookie.secure,
+//   sameSite: sessionConfig.cookie.sameSite,
+//   proxy: sessionConfig.proxy,
+//   store: "SQLite (persistent)",
+//   maxAge: "7 days",
+// });
 
 app.use(session(sessionConfig));
 
@@ -307,7 +307,7 @@ async function sendTelegramNotification(message, isError = true) {
     }
   } catch (error) {
     // Don't throw error to avoid breaking the main flow
-    console.error("Failed to send Telegram notification:", error.message);
+    // console.error("Failed to send Telegram notification:", error.message);
   }
 }
 
@@ -424,18 +424,18 @@ app.post("/logout", (req, res) => {
 app.get("/api/auth/status", (req, res) => {
   const isDevelopment = process.env.NODE_ENV === "development";
 
-  console.log("Auth status check:", {
-    authenticated: isDevelopment ? true : req.isAuthenticated(),
-    sessionID: req.sessionID,
-    user: req.user,
-    session: req.session,
-    isDevelopment: isDevelopment,
-    cookies: req.cookies,
-    headers: {
-      cookie: req.headers.cookie,
-      origin: req.headers.origin,
-    },
-  });
+  // console.log("Auth status check:", {
+  //   authenticated: isDevelopment ? true : req.isAuthenticated(),
+  //   sessionID: req.sessionID,
+  //   user: req.user,
+  //   session: req.session,
+  //   isDevelopment: isDevelopment,
+  //   cookies: req.cookies,
+  //   headers: {
+  //     cookie: req.headers.cookie,
+  //     origin: req.headers.origin,
+  //   },
+  // });
 
   // Check if session exists but user is not authenticated
   if (!isDevelopment && req.session && !req.user) {
@@ -755,14 +755,14 @@ async function refreshMetaDataInBackground(userId, userAccessToken) {
 
   isRefreshing = true;
   try {
-    console.log("Starting background refresh of Meta data for user:", userId);
+    // console.log("Starting background refresh of Meta data for user:", userId);
     broadcastMetaDataUpdate("refresh-started", {
       timestamp: new Date().toISOString(),
       source: "background",
     });
 
     const freshData = await fetchMetaDataFresh(userId, userAccessToken);
-    console.log("Background refresh completed successfully");
+    // console.log("Background refresh completed successfully");
 
     broadcastMetaDataUpdate("refresh-completed", {
       timestamp: new Date().toISOString(),
@@ -822,7 +822,7 @@ async function fetchMetaDataFresh(userId, userAccessToken) {
           throw new Error("Failed to fetch ad accounts from Meta. Please check your access token and permissions.");
         }
       } else {
-        console.log(`Successfully fetched ad account data for user ${userId}:`, adAccounts);
+        // console.log(`Successfully fetched ad account data for user ${userId}:`, adAccounts);
       }
 
       // Ensure adAccounts exists before using flatMap
@@ -990,7 +990,7 @@ async function fetchPixels(account_id, userAccessToken = null) {
   try {
     pixelResponse;
     if (pixelResponse.status === 200) {
-      console.log("Successfully fetched pixels.");
+      // console.log("Successfully fetched pixels.");
       return pixelResponse.data;
     } else {
       console.log("Fetch pixels failed in if else block.");
@@ -2122,7 +2122,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body;
   const userAccessToken = req.user?.facebook_access_token;
 
-  console.log("anjay deep," + deep_copy)
   if (!userAccessToken) {
     return res.status(403).json({
       error: "Facebook account not connected",
@@ -2182,7 +2181,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   });
 
 
-  console.log("anjay async," + needsAsync)
   try {
     if (needsAsync) {
       // ASYNC/BATCH REQUEST FOR AD SET - Manual approach:
@@ -2207,8 +2205,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           "Content-Type": "application/json",
         },
       });
-
-      console.log("anjay done")
 
       const newAdSetId = shallowResponse.data.copied_adset_id || shallowResponse.data.id;
       console.log(`✅ Created new ad set shell: ${newAdSetId}`);
@@ -2236,6 +2232,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           relative_url: `${ad.id}/copies`,
           body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
         });
+        console.log(`${ad.id}/copies`)
       });
 
       console.log(`Created ${batchOperations.length} ad duplication operations`);
@@ -2261,11 +2258,11 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           formData.append('is_parallel', 'true');
 
           const retryLabel = retryCount > 0 ? ` (Retry ${retryCount})` : '';
-          console.log(`[AD-BATCH ${index + 1}/${batchChunks.length}]${retryLabel} Sending async batch request for ads`);
-          console.log(`[AD-BATCH ${index + 1}] Payload:`, {
-            chunk_operations: chunk.length,
-            batch_content: JSON.stringify(chunk, null, 2)
-          });
+          // console.log(`[AD-BATCH ${index + 1}/${batchChunks.length}]${retryLabel} Sending async batch request for ads`);
+          // console.log(`[AD-BATCH ${index + 1}] Payload:`, {
+          //   chunk_operations: chunk.length,
+          //   batch_content: JSON.stringify(chunk, null, 2)
+          // });
 
           try {
             const batchResponse = await axios.post(
@@ -2280,56 +2277,56 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             );
 
           // DETAILED RESPONSE LOGGING
-          console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
-            status: batchResponse.status,
-            statusText: batchResponse.statusText,
-            data_type: typeof batchResponse.data,
-            data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
-            raw_data: JSON.stringify(batchResponse.data, null, 2),
-          });
+          // console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
+          //   status: batchResponse.status,
+          //   statusText: batchResponse.statusText,
+          //   data_type: typeof batchResponse.data,
+          //   data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
+          //   raw_data: JSON.stringify(batchResponse.data, null, 2),
+          // });
 
           // Extract batch request ID from potentially varied response formats
-          let batchRequestId;
+          let batchRequestId = batchResponse.data.id;
           if (typeof batchResponse.data === 'string') {
             batchRequestId = batchResponse.data;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from string response`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from string response`);
           } else if (batchResponse.data?.id) {
             batchRequestId = batchResponse.data.id;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.id`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.id`);
           } else if (batchResponse.data?.async_batch_request_id) {
             batchRequestId = batchResponse.data.async_batch_request_id;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
           } else if (batchResponse.data?.handle) {
             batchRequestId = batchResponse.data.handle;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.handle`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.handle`);
           } else if (batchResponse.data?.batch_id) {
             batchRequestId = batchResponse.data.batch_id;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from data.batch_id`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.batch_id`);
           } else if (Array.isArray(batchResponse.data) && batchResponse.data[0]?.id) {
             batchRequestId = batchResponse.data[0].id;
-            console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
+            // console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
           }
 
             if (!batchRequestId) {
-              console.error(`[AD-BATCH ${index + 1}] ❌ No batch request ID found in response`);
-              console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
-              console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
-                hasError: !!batchResponse.data?.error,
-                error: batchResponse.data?.error,
-                allKeys: Object.keys(batchResponse.data || {}),
-              });
+              // console.error(`[AD-BATCH ${index + 1}] ❌ No batch request ID found in response`);
+              // console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
+              // console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
+              //   hasError: !!batchResponse.data?.error,
+              //   error: batchResponse.data?.error,
+              //   allKeys: Object.keys(batchResponse.data || {}),
+              // });
 
               // ✅ Retry logic if no ID returned
-              if (retryCount < 2) {
-                console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                return sendBatchWithRetry(retryCount + 1);
-              }
+              // if (retryCount < 2) {
+              //   console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
+              //   await new Promise(resolve => setTimeout(resolve, 1000));
+              //   return sendBatchWithRetry(retryCount + 1);
+              // }
 
-              throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
+              // throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
             }
 
-            console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+            // console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
             return batchRequestId;
           } catch (axiosError) {
             console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
@@ -2339,13 +2336,13 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             });
 
             // ✅ Retry on network errors
-            if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
-              console.warn(`[AD-BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              return sendBatchWithRetry(retryCount + 1);
-            }
+            // if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
+            //   console.warn(`[AD-BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
+            //   await new Promise(resolve => setTimeout(resolve, 1000));
+            //   return sendBatchWithRetry(retryCount + 1);
+            // }
 
-            throw axiosError;
+            // throw axiosError;
           }
         };
 
@@ -2777,14 +2774,14 @@ app.post("/api/duplicate-campaign", async (req, res) => {
               batchResponse.data?.async_batch_request_id;
 
               if (!batchRequestId) {
-                console.error(`[BATCH ${index + 1}] ❌ No batch request ID found in response`);
-                console.error(`[BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
-                console.error(`[BATCH ${index + 1}] Response analysis:`, {
-                  hasError: !!batchResponse.data?.error,
-                  error: batchResponse.data?.error,
-                  allKeys: Object.keys(batchResponse.data || {}),
-                  allValues: Object.values(batchResponse.data || {}),
-                });
+                // console.error(`[BATCH ${index + 1}] ❌ No batch request ID found in response`);
+                // console.error(`[BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
+                // console.error(`[BATCH ${index + 1}] Response analysis:`, {
+                //   hasError: !!batchResponse.data?.error,
+                //   error: batchResponse.data?.error,
+                //   allKeys: Object.keys(batchResponse.data || {}),
+                //   allValues: Object.values(batchResponse.data || {}),
+                // });
 
                 // ✅ Retry logic if no ID returned
                 if (retryCount < 2) {
@@ -4892,9 +4889,9 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`App is listening on PORT:${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`Circuit breakers initialized for: ${Object.keys(circuitBreakers).join(", ")}`);
+  // console.log(`App is listening on PORT:${PORT}`);
+  // console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+  // console.log(`Circuit breakers initialized for: ${Object.keys(circuitBreakers).join(", ")}`);
 
   // Send startup notification (non-error)
   const startupMessage = `<b>✅ Server Started Successfully</b>\n<b>Port:</b> ${PORT}\n<b>Environment:</b> ${process.env.NODE_ENV || "development"}\n<b>Time:</b> ${new Date().toLocaleString()}`;
