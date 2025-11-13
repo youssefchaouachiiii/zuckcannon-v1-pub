@@ -964,7 +964,7 @@ async function fetchCampaigns(account_id, userAccessToken = null) {
   try {
     const campaignResponse = await axios.get(campaignUrl, {
       params: {
-        fields: "account_id,id,name,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,created_time",
+        fields: "account_id,id,name,objective,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,lifetime_budget,created_time",
         access_token: token,
       },
     });
@@ -2016,7 +2016,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
         }),
     },
     access_token: userAccessToken,
-  };
+  }
 
   // Add destination_type only if provided
   if (req.body.destination_type) {
@@ -2030,22 +2030,28 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.lifetime_budget = parseInt(req.body.lifetime_budget);
   }
 
-  // Handle promoted_object based on optimization goal
-  const requiresPromotedObject = ["OFFSITE_CONVERSIONS", "LEAD_GENERATION", "APP_INSTALLS"].includes(req.body.optimization_goal);
+  // Handle promoted_object based on optimization goal and campaign objective
+  // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-promoted-object
+  const optimizationGoal = req.body.optimization_goal;
 
-  if (requiresPromotedObject) {
-    // For conversion-based goals, promoted_object is required
-    if (!req.body.pixel_id || req.body.pixel_id.trim() === "" || !req.body.event_type) {
+  // Build promoted_object based on optimization goal requirements
+  if (optimizationGoal === "OFFSITE_CONVERSIONS") {
+    // CONVERSIONS objective - requires pixel_id and custom_event_type
+    if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
       return res.status(400).json({
-        error: "Please select a conversion event in the Conversion section for your ad set.",
-        missing_fields: {
-          pixel_id: !req.body.pixel_id || req.body.pixel_id.trim() === "",
-          event_type: !req.body.event_type,
-        },
+        error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.",
+        missing_fields: { pixel_id: true },
       });
     }
 
-    // Validate that pixel_id doesn't start with "act_" (common mistake)
+    if (!req.body.event_type) {
+      return res.status(400).json({
+        error: "Event type is required for OFFSITE_CONVERSIONS optimization goal.",
+        missing_fields: { event_type: true },
+      });
+    }
+
+    // Validate that pixel_id doesn't start with "act_"
     if (req.body.pixel_id.startsWith("act_")) {
       return res.status(400).json({
         error: "Invalid pixel ID. Please select a valid Meta Pixel from the dropdown.",
@@ -2057,8 +2063,71 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       pixel_id: req.body.pixel_id,
       custom_event_type: req.body.event_type,
     };
+  } else if (optimizationGoal === "LEAD_GENERATION") {
+    // LEAD_GENERATION - requires page_id
+    if (!req.body.page_id) {
+      return res.status(400).json({
+        error: "Page ID is required for LEAD_GENERATION optimization goal.",
+        missing_fields: { page_id: true },
+      });
+    }
+
+    payload.promoted_object = {
+      page_id: req.body.page_id,
+    };
+  } else if (optimizationGoal === "APP_INSTALLS") {
+    // APP_INSTALLS - requires application_id and object_store_url
+    if (!req.body.application_id || !req.body.object_store_url) {
+      return res.status(400).json({
+        error: "Application ID and Object Store URL are required for APP_INSTALLS optimization goal.",
+        missing_fields: {
+          application_id: !req.body.application_id,
+          object_store_url: !req.body.object_store_url,
+        },
+      });
+    }
+
+    payload.promoted_object = {
+      application_id: req.body.application_id,
+      object_store_url: req.body.object_store_url,
+    };
+
+    // Add custom_event_type if provided (for mobile app events)
+    if (req.body.event_type) {
+      payload.promoted_object.custom_event_type = req.body.event_type;
+    }
+  } else if (optimizationGoal === "LINK_CLICKS" && req.body.application_id && req.body.object_store_url) {
+    // LINK_CLICKS for mobile app or Canvas app engagement
+    payload.promoted_object = {
+      application_id: req.body.application_id,
+      object_store_url: req.body.object_store_url,
+    };
+  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS") {
+    // PAGE_LIKES or OFFER_CLAIMS - requires page_id
+    if (req.body.page_id) {
+      payload.promoted_object = {
+        page_id: req.body.page_id,
+      };
+    }
+  } else if (optimizationGoal === "PRODUCT_CATALOG_SALES") {
+    // PRODUCT_CATALOG_SALES - requires product_set_id
+    if (!req.body.product_set_id) {
+      return res.status(400).json({
+        error: "Product Set ID is required for PRODUCT_CATALOG_SALES optimization goal.",
+        missing_fields: { product_set_id: true },
+      });
+    }
+
+    payload.promoted_object = {
+      product_set_id: req.body.product_set_id,
+    };
+
+    // Add custom_event_type if provided
+    if (req.body.event_type) {
+      payload.promoted_object.custom_event_type = req.body.event_type;
+    }
   } else if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
-    // For other goals, add promoted_object if provided
+    // For other goals that optionally support conversion tracking
     if (!req.body.pixel_id.startsWith("act_")) {
       payload.promoted_object = {
         pixel_id: req.body.pixel_id,
