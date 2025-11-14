@@ -2126,7 +2126,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     if (req.body.event_type) {
       payload.promoted_object.custom_event_type = req.body.event_type;
     }
-  } else if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
+  } else if (optimizationGoal === "LINK_CLICKS" && req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
     // For other goals that optionally support conversion tracking
     if (!req.body.pixel_id.startsWith("act_")) {
       payload.promoted_object = {
