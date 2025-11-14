@@ -44,17 +44,12 @@
     </aside>
 
     <!-- Column 2 - Campaign -->
-    <!-- <div id="col-2" class="campaign-column" style="display:none">  -->
     <div id="col-2" class="campaign-column" style="display: none">
       <div class="campaign-title-wrapper">
         <h2>Select Campaign</h2>
         <a href="#" class="search-icon-btn"><img src="icons/search-icon.svg" alt="Search" /></a>
       </div>
       <button class="create-new-campaign-btn">+ Create New Campaign</button>
-      <div class="campaign-search-wrapper" style="display: none;">
-        <input type="text" class="campaign-search-input" placeholder="Search campaigns..." />
-        <button class="search-close-btn">✕</button>
-      </div>
     </div>
 
     <!-- Column 2.5 - Campaign Creation -->
@@ -67,7 +62,7 @@
         <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-objective">
-              <span class="dropdown-display placeholder">Campaign Objective*</span>
+              <span class="dropdown-display placeholder" placeholder="Campaign Objective*">Campaign Objective*</span>
               <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                   stroke-linejoin="round" />
@@ -88,7 +83,7 @@
         <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-status">
-              <span class="dropdown-display placeholder">Status*</span>
+              <span class="dropdown-display placeholder" placeholder="Status*">Status*</span>
               <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                   stroke-linejoin="round" />
@@ -101,15 +96,39 @@
           </div>
         </div>
 
-        <!-- Daily Budget (Optional) -->
-        <input type="number" placeholder="Daily Budget (Optional, e.g., 10 for $10)" class="config-campaign-budget"
-          step="0.01" min="0" />
+        <!-- Budget Options -->
+        <input type="number" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+          class="config-campaign-daily-budget" step="0.01" min="0" />
+        <input type="number" placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)"
+          class="config-campaign-lifetime-budget" step="0.01" min="0" />
+
+        <!-- Bid Strategy dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+              <span class="dropdown-display placeholder" placeholder="Bid Strategy (Optional)">Bid Strategy
+                (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-bid-strategy">
+              <li data-value="">None</li>
+              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+              <li data-value="COST_CAP">Cost Cap</li>
+              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+            </ul>
+          </div>
+        </div>
 
         <!-- Special Categories dropdown -->
         <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-special-categories">
-              <span class="dropdown-display placeholder">Special Ad Categories (Optional)</span>
+              <span class="dropdown-display placeholder" placeholder="Special Ad Categories (Optional)">Special Ad
+                Categories (Optional)</span>
               <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                   stroke-linejoin="round" />
@@ -117,10 +136,29 @@
             </div>
             <ul class="dropdown-options campaign-special-categories" data-multiple="true">
               <li data-value="">None - If none of the categories apply</li>
-              <li data-value="CREDIT">Financial products and services</li>
               <li data-value="EMPLOYMENT">Employment</li>
               <li data-value="HOUSING">Housing</li>
-              <li data-value="ISSUES_ELECTIONS_POLITICS">Social issues, elections or politics</li>
+              <li data-value="FINANCIAL_PRODUCTS_SERVICES">Financial Products & Services</li>
+              <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
+              <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Special Ad Category Country dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-country">
+              <span class="dropdown-display placeholder" placeholder="Special Ad Category Country (Optional)">Special Ad
+                Category Country (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-country" data-multiple="true">
+              <li data-value="">None</li>
+              <!-- Countries will be populated dynamically from fb-locations.json -->
             </ul>
           </div>
         </div>
@@ -190,7 +228,7 @@
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="pixel">
-                <span class="dropdown-display">Pixel*</span>
+                <span class="dropdown-display">Pixel</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -202,8 +240,8 @@
 
           <!-- Custom Event Type Selection -->
           <div class="event-type-container">
-            <input type="text" placeholder="Custom Event Type*" data-container="adset-form-container"
-              class="config-event-type" required readonly>
+            <input type="text" placeholder="Custom Event Type" data-container="adset-form-container"
+              class="config-event-type" readonly>
             <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
@@ -231,7 +269,7 @@
             <div class="country-selection">
               <div class="selected-countries-container">
                 <div class="selected-tags" id="selected-countries"></div>
-                <input type="text" placeholder="Type to search countries*" class="country-search-input"
+                <input type="text" placeholder="Search countries (please match with campaign)*" class="country-search-input"
                   data-container="adset-form-container" />
               </div>
               <ul class="country-suggestions" style="display: none;"></ul>
@@ -243,7 +281,7 @@
             <div class="region-selection">
               <div class="selected-regions-container">
                 <div class="selected-tags" id="selected-regions"></div>
-                <input type="text" placeholder="Type to search regions" class="region-search-input"
+                <input type="text" placeholder="Search regions" class="region-search-input"
                   data-container="adset-form-container" />
               </div>
               <ul class="region-suggestions" style="display: none;"></ul>
@@ -521,6 +559,32 @@
           </div>
         </div>
 
+        <!-- Budget Options -->
+        <input type="number" id="create-campaign-daily-budget" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+          step="0.01" min="0">
+        <input type="number" id="create-campaign-lifetime-budget"
+          placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)" step="0.01" min="0">
+
+        <!-- Bid Strategy dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+              <span class="dropdown-display">Bid Strategy (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-bid-strategy">
+              <li data-value="">None</li>
+              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+              <li data-value="COST_CAP">Cost Cap</li>
+              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-special-categories">
@@ -531,12 +595,29 @@
               </svg>
             </div>
             <ul class="dropdown-options campaign-special-categories" data-multiple="true">
-              <li data-value="">None</li>
-              <li data-value="CREDIT">Credit</li>
+              <li data-value="">None - If none of the categories apply</li>
               <li data-value="EMPLOYMENT">Employment</li>
               <li data-value="HOUSING">Housing</li>
+              <li data-value="FINANCIAL_PRODUCTS_SERVICES">Financial Products & Services</li>
               <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
               <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Special Ad Category Country dropdown -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-special-country">
+              <span class="dropdown-display">Special Ad Category Country (Optional)</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-special-country" data-multiple="true">
+              <li data-value="">None</li>
+              <!-- Countries will be populated dynamically from fb-locations.json -->
             </ul>
           </div>
         </div>

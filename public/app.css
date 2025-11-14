@@ -676,7 +676,7 @@ h2 {
   flex-shrink: 0;
 }
 
-.dropdown-selected.pen .dropdown-arrow {
+.dropdown-selected.open .dropdown-arrow {
   transform: rotate(180deg);
 }
 
@@ -720,6 +720,14 @@ h2 {
   background-color: #e8f2ff;
   color: #103dee;
 }
+
+/* Special Ad Category Country dropdown - limit height and make scrollable */
+.dropdown-options.campaign-special-country {
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Creative Upload */
 .creative-upload h2 {
   margin-bottom: 20px;
@@ -2736,4 +2744,8 @@ h2 {
   animation: spin 0.8s linear infinite;
   margin-left: 8px;
   vertical-align: middle;
+}
+
+.custom-dropdown.dropdown-is-open {
+  z-index: 2;
 }

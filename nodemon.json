@@ -1,0 +1,8 @@
+{
+  "watch": ["./server.js", "backend/", "public/"],
+  "ignore": ["uploads/", "data/", "node_modules/", "*.db"],
+  "ext": "js,json",
+  "delay": 500,
+  "verbose": true,
+  "legacyWatch": true
+}
