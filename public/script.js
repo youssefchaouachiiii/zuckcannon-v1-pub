@@ -1390,6 +1390,7 @@ class CustomDropdown {
     options.classList.add("show");
     selected.classList.add("open", "focused");
     selected.setAttribute("tabindex", "0");
+    dropdown.classList.add("dropdown-is-open");
   }
 
   closeDropdown(dropdown) {
@@ -1398,6 +1399,7 @@ class CustomDropdown {
 
     options.classList.remove("show");
     selected.classList.remove("open", "focused");
+    dropdown.classList.remove("dropdown-is-open");
   }
 
   closeAllDropdowns() {
