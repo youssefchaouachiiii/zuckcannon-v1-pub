@@ -400,12 +400,16 @@ function populatePixels(pixels) {
     if (pixelDropdownOptions.innerHTML === "") {
       pixelDropdownOptions.innerHTML = '<li style="opacity: 0.6; cursor: default;">No pixels available for your accounts</li>';
     }
+
+    // Re-attach event listeners after updating innerHTML
+    const pixelDropdownElement = pixelDropdownOptions.closest(".custom-dropdown");
+    if (pixelDropdownElement && pixelDropdownElement.customDropdownInstance) {
+      console.log("Re-attaching listeners for pixel dropdown");
+      attachDropdownOptionListeners(pixelDropdownElement);
+    }
   }
   pixelList = document.querySelectorAll(".pixel-option");
   console.log(`Populated ${pixelList.length} pixels`);
-
-  // Re-initialize the dropdown for pixels to attach event listeners
-  new CustomDropdown('.custom-dropdown[data-dropdown="pixel"]');
 }
 
 function populatePages(pages) {
@@ -1270,6 +1274,54 @@ class SingleSelectGroup {
   }
 }
 
+// This function will be called to attach listeners to dropdown options
+function attachDropdownOptionListeners(dropdown) {
+  const selected = dropdown.querySelector(".dropdown-selected");
+  const options = dropdown.querySelector(".dropdown-options");
+  const display = selected.querySelector(".dropdown-display");
+  const optionItems = options.querySelectorAll("li");
+  const dropdownType = selected.dataset.dropdown;
+
+  // The CustomDropdown instance, to call its methods
+  const dropdownInstance = dropdown.customDropdownInstance;
+
+  optionItems.forEach((option) => {
+    // Remove old listener to prevent duplicates
+    option.replaceWith(option.cloneNode(true));
+  });
+
+  // Re-query for the new nodes
+  const newOptionItems = options.querySelectorAll("li");
+
+  newOptionItems.forEach((option) => {
+    option.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const text = option.textContent;
+
+      // Update selected display
+      display.textContent = text;
+      display.classList.remove("placeholder");
+      dropdownInstance.setDropdownData(display, option, dropdownType);
+
+      // Update selected state
+      newOptionItems.forEach((opt) => opt.classList.remove("selected"));
+      option.classList.add("selected");
+
+      // Close dropdown
+      dropdownInstance.closeDropdown(dropdown);
+
+      // Remove empty input here instead of form validation classlist
+      display.parentElement.classList.remove("empty-input");
+      console.log(`Selected ${dropdownType}:`, text);
+
+      // Trigger validation check after dropdown selection
+      if (typeof checkRequiredFields === "function") {
+        checkRequiredFields();
+      }
+    });
+  });
+}
+
 class CustomDropdown {
   constructor(selector) {
     console.log("CustomDropdown constructor called with selector:", selector);
@@ -1280,20 +1332,24 @@ class CustomDropdown {
 
   init() {
     this.dropdowns.forEach((dropdown) => {
+      // Store a reference to the instance on the element itself
+      dropdown.customDropdownInstance = this;
+
       const selected = dropdown.querySelector(".dropdown-selected");
       const options = dropdown.querySelector(".dropdown-options");
-      const display = selected.querySelector(".dropdown-display");
-      const optionItems = options.querySelectorAll("li");
-      const dropdownType = selected.dataset.dropdown;
 
       // Check for preselected option
       const preselectedOption = options.querySelector("li.selected");
       if (preselectedOption) {
+        const display = selected.querySelector(".dropdown-display");
         display.textContent = preselectedOption.textContent;
-        this.setDropdownData(display, preselectedOption, dropdownType);
+        this.setDropdownData(display, preselectedOption, selected.dataset.dropdown);
       } else {
         // Set initial placeholder state only if no option is preselected
-        display.classList.add("placeholder");
+        const display = selected.querySelector(".dropdown-display");
+        if (display) {
+          display.classList.add("placeholder");
+        }
       }
 
       // Toggle dropdown
@@ -1308,34 +1364,8 @@ class CustomDropdown {
         }
       });
 
-      // Handle option selection
-      optionItems.forEach((option) => {
-        option.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const text = option.textContent;
-
-          // Update selected display
-          display.textContent = text;
-          display.classList.remove("placeholder");
-          this.setDropdownData(display, option, dropdownType);
-
-          // Update selected state
-          optionItems.forEach((opt) => opt.classList.remove("selected"));
-          option.classList.add("selected");
-
-          // Close dropdown
-          this.closeDropdown(dropdown);
-
-          // Remove empty input here instead of form validation classlist
-          display.parentElement.classList.remove("empty-input");
-          console.log(`Selected ${dropdownType}:`, text);
-
-          // Trigger validation check after dropdown selection
-          if (typeof checkRequiredFields === "function") {
-            checkRequiredFields();
-          }
-        });
-      });
+      // Attach option listeners
+      attachDropdownOptionListeners(dropdown);
 
       // Handle keyboard navigation
       selected.addEventListener("keydown", (e) => {
