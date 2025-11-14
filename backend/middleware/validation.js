@@ -47,7 +47,7 @@ export const validateRequest = {
 
   // Validate campaign creation
   createCampaign: (req, res, next) => {
-    const requiredFields = ["account_id", "name", "objective", "status"];
+    const requiredFields = ["account_id", "name", "objective"];
     const missingFields = requiredFields.filter((field) => !req.body[field]);
 
     if (missingFields.length > 0) {
@@ -56,24 +56,29 @@ export const validateRequest = {
       });
     }
 
-    // Validate objective
+    // Validate objective - updated with all Meta API objectives
     const validObjectives = [
+      "APP_INSTALLS",
+      "BRAND_AWARENESS",
+      "CONVERSIONS",
+      "EVENT_RESPONSES",
+      "LEAD_GENERATION",
+      "LINK_CLICKS",
+      "LOCAL_AWARENESS",
+      "MESSAGES",
+      "OFFER_CLAIMS",
       "OUTCOME_APP_PROMOTION",
       "OUTCOME_AWARENESS",
       "OUTCOME_ENGAGEMENT",
       "OUTCOME_LEADS",
       "OUTCOME_SALES",
       "OUTCOME_TRAFFIC",
-      "LINK_CLICKS",
       "PAGE_LIKES",
       "POST_ENGAGEMENT",
-      "CONVERSIONS",
-      "APP_INSTALLS",
-      "VIDEO_VIEWS",
-      "LEAD_GENERATION",
+      "PRODUCT_CATALOG_SALES",
       "REACH",
-      "BRAND_AWARENESS",
-      "MESSAGES",
+      "STORE_VISITS",
+      "VIDEO_VIEWS",
     ];
 
     if (!validObjectives.includes(req.body.objective)) {
@@ -84,7 +89,7 @@ export const validateRequest = {
 
     // Validate status
     const validStatuses = ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED"];
-    if (!validStatuses.includes(req.body.status)) {
+    if (req.body.status && !validStatuses.includes(req.body.status)) {
       return res.status(400).json({
         error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
       });
@@ -106,6 +111,11 @@ export const validateRequest = {
       });
     }
 
+    // Validate spend_cap if provided
+    if (req.body.spend_cap && isNaN(parseInt(req.body.spend_cap))) {
+      return res.status(400).json({ error: "spend_cap must be a valid integer" });
+    }
+
     // Validate special_ad_categories if provided
     if (req.body.special_ad_categories) {
       if (!Array.isArray(req.body.special_ad_categories)) {
@@ -114,7 +124,22 @@ export const validateRequest = {
         });
       }
 
-      const validCategories = ["CREDIT", "EMPLOYMENT", "HOUSING", "ISSUES_ELECTIONS_POLITICS", "ONLINE_GAMBLING_AND_GAMING"];
+      const validCategories = [
+        "NONE",
+        "EMPLOYMENT",
+        "HOUSING",
+        "FINANCIAL_PRODUCTS_SERVICES",
+        "ISSUES_ELECTIONS_POLITICS",
+        "ONLINE_GAMBLING_AND_GAMING",
+      ];
+      
+      // Check for deprecated CREDIT category
+      if (req.body.special_ad_categories.includes("CREDIT")) {
+        return res.status(400).json({
+          error: "The CREDIT special ad category is no longer available. Use FINANCIAL_PRODUCTS_SERVICES instead.",
+        });
+      }
+
       const invalidCategories = req.body.special_ad_categories.filter((cat) => !validCategories.includes(cat));
 
       if (invalidCategories.length > 0) {
@@ -124,12 +149,193 @@ export const validateRequest = {
       }
     }
 
+    // Validate bid_strategy if provided
+    if (req.body.bid_strategy) {
+      const validStrategies = ["LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP", "LOWEST_COST_WITH_MIN_ROAS"];
+      if (!validStrategies.includes(req.body.bid_strategy)) {
+        return res.status(400).json({
+          error: `Invalid bid_strategy. Must be one of: ${validStrategies.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate special_ad_category_country if provided
+    if (req.body.special_ad_category_country) {
+      if (!Array.isArray(req.body.special_ad_category_country)) {
+        return res.status(400).json({
+          error: "special_ad_category_country must be an array",
+        });
+      }
+      
+      const validCountries = [
+        "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX", "AZ",
+        "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY", "BZ",
+        "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ",
+        "DE", "DJ", "DK", "DM", "DO", "DZ",
+        "EC", "EE", "EG", "EH", "ER", "ES", "ET",
+        "FI", "FJ", "FK", "FM", "FO", "FR",
+        "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY",
+        "HK", "HM", "HN", "HR", "HT", "HU",
+        "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT",
+        "JE", "JM", "JO", "JP",
+        "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ",
+        "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY",
+        "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ",
+        "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ",
+        "OM",
+        "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY",
+        "QA",
+        "RE", "RO", "RS", "RU", "RW",
+        "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ",
+        "TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ",
+        "UA", "UG", "UM", "US", "UY", "UZ",
+        "VA", "VC", "VE", "VG", "VI", "VN", "VU",
+        "WF", "WS",
+        "YE", "YT",
+        "ZA", "ZM", "ZW"
+      ];
+      
+      const invalidCountries = req.body.special_ad_category_country.filter((cc) => !validCountries.includes(cc));
+      if (invalidCountries.length > 0) {
+        return res.status(400).json({
+          error: `Invalid country codes: ${invalidCountries.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate special_ad_category (singular) if provided
+    if (req.body.special_ad_category) {
+      const validCategories = [
+        "NONE",
+        "EMPLOYMENT",
+        "HOUSING",
+        "FINANCIAL_PRODUCTS_SERVICES",
+        "ISSUES_ELECTIONS_POLITICS",
+        "ONLINE_GAMBLING_AND_GAMING",
+      ];
+
+      // Check for deprecated CREDIT category
+      if (req.body.special_ad_category === "CREDIT") {
+        return res.status(400).json({
+          error: "The CREDIT special ad category is no longer available. Use FINANCIAL_PRODUCTS_SERVICES instead.",
+        });
+      }
+
+      if (!validCategories.includes(req.body.special_ad_category)) {
+        return res.status(400).json({
+          error: `Invalid special_ad_category. Must be one of: ${validCategories.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate that special_ad_category_country is provided when special_ad_categories are selected
+    // Per Meta's API requirement: When any special_ad_categories are selected, you must also set a special_ad_category_country
+    const hasSpecialCategoriesArray =
+      req.body.special_ad_categories &&
+      req.body.special_ad_categories.length > 0 &&
+      !(req.body.special_ad_categories.length === 1 && req.body.special_ad_categories[0] === "NONE");
+
+    const hasSpecialCategorySingular =
+      req.body.special_ad_category &&
+      req.body.special_ad_category !== "NONE";
+
+    const hasSpecialCategories = hasSpecialCategoriesArray || hasSpecialCategorySingular;
+
+    if (hasSpecialCategories) {
+      if (!req.body.special_ad_category_country || req.body.special_ad_category_country.length === 0) {
+        return res.status(400).json({
+          error: "Special Ad Category Country is required when Special Ad Categories are selected. Please select at least one country for your special ad category targeting.",
+        });
+      }
+    }
+
+    // Validate campaign_optimization_type if provided
+    if (req.body.campaign_optimization_type) {
+      const validTypes = ["NONE", "ICO_ONLY"];
+      if (!validTypes.includes(req.body.campaign_optimization_type)) {
+        return res.status(400).json({
+          error: `Invalid campaign_optimization_type. Must be one of: ${validTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate execution_options if provided
+    if (req.body.execution_options) {
+      if (!Array.isArray(req.body.execution_options)) {
+        return res.status(400).json({
+          error: "execution_options must be an array",
+        });
+      }
+      const validOptions = ["validate_only", "include_recommendations"];
+      const invalidOptions = req.body.execution_options.filter((opt) => !validOptions.includes(opt));
+      if (invalidOptions.length > 0) {
+        return res.status(400).json({
+          error: `Invalid execution_options: ${invalidOptions.join(", ")}. Must be one of: ${validOptions.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate adset_budgets if provided
+    if (req.body.adset_budgets) {
+      if (!Array.isArray(req.body.adset_budgets)) {
+        return res.status(400).json({
+          error: "adset_budgets must be an array",
+        });
+      }
+      // Validate each budget object
+      for (const budget of req.body.adset_budgets) {
+        if (!budget.adset_id) {
+          return res.status(400).json({
+            error: "Each adset_budgets entry must have an adset_id",
+          });
+        }
+        if (!budget.daily_budget && !budget.lifetime_budget) {
+          return res.status(400).json({
+            error: "Each adset_budgets entry must have either daily_budget or lifetime_budget",
+          });
+        }
+      }
+    }
+
+    // Validate adset_bid_amounts if provided
+    if (req.body.adset_bid_amounts) {
+      if (typeof req.body.adset_bid_amounts !== "object" || Array.isArray(req.body.adset_bid_amounts)) {
+        return res.status(400).json({
+          error: "adset_bid_amounts must be a JSON object mapping adset IDs to bid amounts",
+        });
+      }
+    }
+
+    // Validate boolean flags
+    const booleanFields = [
+      "budget_rebalance_flag",
+      "is_adset_budget_sharing_enabled",
+      "is_skadnetwork_attribution",
+      "is_using_l3_schedule",
+    ];
+    for (const field of booleanFields) {
+      if (req.body[field] !== undefined && typeof req.body[field] !== "boolean") {
+        return res.status(400).json({
+          error: `${field} must be a boolean value`,
+        });
+      }
+    }
+
+    // Validate start_time and stop_time if provided
+    if (req.body.start_time && isNaN(Date.parse(req.body.start_time))) {
+      return res.status(400).json({ error: "start_time must be a valid datetime" });
+    }
+
+    if (req.body.stop_time && isNaN(Date.parse(req.body.stop_time))) {
+      return res.status(400).json({ error: "stop_time must be a valid datetime" });
+    }
+
     next();
   },
 
   // Validate ad set creation
   createAdSet: (req, res, next) => {
-    const requiredFields = ["account_id", "campaign_id", "name", "optimization_goal", "billing_event"];
+    const requiredFields = ["account_id", "campaign_id", "name", "optimization_goal", "billing_event", "status"];
     const missingFields = requiredFields.filter((field) => !req.body[field]);
 
     if (missingFields.length > 0) {
@@ -138,13 +344,192 @@ export const validateRequest = {
       });
     }
 
-    // Validate budget
-    if (req.body.daily_budget && isNaN(parseFloat(req.body.daily_budget))) {
-      return res.status(400).json({ error: "daily_budget must be a valid number" });
+    // Budget validation - Note: Budget is optional for ad sets when using Campaign Budget Optimization (CBO)
+    // Meta API allows ad sets without budget when the campaign has budget optimization enabled
+    // Only validate budget if provided
+    if (req.body.daily_budget || req.body.lifetime_budget) {
+      // Validate budget values if provided
+      if (req.body.daily_budget && isNaN(parseFloat(req.body.daily_budget))) {
+        return res.status(400).json({ error: "daily_budget must be a valid number" });
+      }
+
+      if (req.body.lifetime_budget && isNaN(parseFloat(req.body.lifetime_budget))) {
+        return res.status(400).json({ error: "lifetime_budget must be a valid number" });
+      }
+
+      // Validate that both budget types are not provided at the same time
+      if (req.body.daily_budget && req.body.lifetime_budget) {
+        return res.status(400).json({
+          error: "Cannot specify both daily_budget and lifetime_budget",
+        });
+      }
+
+      // Validate budget is greater than 0
+      if (req.body.daily_budget && parseFloat(req.body.daily_budget) <= 0) {
+        return res.status(400).json({
+          error: "daily_budget must be greater than 0",
+        });
+      }
+
+      if (req.body.lifetime_budget && parseFloat(req.body.lifetime_budget) <= 0) {
+        return res.status(400).json({
+          error: "lifetime_budget must be greater than 0",
+        });
+      }
+
+      // Validate end_time is required when lifetime_budget is specified
+      if (req.body.lifetime_budget && !req.body.end_time) {
+        return res.status(400).json({
+          error: "end_time is required when using lifetime_budget",
+        });
+      }
     }
 
-    if (req.body.lifetime_budget && isNaN(parseFloat(req.body.lifetime_budget))) {
-      return res.status(400).json({ error: "lifetime_budget must be a valid number" });
+    // Validate status
+    const validStatuses = ["ACTIVE", "PAUSED"];
+    if (!validStatuses.includes(req.body.status)) {
+      return res.status(400).json({
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    // Validate optimization_goal
+    const validOptimizationGoals = [
+      "NONE",
+      "APP_INSTALLS",
+      "AD_RECALL_LIFT",
+      "ENGAGED_USERS",
+      "EVENT_RESPONSES",
+      "IMPRESSIONS",
+      "LEAD_GENERATION",
+      "QUALITY_LEAD",
+      "LINK_CLICKS",
+      "OFFSITE_CONVERSIONS",
+      "PAGE_LIKES",
+      "POST_ENGAGEMENT",
+      "QUALITY_CALL",
+      "REACH",
+      "LANDING_PAGE_VIEWS",
+      "VISIT_INSTAGRAM_PROFILE",
+      "VALUE",
+      "THRUPLAY",
+      "DERIVED_EVENTS",
+      "APP_INSTALLS_AND_OFFSITE_CONVERSIONS",
+      "CONVERSATIONS",
+      "IN_APP_VALUE",
+      "MESSAGING_PURCHASE_CONVERSION",
+      "SUBSCRIBERS",
+      "REMINDERS_SET",
+      "MEANINGFUL_CALL_ATTEMPT",
+      "PROFILE_VISIT",
+      "MESSAGING_APPOINTMENT_CONVERSION",
+    ];
+
+    if (!validOptimizationGoals.includes(req.body.optimization_goal)) {
+      return res.status(400).json({
+        error: `Invalid optimization_goal. Must be one of: ${validOptimizationGoals.join(", ")}`,
+      });
+    }
+
+    // Validate billing_event
+    const validBillingEvents = [
+      "APP_INSTALLS",
+      "CLICKS",
+      "IMPRESSIONS",
+      "LINK_CLICKS",
+      "NONE",
+      "OFFER_CLAIMS",
+      "PAGE_LIKES",
+      "POST_ENGAGEMENT",
+      "THRUPLAY",
+      "PURCHASE",
+      "LISTING_INTERACTION",
+    ];
+
+    if (!validBillingEvents.includes(req.body.billing_event)) {
+      return res.status(400).json({
+        error: `Invalid billing_event. Must be one of: ${validBillingEvents.join(", ")}`,
+      });
+    }
+
+    // Validate bid_strategy if provided
+    if (req.body.bid_strategy) {
+      const validBidStrategies = [
+        "LOWEST_COST_WITHOUT_CAP",
+        "LOWEST_COST_WITH_BID_CAP",
+        "COST_CAP",
+        "LOWEST_COST_WITH_MIN_ROAS",
+      ];
+
+      if (!validBidStrategies.includes(req.body.bid_strategy)) {
+        return res.status(400).json({
+          error: `Invalid bid_strategy. Must be one of: ${validBidStrategies.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate destination_type if provided
+    if (req.body.destination_type) {
+      const validDestinationTypes = [
+        "WEBSITE",
+        "APP",
+        "MESSENGER",
+        "APPLINKS_AUTOMATIC",
+        "WHATSAPP",
+        "INSTAGRAM_DIRECT",
+        "FACEBOOK",
+        "ON_AD",
+        "ON_POST",
+        "ON_VIDEO",
+        "ON_PAGE",
+        "INSTAGRAM_PROFILE",
+        "MESSAGING_MESSENGER_WHATSAPP",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+        "SHOP_AUTOMATIC",
+      ];
+
+      if (!validDestinationTypes.includes(req.body.destination_type)) {
+        return res.status(400).json({
+          error: `Invalid destination_type. Must be one of: ${validDestinationTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate start_time and end_time if provided
+    if (req.body.start_time && isNaN(Date.parse(req.body.start_time))) {
+      return res.status(400).json({ error: "start_time must be a valid ISO 8601 datetime" });
+    }
+
+    if (req.body.end_time && isNaN(Date.parse(req.body.end_time))) {
+      return res.status(400).json({ error: "end_time must be a valid ISO 8601 datetime" });
+    }
+
+    // Validate age targeting if provided
+    if (req.body.min_age !== undefined) {
+      const minAge = parseInt(req.body.min_age);
+      if (isNaN(minAge) || minAge < 13 || minAge > 65) {
+        return res.status(400).json({
+          error: "min_age must be a number between 13 and 65",
+        });
+      }
+    }
+
+    if (req.body.max_age !== undefined) {
+      const maxAge = parseInt(req.body.max_age);
+      if (isNaN(maxAge) || maxAge < 13 || maxAge > 65) {
+        return res.status(400).json({
+          error: "max_age must be a number between 13 and 65",
+        });
+      }
+    }
+
+    if (req.body.min_age && req.body.max_age) {
+      if (parseInt(req.body.min_age) > parseInt(req.body.max_age)) {
+        return res.status(400).json({
+          error: "min_age cannot be greater than max_age",
+        });
+      }
     }
 
     next();

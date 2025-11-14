@@ -4,16 +4,20 @@ services:
   app:
     build: .
     ports:
-      - "6969:6969"
+      - "6970:6970"
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
-      - FRONTEND_URL=https://adgen.sigmagrowthpartners.com
+      - NODE_ENV=development
+      - FRONTEND_URL=https://staging-adgen.sigmagrowthpartners.com
     volumes:
+      - .:/usr/src/app
       - app_data:/data
+      - /usr/src/app/node_modules
     networks:
       - shared_n8n
+    command: sh -c "npm install && npm run dev"
+
 
 networks:
   shared_n8n:

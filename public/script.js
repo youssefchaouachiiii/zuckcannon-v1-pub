@@ -3,6 +3,122 @@ let pixelList;
 let campaignAdSets = {};
 let campaignSelectGroup = null; // Store the SingleSelectGroup instance for campaigns
 
+// ============================================
+// CAMPAIGN OBJECTIVE TO OPTIMIZATION GOAL MAPPING
+// ============================================
+
+/**
+ * Map campaign objective to appropriate optimization goal for ad sets
+ * Based on Meta's campaign objectives and compatible optimization goals
+ */
+function getOptimizationGoalFromObjective(objective) {
+  const objectiveMapping = {
+    // Awareness objectives
+    'OUTCOME_AWARENESS': 'REACH',
+    'BRAND_AWARENESS': 'REACH',
+    'REACH': 'REACH',
+
+    // Traffic objectives
+    'OUTCOME_TRAFFIC': 'LINK_CLICKS',
+    'LINK_CLICKS': 'LINK_CLICKS',
+
+    // Engagement objectives
+    'OUTCOME_ENGAGEMENT': 'POST_ENGAGEMENT',
+    'POST_ENGAGEMENT': 'POST_ENGAGEMENT',
+    'VIDEO_VIEWS': 'VIDEO_VIEWS',
+
+    // Leads objectives
+    'OUTCOME_LEADS': 'LEAD_GENERATION',
+    'LEAD_GENERATION': 'LEAD_GENERATION',
+
+    // Sales/Conversion objectives
+    'OUTCOME_SALES': 'OFFSITE_CONVERSIONS',
+    'CONVERSIONS': 'OFFSITE_CONVERSIONS',
+
+    // App promotion objectives
+    'OUTCOME_APP_PROMOTION': 'APP_INSTALLS',
+    'APP_INSTALLS': 'APP_INSTALLS',
+    'MOBILE_APP_ENGAGEMENT': 'APP_INSTALLS',
+
+    // Store traffic
+    'STORE_VISITS': 'VISIT_INSTAGRAM_PROFILE'
+  };
+
+  // Return mapped optimization goal or default to LINK_CLICKS as a safe fallback
+  return objectiveMapping[objective] || 'LINK_CLICKS';
+}
+
+/**
+ * Update the visibility and requirement of pixel/event type fields based on optimization goal
+ * Only OFFSITE_CONVERSIONS requires pixel_id + custom_event_type
+ */
+function updateConversionFieldsVisibility(optimizationGoal) {
+  const pixelDropdownContainer = document.querySelector('.dropdown-container .custom-dropdown .dropdown-selected[data-dropdown="pixel"]');
+  const eventTypeContainer = document.querySelector('.event-type-container');
+  const pixelDisplay = pixelDropdownContainer ? pixelDropdownContainer.querySelector('.dropdown-display') : null;
+  const eventTypeInput = document.querySelector('.config-event-type');
+
+  const requiresPixelAndEvent = optimizationGoal === 'OFFSITE_CONVERSIONS';
+
+  // Update placeholder text to indicate if required
+  if (pixelDisplay) {
+    pixelDisplay.textContent = requiresPixelAndEvent ? 'Pixel*' : 'Pixel';
+  }
+
+  if (eventTypeInput) {
+    eventTypeInput.placeholder = requiresPixelAndEvent ? 'Custom Event Type*' : 'Custom Event Type';
+  }
+
+  // Show/hide conversion fields based on requirement
+  // For now, always show them but mark as optional unless required
+  if (pixelDropdownContainer) {
+    pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? '1' : '0.7';
+  }
+
+  if (eventTypeContainer) {
+    eventTypeContainer.style.opacity = requiresPixelAndEvent ? '1' : '0.7';
+  }
+
+  console.log(`Conversion fields ${requiresPixelAndEvent ? 'required' : 'optional'} for optimization goal: ${optimizationGoal}`);
+
+  // Don't trigger checkRequiredFields here to avoid infinite recursion
+  // checkRequiredFields will call this function if needed
+}
+
+// ============================================
+// ERROR HANDLING UTILITIES
+// ============================================
+
+/**
+ * Extract user-friendly error message from response or error object
+ * Priority: error_user_msg > message > error > default
+ */
+async function extractErrorMessage(responseOrError) {
+  try {
+    // If it's an error object
+    if (responseOrError instanceof Error) {
+      return responseOrError.message || "An error occurred. Please try again.";
+    }
+
+    // If it's a Response object
+    if (responseOrError instanceof Response) {
+      const cloned = responseOrError.clone();
+      const data = await cloned.json().catch(() => ({}));
+      return data.error_user_msg || data.message || data.error || "An error occurred. Please try again.";
+    }
+
+    // If it's already a parsed object
+    if (typeof responseOrError === "object") {
+      return responseOrError.error_user_msg || responseOrError.message || responseOrError.error || "An error occurred. Please try again.";
+    }
+
+    // Fallback
+    return String(responseOrError) || "An error occurred. Please try again.";
+  } catch (err) {
+    return "An error occurred. Please try again.";
+  }
+}
+
 // Check authentication status on page load
 async function checkAuthStatus() {
   try {
@@ -214,7 +330,7 @@ function populateCampaigns(campaigns) {
 
     if (campaign.insights) {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${campaign.id}" data-special-ad-categories='${JSON.stringify(
+          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ''}" data-lifetime-budget="${campaign.lifetime_budget || ''}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${campaign.id}" data-objective="${campaign.objective || ''}" data-special-ad-categories='${JSON.stringify(
         campaign.special_ad_categories
       )}'>
           <h3>${campaign.name}</h3>
@@ -226,7 +342,7 @@ function populateCampaigns(campaigns) {
         </div>`;
     } else {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget}" data-bid-strategy="${campaign.bid_strategy}" data-special-ad-categories='${JSON.stringify(
+        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ''}" data-lifetime-budget="${campaign.lifetime_budget || ''}" data-bid-strategy="${campaign.bid_strategy}" data-objective="${campaign.objective || ''}" data-special-ad-categories='${JSON.stringify(
         campaign.special_ad_categories
       )}'>
         <h3>${campaign.name}</h3>
@@ -284,6 +400,13 @@ function populatePixels(pixels) {
     if (pixelDropdownOptions.innerHTML === "") {
       pixelDropdownOptions.innerHTML = '<li style="opacity: 0.6; cursor: default;">No pixels available for your accounts</li>';
     }
+
+    // Re-attach event listeners after updating innerHTML
+    const pixelDropdownElement = pixelDropdownOptions.closest(".custom-dropdown");
+    if (pixelDropdownElement && pixelDropdownElement.customDropdownInstance) {
+      console.log("Re-attaching listeners for pixel dropdown");
+      attachDropdownOptionListeners(pixelDropdownElement);
+    }
   }
   pixelList = document.querySelectorAll(".pixel-option");
   console.log(`Populated ${pixelList.length} pixels`);
@@ -302,6 +425,47 @@ function populatePages(pages) {
   });
 }
 
+// Populate campaign special ad category country dropdowns from fb-locations.json
+function populateSpecialAdCountries() {
+  const fbData = appState.getState().fbLocationsData;
+
+  if (!fbData || !fbData.countries) {
+    console.warn("FB locations data not available for country population");
+    return;
+  }
+
+  // Find all campaign special country dropdown lists
+  const countryDropdowns = document.querySelectorAll(".dropdown-options.campaign-special-country");
+
+  countryDropdowns.forEach((dropdown) => {
+    // Keep the "None" option and add all countries
+    const noneOption = dropdown.querySelector('[data-value=""]');
+
+    // Clear all options except "None"
+    dropdown.innerHTML = "";
+    if (noneOption) {
+      dropdown.appendChild(noneOption);
+    } else {
+      const newNoneOption = document.createElement("li");
+      newNoneOption.setAttribute("data-value", "");
+      newNoneOption.textContent = "None";
+      dropdown.appendChild(newNoneOption);
+    }
+
+    // Add all countries sorted alphabetically
+    const sortedCountries = [...fbData.countries].sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedCountries.forEach((country) => {
+      const li = document.createElement("li");
+      li.setAttribute("data-value", country.country_code);
+      li.textContent = country.name;
+      dropdown.appendChild(li);
+    });
+  });
+
+  console.log("Populated special ad category country dropdowns with", fbData.countries.length, "countries");
+}
+
 // Main app initialization
 async function init() {
   try {
@@ -317,6 +481,7 @@ async function init() {
     populateCampaigns(metaResponse.campaigns);
     populatePixels(metaResponse.pixels);
     populatePages(metaResponse.pages);
+    populateSpecialAdCountries();
 
     initializeCampaignSearch();
     initializeGeoSelection();
@@ -340,7 +505,8 @@ function clearAdSetForm() {
 
   const pixelDisplay = document.querySelector('.dropdown-selected[data-dropdown="pixel"] .dropdown-display');
   if (pixelDisplay) {
-    pixelDisplay.textContent = "Pixel*";
+    // Don't hardcode asterisk - let updateConversionFieldsVisibility handle it based on optimization goal
+    pixelDisplay.textContent = "Pixel";
     pixelDisplay.classList.add("placeholder");
     delete pixelDisplay.dataset.pixelid;
     delete pixelDisplay.dataset.pixelAccountId;
@@ -461,6 +627,7 @@ class SingleSelectGroup {
             appState.updateState("selectedCampaign", clickedItem.dataset.campaignId);
             appState.updateState("campaignBidStrategy", clickedItem.dataset.bidStrategy);
             appState.updateState("campaignDailyBudget", clickedItem.dataset.dailyBudget);
+            appState.updateState("campaignLifetimeBudget", clickedItem.dataset.lifetimeBudget);
 
             // update campaign id in ad set config
             const configCampaignId = document.querySelector(".config-campaign-id");
@@ -468,7 +635,25 @@ class SingleSelectGroup {
               configCampaignId.value = appState.getState().selectedCampaign;
             }
 
-            this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget);
+            // Set optimization goal based on campaign objective
+            const campaignObjective = clickedItem.dataset.objective;
+            if (campaignObjective) {
+              const optimizationGoal = getOptimizationGoalFromObjective(campaignObjective);
+              const configOptimizationGoal = document.querySelector(".config-optimization-goal");
+              if (configOptimizationGoal) {
+                configOptimizationGoal.value = optimizationGoal;
+                console.log(`Set optimization goal to ${optimizationGoal} based on campaign objective ${campaignObjective}`);
+
+                // Update pixel/event type UI based on optimization goal
+                updateConversionFieldsVisibility(optimizationGoal);
+              }
+            }
+
+            this.adjustConfigSettings(
+              appState.getState().campaignBidStrategy,
+              appState.getState().campaignDailyBudget,
+              appState.getState().campaignLifetimeBudget
+            );
 
             // Show/hide age and geo fields based on special_ad_categories
             const specialAdCategories = JSON.parse(clickedItem.dataset.specialAdCategories || "[]");
@@ -575,14 +760,19 @@ class SingleSelectGroup {
     }
   }
 
-  adjustConfigSettings(bidStrategy, campaignDailyBudget) {
+  adjustConfigSettings(bidStrategy, campaignDailyBudget, campaignLifetimeBudget) {
     const dailyBudget = document.querySelector(".config-daily-budget");
     const dailyBudgetWrapper = document.querySelector(".budget-input-wrapper.daily-budget");
     const configBidStrategy = document.querySelector(".config-bid-strategy");
     const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
     const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
 
-    if (campaignDailyBudget === "undefined" && bidStrategy === "undefined") {
+    // Determine if campaign has CBO (Campaign Budget Optimization)
+    const hasCBO = (campaignDailyBudget && campaignDailyBudget !== "undefined") ||
+                   (campaignLifetimeBudget && campaignLifetimeBudget !== "undefined");
+
+    if (!hasCBO && bidStrategy === "undefined") {
+      // No CBO - Ad set needs its own budget
       configBidStrategy.value = "LOWEST_COST_WITHOUT_CAP";
 
       dailyBudgetWrapper.style.display = "flex";
@@ -591,6 +781,7 @@ class SingleSelectGroup {
       costPerResultWrapper.style.display = "none";
       costPerResultGoal.removeAttribute("required");
     } else if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
+      // Cost cap or bid cap strategy - show cost per result
       configBidStrategy.value = bidStrategy;
 
       dailyBudgetWrapper.style.display = "none";
@@ -598,10 +789,8 @@ class SingleSelectGroup {
 
       costPerResultWrapper.style.display = "flex";
       costPerResultGoal.setAttribute("required", "");
-    }
-
-    // handle max conversion CBO
-    else if (campaignDailyBudget !== "undefined" && bidStrategy === "LOWEST_COST_WITHOUT_CAP") {
+    } else if (hasCBO && bidStrategy === "LOWEST_COST_WITHOUT_CAP") {
+      // Campaign has CBO (daily or lifetime) - hide ad set budget fields
       configBidStrategy.value = bidStrategy;
 
       dailyBudgetWrapper.style.display = "none";
@@ -610,6 +799,14 @@ class SingleSelectGroup {
       costPerResultWrapper.style.display = "none";
       costPerResultGoal.removeAttribute("required");
     }
+
+    // Log for debugging
+    console.log("Campaign budget config:", {
+      bidStrategy,
+      campaignDailyBudget,
+      campaignLifetimeBudget,
+      hasCBO,
+    });
 
     // Trigger validation check after adjusting settings
     if (typeof checkRequiredFields === "function") {
@@ -966,14 +1163,20 @@ class SingleSelectGroup {
         }),
       });
 
+      if (response.ok) {
+        window.showSuccess(`Ad set has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
+      }
+
       if (!response.ok) {
         let errorMessage = "Failed to duplicate ad set";
 
         try {
           const errorData = await response.json();
 
-          // Provide specific, actionable error messages
-          if (response.status === 403 && errorData.needsAuth) {
+          // Priority: error_user_msg > error > details > generic
+          if (errorData.error_user_msg) {
+            errorMessage = errorData.error_user_msg;
+          } else if (response.status === 403 && errorData.needsAuth) {
             errorMessage = "Please reconnect your Facebook account to continue";
           } else if (response.status === 403) {
             errorMessage = "Authentication failed. Please log in again.";
@@ -1055,8 +1258,8 @@ class SingleSelectGroup {
     } catch (error) {
       console.error("Error duplicating ad set:", error);
 
-      // Display user-friendly error message
-      const errorMessage = error.message || "Failed to duplicate ad set. Please try again.";
+      // Display user-friendly error message (extract from error_user_msg if available)
+      const errorMessage = await extractErrorMessage(error);
 
       if (window.showError) {
         window.showError(errorMessage, 5000);
@@ -1071,6 +1274,57 @@ class SingleSelectGroup {
   }
 }
 
+// This function will be called to attach listeners to dropdown options
+function attachDropdownOptionListeners(dropdown) {
+  const selected = dropdown.querySelector(".dropdown-selected");
+  const options = dropdown.querySelector(".dropdown-options");
+  const display = selected.querySelector(".dropdown-display");
+  const optionItems = options.querySelectorAll("li");
+  const dropdownType = selected.dataset.dropdown;
+
+  // The CustomDropdown instance, to call its methods
+  const dropdownInstance = dropdown.customDropdownInstance;
+
+  // If there's no instance, we can't attach listeners that depend on it.
+  if (!dropdownInstance) {
+    console.warn("Cannot attach listeners: CustomDropdown instance not found on element.", dropdown);
+    return;
+  }
+
+  optionItems.forEach((option) => {
+    // Check for a flag to prevent adding duplicate listeners
+    if (option.listenerAttached) {
+      return;
+    }
+
+    option.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const text = option.textContent;
+
+      // Update selected display
+      display.textContent = text;
+      display.classList.remove("placeholder");
+      dropdownInstance.setDropdownData(display, option, dropdownType);
+
+      // Re-query here to handle dynamically added/removed items
+      const currentOptions = options.querySelectorAll("li");
+      currentOptions.forEach((opt) => opt.classList.remove("selected"));
+      option.classList.add("selected");
+
+      dropdownInstance.closeDropdown(dropdown);
+
+      display.parentElement.classList.remove("empty-input");
+      console.log(`Selected ${dropdownType}:`, text);
+
+      if (typeof checkRequiredFields === "function") {
+        checkRequiredFields();
+      }
+    });
+    // Set the flag
+    option.listenerAttached = true;
+  });
+}
+
 class CustomDropdown {
   constructor(selector) {
     console.log("CustomDropdown constructor called with selector:", selector);
@@ -1081,21 +1335,24 @@ class CustomDropdown {
 
   init() {
     this.dropdowns.forEach((dropdown) => {
+      // Store a reference to the instance on the element itself
+      dropdown.customDropdownInstance = this;
+
       const selected = dropdown.querySelector(".dropdown-selected");
       const options = dropdown.querySelector(".dropdown-options");
-      const display = selected.querySelector(".dropdown-display");
-      const optionItems = options.querySelectorAll("li");
-      const dropdownType = selected.dataset.dropdown;
-      console.log("Initializing dropdown:", dropdownType, "Selected element:", selected);
 
       // Check for preselected option
       const preselectedOption = options.querySelector("li.selected");
       if (preselectedOption) {
+        const display = selected.querySelector(".dropdown-display");
         display.textContent = preselectedOption.textContent;
-        this.setDropdownData(display, preselectedOption, dropdownType);
+        this.setDropdownData(display, preselectedOption, selected.dataset.dropdown);
       } else {
         // Set initial placeholder state only if no option is preselected
-        display.classList.add("placeholder");
+        const display = selected.querySelector(".dropdown-display");
+        if (display) {
+          display.classList.add("placeholder");
+        }
       }
 
       // Toggle dropdown
@@ -1110,34 +1367,8 @@ class CustomDropdown {
         }
       });
 
-      // Handle option selection
-      optionItems.forEach((option) => {
-        option.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const text = option.textContent;
-
-          // Update selected display
-          display.textContent = text;
-          display.classList.remove("placeholder");
-          this.setDropdownData(display, option, dropdownType);
-
-          // Update selected state
-          optionItems.forEach((opt) => opt.classList.remove("selected"));
-          option.classList.add("selected");
-
-          // Close dropdown
-          this.closeDropdown(dropdown);
-
-          // Remove empty input here instead of form validation classlist
-          display.parentElement.classList.remove("empty-input");
-          console.log(`Selected ${dropdownType}:`, text);
-
-          // Trigger validation check after dropdown selection
-          if (typeof checkRequiredFields === "function") {
-            checkRequiredFields();
-          }
-        });
-      });
+      // Attach option listeners
+      attachDropdownOptionListeners(dropdown);
 
       // Handle keyboard navigation
       selected.addEventListener("keydown", (e) => {
@@ -1195,6 +1426,7 @@ class CustomDropdown {
     options.classList.add("show");
     selected.classList.add("open", "focused");
     selected.setAttribute("tabindex", "0");
+    dropdown.classList.add("dropdown-is-open");
   }
 
   closeDropdown(dropdown) {
@@ -1203,6 +1435,7 @@ class CustomDropdown {
 
     options.classList.remove("show");
     selected.classList.remove("open", "focused");
+    dropdown.classList.remove("dropdown-is-open");
   }
 
   closeAllDropdowns() {
@@ -1249,20 +1482,23 @@ class UploadForm {
       const pixelId = pixelDropdown ? pixelDropdown.dataset.pixelid : "";
       const eventType = document.querySelector(".config-event-type").dataset.value || document.querySelector(".config-event-type").value;
 
-      // Check if conversion tracking is required for this optimization goal
-      const requiresConversion = ["OFFSITE_CONVERSIONS", "LEAD_GENERATION", "APP_INSTALLS"].includes(optimizationGoal);
+      // Check if conversion tracking is required based on optimization goal
+      // Only OFFSITE_CONVERSIONS requires pixel_id + event_type
+      // LEAD_GENERATION requires page_id (handled separately)
+      // APP_INSTALLS requires application_id + object_store_url (not pixel)
+      const requiresPixelAndEvent = ["OFFSITE_CONVERSIONS"].includes(optimizationGoal);
 
-      if (requiresConversion) {
+      if (requiresPixelAndEvent) {
         if (!pixelId || pixelId.trim() === "" || pixelId.startsWith("act_")) {
           if (window.showError) {
-            window.showError("Please select a valid Meta Pixel from the Conversion section.", 8000);
+            window.showError("Please select a valid Meta Pixel from the Conversion section for OFFSITE_CONVERSIONS.", 8000);
           }
           return;
         }
 
         if (!eventType || eventType.trim() === "") {
           if (window.showError) {
-            window.showError("Please select a conversion event in the Conversion section.", 8000);
+            window.showError("Please select a conversion event in the Conversion section for OFFSITE_CONVERSIONS.", 8000);
           }
           return;
         }
@@ -1385,9 +1621,11 @@ class UploadForm {
         console.log("There was an error posting to create ad set API", err);
         this.hideLoadingState(true); // Pass true for error
 
-        // Show error message to user
+        // Show error message to user (extract from error_user_msg if available)
         if (window.showError) {
-          window.showError(`Failed to create ad set: ${err.message}`, 5000);
+          extractErrorMessage(err).then((errorMessage) => {
+            window.showError(`Failed to create ad set: ${errorMessage}`, 5000);
+          });
         }
       }
     }
@@ -1415,8 +1653,23 @@ class UploadForm {
       }
     }
 
-    // Validate dropdowns
+    // Validate dropdowns (except pixel dropdown which is conditional)
+    const optimizationGoal = document.querySelector(".config-optimization-goal")?.value || "";
+    const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
+
     for (const dropdownInput of dropdownInputs) {
+      const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
+
+      // For pixel dropdown, only validate if required for optimization goal
+      if (isPixelDropdown) {
+        if (!requiresPixelAndEvent) {
+          // Remove error styling if present since it's not required
+          dropdownInput.parentElement.classList.remove("empty-input");
+          console.log("Skipping pixel validation - not required for", optimizationGoal);
+          continue;
+        }
+      }
+
       if (dropdownInput.classList.contains("placeholder")) {
         this.emptyDropdownError(dropdownInput);
         isValid = false;
@@ -1838,8 +2091,10 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
       try {
         const errorData = await response.json();
 
-        // Provide specific, actionable error messages
-        if (response.status === 403 && errorData.needsAuth) {
+        // Priority: error_user_msg > error > details > generic
+        if (errorData.error_user_msg) {
+          errorMessage = errorData.error_user_msg;
+        } else if (response.status === 403 && errorData.needsAuth) {
           errorMessage = "Please reconnect your Facebook account to continue";
         } else if (response.status === 403) {
           errorMessage = "Authentication failed. Please log in again.";
@@ -1890,6 +2145,7 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
     newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
     newCampaignElement.setAttribute("data-daily-budget", "");
     newCampaignElement.setAttribute("data-bid-strategy", "");
+    newCampaignElement.setAttribute("data-objective", data.objective || "");
     newCampaignElement.setAttribute("data-special-ad-categories", "[]");
     newCampaignElement.style.display = "none"; // Match the display style of other campaigns
 
@@ -1919,7 +2175,7 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
 
     // Show success message
     if (window.showSuccess) {
-      window.showSuccess(`Campaign "${newName}" has been successfully duplicated!`, 4000);
+      window.showSuccess(`Campaign "${newName}" has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
     }
 
     // Trigger background refresh to update cache without page reload
@@ -1940,8 +2196,8 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
   } catch (error) {
     console.error("Error duplicating campaign:", error);
 
-    // Display user-friendly error message
-    const errorMessage = error.message || "Failed to duplicate campaign. Please try again.";
+    // Display user-friendly error message (extract from error_user_msg if available)
+    const errorMessage = await extractErrorMessage(error);
 
     if (window.showError) {
       window.showError(errorMessage, 5000);
@@ -1955,189 +2211,7 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
   }
 };
 
-// Add create campaign dialog method
-SingleSelectGroup.prototype.showCreateCampaignDialog = function () {
-  const dialog = document.querySelector(".create-campaign-dialog");
-  const nameInput = dialog.querySelector("#create-campaign-name");
-  const createBtn = dialog.querySelector(".campaign-create");
-  const cancelBtn = dialog.querySelector(".campaign-cancel");
-
-  // Get account ID from state
-  const selectedAccount = appState.getState().selectedAccount;
-
-  // Reset form
-  nameInput.value = "";
-  createBtn.disabled = true;
-  createBtn.textContent = "Create Campaign";
-
-  // Reset dropdowns to placeholder
-  const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
-  const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
-  const specialCategoriesDisplay = dialog.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
-
-  objectiveDisplay.textContent = "Campaign Objective*";
-  statusDisplay.textContent = "Status*";
-  specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
-
-  // Clear selected values
-  delete dialog.dataset.objective;
-  delete dialog.dataset.status;
-  dialog.dataset.specialCategories = "[]";
-
-  // Show dialog
-  dialog.style.display = "flex";
-  setTimeout(() => nameInput.focus(), 100);
-
-  // Name input validation
-  nameInput.oninput = () => {
-    createBtn.disabled = !nameInput.value.trim() || !dialog.dataset.objective || !dialog.dataset.status;
-  };
-
-  // Cancel button
-  cancelBtn.onclick = () => {
-    dialog.style.display = "none";
-  };
-
-  // Create button
-  createBtn.onclick = async () => {
-    const name = nameInput.value.trim();
-    const objective = dialog.dataset.objective;
-    const status = dialog.dataset.status;
-    const specialCategories = JSON.parse(dialog.dataset.specialCategories || "[]");
-
-    if (!name || !objective || !status) {
-      if (window.showError) {
-        window.showError("Please fill in all required fields", 3000);
-      }
-      return;
-    }
-
-    // Show loading state
-    createBtn.disabled = true;
-    createBtn.textContent = "Creating...";
-
-    try {
-      const response = await fetch("/api/create-campaign", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          account_id: selectedAccount,
-          name: name,
-          objective: objective,
-          status: status,
-          special_ad_categories: specialCategories.length > 0 ? specialCategories : undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.details || errorData.error || "Failed to create campaign");
-      }
-
-      const data = await response.json();
-
-      // Hide dialog
-      dialog.style.display = "none";
-
-      // Add the new campaign to the list
-      const newCampaignId = data.campaign_id;
-      const campaignSelection = document.querySelector(".campaign-selection");
-
-      if (!campaignSelection) {
-        console.error("Campaign selection container not found");
-        if (window.showSuccess) {
-          window.showSuccess("Campaign created successfully! Please refresh to see it.", 5000);
-        }
-        return;
-      }
-
-      const newCampaignElement = document.createElement("div");
-      newCampaignElement.className = "campaign";
-      newCampaignElement.setAttribute("data-next-column", ".action-column");
-      newCampaignElement.setAttribute("data-col-id", "2");
-      newCampaignElement.setAttribute("data-acc-campaign-id", selectedAccount);
-      newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
-      newCampaignElement.setAttribute("data-daily-budget", "");
-      newCampaignElement.setAttribute("data-bid-strategy", "");
-      newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(specialCategories));
-      newCampaignElement.style.display = "none";
-
-      newCampaignElement.innerHTML = `
-        <h3>${name}</h3>
-        <ul>
-          <li>${status}</li>
-          <li>Spend: $0.00</li>
-          <li>Clicks: 0</li>
-        </ul>
-      `;
-
-      // Insert at the top of the list
-      const firstCampaign = campaignSelection.querySelector(".campaign");
-      if (firstCampaign) {
-        campaignSelection.insertBefore(newCampaignElement, firstCampaign);
-      } else {
-        campaignSelection.appendChild(newCampaignElement);
-      }
-
-      // Reinitialize campaign select group
-      if (campaignSelectGroup) {
-        campaignSelectGroup.cleanup();
-      }
-      campaignSelectGroup = new SingleSelectGroup(".campaign");
-
-      // Show success message
-      if (window.showSuccess) {
-        window.showSuccess(`Campaign "${name}" has been successfully created!`, 4000);
-      }
-
-      // Trigger background refresh
-      fetch("/api/refresh-meta-cache", { method: "POST" })
-        .then((response) => {
-          if (!response.ok) {
-            console.warn(`Refresh returned status ${response.status}`);
-            return null;
-          }
-          return response.json();
-        })
-        .then((result) => {
-          if (result) {
-            console.log("Background refresh triggered:", result);
-          }
-        })
-        .catch((err) => console.error("Failed to trigger refresh:", err));
-    } catch (error) {
-      console.error("Error creating campaign:", error);
-      if (window.showError) {
-        window.showError(error.message || "Failed to create campaign. Please try again.", 5000);
-      } else {
-        alert(error.message || "Failed to create campaign. Please try again.");
-      }
-
-      // Reset button
-      createBtn.disabled = false;
-      createBtn.textContent = "Create Campaign";
-    }
-  };
-
-  // Close dialog on background click or close button
-  dialog.onclick = (e) => {
-    if (e.target === dialog) {
-      dialog.style.display = "none";
-    }
-  };
-
-  const closeBtn = dialog.querySelector(".dialog-close-btn");
-  closeBtn.onclick = () => {
-    dialog.style.display = "none";
-  };
-
-  // Prevent clicks on dialog content from closing
-  dialog.querySelector(".dialog-content").onclick = (e) => {
-    e.stopPropagation();
-  };
-};
+// Campaign creation dialog is now initialized in initializeCreateCampaignDialog()
 
 class FileUploadHandler {
   constructor() {
@@ -3462,9 +3536,10 @@ class FileUploadHandler {
           button.style.opacity = "1";
           button.textContent = "Create Ads";
 
-          // Create a more user-friendly error dialog
-          const errorMessage = err.message || "Unknown error occurred";
-          alert(`❌ Failed to Create Ads\n\n${errorMessage}\n\nPlease check the requirements and try again.`);
+          // Extract user-friendly error message from error_user_msg if available
+          extractErrorMessage(err).then((errorMessage) => {
+            alert(`❌ Failed to Create Ads\n\n${errorMessage}\n\nPlease check the requirements and try again.`);
+          });
         });
     } catch (err) {
       console.error("Error posting to /api/create-ad-creative.", err);
@@ -5165,20 +5240,37 @@ function setupAdSetFormValidation() {
     // Get fresh references to form fields
     const adsetNameField = document.querySelector(".config-adset-name");
     const eventTypeField = document.querySelector(".config-event-type");
+    const optimizationGoalField = document.querySelector(".config-optimization-goal");
 
     // Check if all required fields have values
     const hasAdsetName = adsetNameField && adsetNameField.value.trim() !== "";
-    const hasEventType = eventTypeField && (eventTypeField.value.trim() !== "" || eventTypeField.dataset.value);
 
-    // Debug event type specifically
-    if (!hasEventType && eventTypeField) {
-      console.log("Event type validation failed:", {
-        element: eventTypeField,
-        value: eventTypeField.value,
-        datasetValue: eventTypeField.dataset.value,
-        hasValue: eventTypeField.value.trim() !== "",
-        hasDatasetValue: !!eventTypeField.dataset.value,
-      });
+    // Event type is only required for OFFSITE_CONVERSIONS optimization goal
+    const optimizationGoal = optimizationGoalField ? optimizationGoalField.value : "";
+    const requiresPixelAndEvent = ["OFFSITE_CONVERSIONS"].includes(optimizationGoal);
+
+    // Update UI to reflect whether pixel/event are required
+    if (optimizationGoal) {
+      updateConversionFieldsVisibility(optimizationGoal);
+    }
+
+    let hasEventType = true; // Default to true (not required)
+    if (requiresPixelAndEvent) {
+      hasEventType = eventTypeField && (eventTypeField.value.trim() !== "" || eventTypeField.dataset.value);
+
+      // Debug event type specifically when it's required
+      if (!hasEventType && eventTypeField) {
+        console.log("Event type validation failed (required for OFFSITE_CONVERSIONS):", {
+          optimizationGoal: optimizationGoal,
+          element: eventTypeField,
+          value: eventTypeField.value,
+          datasetValue: eventTypeField.dataset.value,
+          hasValue: eventTypeField.value.trim() !== "",
+          hasDatasetValue: !!eventTypeField.dataset.value,
+        });
+      }
+    } else {
+      console.log("Event type not required for optimization goal:", optimizationGoal);
     }
 
     // Check if age fields are visible (not special ad category)
@@ -5308,25 +5400,33 @@ async function refreshMetaDataManually() {
       refreshBtn.disabled = true;
     }
 
-    const response = await fetch("/api/refresh-meta-cache", { method: "POST" });
-
-    if (!response.ok) {
-      throw new Error(`Refresh failed with status ${response.status}`);
+    // Show a notification that refresh has started
+    if (window.showSuccess) {
+      window.showSuccess("Refreshing data from Facebook...", 2000);
     }
 
-    const result = await response.json();
+    // Directly fetch the fresh data, forcing a refresh from the source
+    const freshData = await fetchMetaData(true);
 
-    if (result.status === "success") {
-      // Data will be updated via SSE, no need to reload
-      console.log("Manual refresh completed successfully");
+    if (freshData) {
+      // Once data is fetched, update the UI using the existing function
+      updateUIWithFreshData(freshData);
 
-      // Show a temporary success indicator
-      if (window.showSuccess) {
-        window.showSuccess("Refreshing data from Facebook...", 2000);
-      }
-    } else if (result.status === "already_refreshing") {
-      // Just log it, no alert
-      console.log("A refresh is already in progress");
+      // Show a completion notification, similar to the SSE one
+      const indicator = document.createElement("div");
+      indicator.style = "position: fixed; bottom: 10px; right: 10px; color: #28a745; font-size: 12px; z-index: 10;";
+      indicator.textContent = "Data updated";
+      document.body.appendChild(indicator);
+      setTimeout(() => indicator.remove(), 1000);
+
+      const zuck = document.createElement("img");
+      zuck.style = "position: fixed; bottom: 35px; right: 10px; width: 54px; z-index: 10;";
+      zuck.src = "icons/favi.png";
+      document.body.appendChild(zuck);
+      setTimeout(() => zuck.remove(), 1000);
+    } else {
+      // Throw an error if no data is returned
+      throw new Error("Refresh completed but returned no data.");
     }
   } catch (error) {
     console.error("Manual refresh failed:", error);
@@ -5415,77 +5515,62 @@ function forceMetaDataRefreshOnNextLoad() {
 function updateUIWithFreshData(freshData) {
   // Store the current selections
   const currentState = appState.getState();
-  const selectedAccount = currentState.selectedAccount;
-  const selectedCampaign = currentState.selectedCampaign;
-  const selectedAction = currentState.selectedAction;
+  const selectedAccountId = currentState.selectedAccount;
+  const selectedCampaignId = currentState.selectedCampaign;
 
-  // Update the global data
-  if (freshData.campaigns) {
-    // Update campaign data globally
-    window.campaignsData = freshData.campaigns;
+  // --- 1. Clear existing lists ---
+  const adAccList = document.querySelector("#ad-acc-list");
+  if (adAccList) adAccList.innerHTML = "";
 
-    // If a campaign is selected, check if it still exists
-    if (selectedCampaign) {
-      const campaignStillExists = freshData.campaigns.some((c) => c.id === selectedCampaign);
-      if (!campaignStillExists) {
-        // Campaign was deleted, update the UI
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
-        if (campaignElement) {
-          campaignElement.remove();
-        }
-
-        // Clear downstream selections
-        appState.updateState("selectedCampaign", null);
-        const actionColumn = document.querySelector(".action-column");
-        if (actionColumn) {
-          actionColumn.style.display = "none";
-        }
-      } else {
-        // Update campaign info if it changed
-        const updatedCampaign = freshData.campaigns.find((c) => c.id === selectedCampaign);
-        const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
-        if (campaignElement && updatedCampaign) {
-          // Update campaign name if changed
-          const nameElement = campaignElement.querySelector("h3");
-          if (nameElement && nameElement.textContent !== updatedCampaign.name) {
-            nameElement.textContent = updatedCampaign.name;
-          }
-
-          // Update status, spend, clicks
-          const listItems = campaignElement.querySelectorAll("li");
-          if (listItems[0]) listItems[0].textContent = updatedCampaign.status || "UNKNOWN";
-          if (listItems[1]) listItems[1].textContent = `Spend: ${updatedCampaign.insights?.spend || "N/A"}`;
-          if (listItems[2]) listItems[2].textContent = `Clicks: ${updatedCampaign.insights?.clicks || "N/A"}`;
-        }
-      }
-    }
-
-    // Check for new campaigns to add
-    if (selectedAccount) {
-      const accountCampaigns = freshData.campaigns.filter((c) => c.account_id === selectedAccount);
-      accountCampaigns.forEach((campaign) => {
-        const existingElement = document.querySelector(`.campaign[data-campaign-id="${campaign.id}"]`);
-        if (!existingElement) {
-          // This is a new campaign, add it to the UI
-          addCampaignToUI(campaign);
-        }
-      });
-    }
+  const campaignColumn = document.querySelector(".campaign-column");
+  const campaignSelection = campaignColumn.querySelector(".campaign-selection");
+  if (campaignSelection) {
+    // Instead of removing, just clear the content to preserve event listeners on parent
+    campaignSelection.innerHTML = "";
   }
 
-  // Update pixels if provided
-  if (freshData.pixels) {
-    window.pixelsData = freshData.pixels;
-  }
+  const pixelDropdownOptions = document.querySelector(".dropdown-options.pixel");
+  if (pixelDropdownOptions) pixelDropdownOptions.innerHTML = "";
 
-  // Update ad accounts if provided
+  const pagesDropdownOptions = document.querySelectorAll(".dropdown-options.pages");
+  pagesDropdownOptions.forEach((dropdown) => (dropdown.innerHTML = ""));
+
+  // --- 2. Repopulate with fresh data ---
   if (freshData.adAccounts) {
+    populateAdAccounts(freshData.adAccounts);
     window.adAccountsData = freshData.adAccounts;
   }
-
-  // Update pages if provided
+  if (freshData.campaigns) {
+    populateCampaigns(freshData.campaigns);
+    window.campaignsData = freshData.campaigns;
+  }
+  if (freshData.pixels) {
+    populatePixels(freshData.pixels);
+    window.pixelsData = freshData.pixels;
+  }
   if (freshData.pages) {
+    populatePages(freshData.pages);
     window.pagesData = freshData.pages;
+  }
+
+  // --- 3. Re-select previous items to restore state ---
+  if (selectedAccountId) {
+    const accountElement = document.querySelector(`.account[data-campaign-id="${selectedAccountId}"]`);
+    if (accountElement) {
+      // Simulate a click to trigger all the downstream filtering and UI updates
+      accountElement.click();
+
+      // If a campaign was also selected, find and click it after a short delay
+      // This allows the campaign list to be populated by the account click first
+      if (selectedCampaignId) {
+        setTimeout(() => {
+          const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+          if (campaignElement) {
+            campaignElement.click();
+          }
+        }, 100); // 100ms delay should be enough for the DOM to update
+      }
+    }
   }
 }
 
@@ -5501,7 +5586,9 @@ function addCampaignToUI(campaign) {
   newCampaignElement.setAttribute("data-acc-campaign-id", campaign.account_id);
   newCampaignElement.setAttribute("data-campaign-id", campaign.id);
   newCampaignElement.setAttribute("data-daily-budget", campaign.daily_budget || "");
+  newCampaignElement.setAttribute("data-lifetime-budget", campaign.lifetime_budget || "");
   newCampaignElement.setAttribute("data-bid-strategy", campaign.bid_strategy || "");
+  newCampaignElement.setAttribute("data-objective", campaign.objective || "");
   newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(campaign.special_ad_categories || []));
   newCampaignElement.style.display = ""; // Make it visible if it matches current filter
 
@@ -5530,172 +5617,572 @@ function addCampaignToUI(campaign) {
   campaignSelectGroup = new SingleSelectGroup(".campaign");
 }
 
-// Initialize Create Campaign Column
+// Initialize Create Campaign Dialog
 function initializeCreateCampaignDialog() {
-  console.log("Initializing Create Campaign Column");
+  console.log("Initializing Create Campaign Dialog");
 
-  // Initialize dropdowns for the create campaign column
+  // Initialize dropdowns for the campaign creation column
   new CustomDropdown(".campaign-creation-column .custom-dropdown");
 
-  // Add event listener to the create campaign button
-  const createCampaignBtn = document.querySelector(".create-new-campaign-btn");
-  if (createCampaignBtn) {
-    createCampaignBtn.addEventListener("click", openCreateCampaignDialog);
-    console.log("Create campaign button event listener added");
-  }
+  // Delay to ensure DOM is fully ready
+  setTimeout(() => {
+    // Add event listener to the create campaign button using direct event delegation
+    const handleCreateCampaignClick = (e) => {
+      console.log("Button click intercepted - target:", e.target);
+      if (e.target.classList.contains("create-new-campaign-btn") || e.target.closest(".create-new-campaign-btn")) {
+        e.preventDefault();
+        e.stopPropagation();
 
+        const campaignCreationColumn = document.getElementById("col-2-5");
+        if (campaignCreationColumn) {
+          campaignCreationColumn.style.display = "block";
+
+          // Make create button active and enabled
+          const createBtn = document.querySelector(".campaign-create-btn");
+          if (createBtn) {
+            createBtn.classList.add("active");
+            createBtn.disabled = false;
+          }
+
+          resetCampaignCreationForm();
+        } else {
+          console.error("col-2-5 not found");
+        }
+      }
+    };
+
+    // Use document listener for maximum reliability
+    document.addEventListener("click", handleCreateCampaignClick, true);
+
+    // Setup cancel button
+    const setupCancelButton = () => {
+      const cancelBtn = document.querySelector(".campaign-cancel-btn");
+      if (cancelBtn) {
+        cancelBtn.onclick = (e) => {
+          e.preventDefault();
+          console.log("Cancel clicked - hiding column");
+          const col = document.getElementById("col-2-5");
+          if (col) {
+            col.style.display = "none";
+            console.log("✓ Column hidden");
+
+            // Remove active class and disable create button
+            const createBtn = document.querySelector(".campaign-create-btn");
+            if (createBtn) {
+              createBtn.classList.remove("active");
+              createBtn.disabled = true;
+              console.log("✓ Create button deactivated and disabled");
+            }
+          }
+        };
+      } else {
+        console.warn("Cancel button not found");
+      }
+    };
+    setupCancelButton();
+
+    // Setup create button
+    const setupCreateButton = () => {
+      const createBtn = document.querySelector(".campaign-create-btn");
+      if (createBtn) {
+        createBtn.onclick = (e) => {
+          e.preventDefault();
+          console.log("Create form button clicked");
+          handleCampaignCreation();
+        };
+      } else {
+        console.warn("Create form button not found");
+      }
+    };
+    setupCreateButton();
+  }, 500); // Wait for DOM to settle
+}
+
+// Reset campaign creation form
+function resetCampaignCreationForm() {
   const column = document.querySelector(".campaign-creation-column");
+  if (!column) return;
 
-  if (!column) {
-    console.error("Campaign creation column not found");
+  // Reset text inputs
+  const nameInput = column.querySelector(".config-campaign-name");
+  if (nameInput) nameInput.value = "";
+
+  const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
+  if (dailyBudgetInput) dailyBudgetInput.value = "";
+
+  const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
+  if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+
+  // Reset all dropdowns
+  const displayElements = column.querySelectorAll(".dropdown-display");
+  displayElements.forEach((display) => {
+    display.textContent = display.getAttribute("placeholder") || "Select an option";
+    display.classList.add("placeholder");
+    delete display.dataset.value;
+  });
+
+  // Reset all selected options
+  const allOptions = column.querySelectorAll(".dropdown-options li");
+  allOptions.forEach((opt) => opt.classList.remove("selected"));
+
+  // Keep create button active and enabled when column is displayed
+  const createBtn = column.querySelector(".campaign-create-btn");
+  if (createBtn && column.style.display === "block") {
+    createBtn.classList.add("active");
+    createBtn.disabled = false;
+  }
+}
+
+// Handle campaign creation
+async function handleCampaignCreation() {
+  const selectedAccount = appState.getState().selectedAccount;
+  if (!selectedAccount) {
+    if (window.showError) {
+      window.showError("Please select an ad account first", 3000);
+    }
     return;
   }
 
-  // Handle objective dropdown
-  const objectiveOptions = column.querySelectorAll(".dropdown-options.campaign-objective li");
-  objectiveOptions.forEach((option) => {
-    option.addEventListener("click", () => {
-      const value = option.dataset.value;
-      column.dataset.objective = value;
-      checkCreateCampaignFormValidity(column);
-    });
-  });
+  const column = document.querySelector(".campaign-creation-column");
+  if (!column) return;
 
-  // Handle status dropdown
-  const statusOptions = column.querySelectorAll(".dropdown-options.campaign-status li");
-  statusOptions.forEach((option) => {
-    option.addEventListener("click", () => {
-      const value = option.dataset.value;
-      column.dataset.status = value;
-      checkCreateCampaignFormValidity(column);
-    });
-  });
-
-  // Handle name input
   const nameInput = column.querySelector(".config-campaign-name");
-  if (nameInput) {
-    nameInput.addEventListener("input", () => {
-      checkCreateCampaignFormValidity(column);
-    });
+  const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
+  const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
+  const createBtn = column.querySelector(".campaign-create-btn");
+
+  if (!createBtn) {
+    console.error("Create button not found in campaign creation column");
+    return;
   }
 
-  // Handle special categories dropdown (multi-select)
-  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li");
-  const selectedCategories = [];
+  const name = nameInput?.value.trim();
+  const objectiveDisplay = column.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
+  const statusDisplay = column.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
+  const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
 
-  specialCategoriesOptions.forEach((option) => {
-    option.addEventListener("click", (e) => {
+  const objective = objectiveDisplay?.dataset.value;
+  const status = statusDisplay?.dataset.value;
+  const bidStrategy = bidStrategyDisplay?.dataset.value;
+
+  // Get special categories
+  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
+  const specialCategories = Array.from(specialCategoriesOptions)
+    .map((opt) => opt.dataset.value)
+    .filter((val) => val !== "");
+
+  // Get special countries
+  const specialCountryOptions = column.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
+  const specialCountries = Array.from(specialCountryOptions)
+    .map((opt) => opt.dataset.value)
+    .filter((val) => val !== "");
+
+  const dailyBudget = dailyBudgetInput?.value;
+  const lifetimeBudget = lifetimeBudgetInput?.value;
+
+  if (!name || !objective || !status) {
+    if (window.showError) {
+      window.showError("Please fill in all required fields", 3000);
+    }
+    // Reset button state on validation error
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create Campaign";
+    }
+    return;
+  }
+
+  // Validate that only one budget type is used
+  if (dailyBudget && lifetimeBudget) {
+    if (window.showError) {
+      window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
+    }
+    // Reset button state on validation error
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create Campaign";
+    }
+    return;
+  }
+
+  // Show loading state
+  if (createBtn) {
+    createBtn.disabled = true;
+    createBtn.textContent = "Creating...";
+  }
+
+  try {
+    // Build request body
+    const requestBody = {
+      account_id: selectedAccount,
+      name: name,
+      objective: objective,
+      status: status,
+    };
+
+    if (specialCategories.length > 0) {
+      requestBody.special_ad_categories = specialCategories;
+    }
+
+    if (specialCountries.length > 0) {
+      requestBody.special_ad_category_country = specialCountries;
+    }
+
+    if (bidStrategy) {
+      requestBody.bid_strategy = bidStrategy;
+    }
+
+    if (dailyBudget && parseFloat(dailyBudget) > 0) {
+      requestBody.daily_budget = parseFloat(dailyBudget);
+    }
+
+    if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+      requestBody.lifetime_budget = parseFloat(lifetimeBudget);
+    }
+
+    console.log("Creating campaign with payload:", requestBody);
+
+    const response = await fetch("/api/create-campaign", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || errorData.details || "Failed to create campaign");
+    }
+
+    const data = await response.json();
+    console.log("Campaign created successfully:", data);
+
+    // Hide campaign creation column
+    column.style.display = "none";
+
+    // Deactivate and disable create button when hiding column
+    const createBtn = column.querySelector(".campaign-create-btn");
+    if (createBtn) {
+      createBtn.classList.remove("active");
+      createBtn.disabled = true;
+      console.log("✓ Create button deactivated and disabled");
+    }
+
+    // Reset form for next use
+    resetCampaignCreationForm();
+
+    // Add the new campaign to the list
+    const newCampaignId = data.campaign_id;
+    const campaignSelection = document.querySelector(".campaign-selection");
+
+    if (campaignSelection) {
+      const newCampaignElement = document.createElement("div");
+      newCampaignElement.className = "campaign";
+      newCampaignElement.setAttribute("data-next-column", ".action-column");
+      newCampaignElement.setAttribute("data-col-id", "2");
+      newCampaignElement.setAttribute("data-acc-campaign-id", selectedAccount);
+      newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
+      newCampaignElement.setAttribute("data-daily-budget", data.campaign.daily_budget || "");
+      newCampaignElement.setAttribute("data-bid-strategy", data.campaign.bid_strategy || "");
+      newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(specialCategories));
+
+      newCampaignElement.innerHTML = `
+        <h3>${name}</h3>
+        <ul>
+          <li>${status}</li>
+          <li>Spend: $0.00</li>
+          <li>Clicks: 0</li>
+        </ul>
+      `;
+
+      const firstCampaign = campaignSelection.querySelector(".campaign");
+      if (firstCampaign) {
+        campaignSelection.insertBefore(newCampaignElement, firstCampaign);
+      } else {
+        campaignSelection.appendChild(newCampaignElement);
+      }
+
+      if (campaignSelectGroup) {
+        campaignSelectGroup.cleanup();
+      }
+      campaignSelectGroup = new SingleSelectGroup(".campaign");
+    }
+
+    if (window.showSuccess) {
+      window.showSuccess(`Campaign "${name}" has been successfully created!`, 4000);
+    }
+
+    // Trigger background refresh
+    fetch("/api/refresh-meta-cache", { method: "POST" })
+      .then((response) => {
+        if (!response.ok) {
+          console.warn(`Refresh returned status ${response.status}`);
+          return null;
+        }
+        return response.json();
+      })
+      .then((result) => {
+        if (result) {
+          console.log("Background refresh triggered:", result);
+        }
+      })
+      .catch((err) => console.error("Failed to trigger refresh:", err));
+  } catch (error) {
+    console.error("Error creating campaign:", error);
+    if (window.showError) {
+      window.showError(error.message || "Failed to create campaign. Please try again.", 5000);
+    }
+
+    // Reset button state on error
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create Campaign";
+    }
+  }
+}
+
+// Open the create campaign dialog (deprecated - keeping for reference)
+function openCreateCampaignDialog() {
+  const selectedAccount = appState.getState().selectedAccount;
+  if (!selectedAccount) {
+    if (window.showError) {
+      window.showError("Please select an ad account first", 3000);
+    } else {
+      alert("Please select an ad account first");
+    }
+    return;
+  }
+
+  const dialog = document.querySelector(".create-campaign-dialog");
+  if (!dialog) {
+    console.error("Create campaign dialog not found");
+    return;
+  }
+
+  const nameInput = dialog.querySelector("#create-campaign-name");
+  const dailyBudgetInput = dialog.querySelector("#create-campaign-daily-budget");
+  const lifetimeBudgetInput = dialog.querySelector("#create-campaign-lifetime-budget");
+  const createBtn = dialog.querySelector(".campaign-create");
+  const cancelBtn = dialog.querySelector(".campaign-cancel");
+  const closeBtn = dialog.querySelector(".dialog-close-btn");
+
+  // Reset form
+  if (nameInput) nameInput.value = "";
+  if (dailyBudgetInput) dailyBudgetInput.value = "";
+  if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+  if (createBtn) {
+    createBtn.disabled = true;
+    createBtn.textContent = "Create Campaign";
+  }
+
+  // Reset dropdowns
+  const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
+  const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
+  const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+  const specialCategoriesDisplay = dialog.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
+  const specialCountryDisplay = dialog.querySelector('[data-dropdown="campaign-special-country"] .dropdown-display');
+
+  if (objectiveDisplay) {
+    objectiveDisplay.textContent = "Campaign Objective*";
+    objectiveDisplay.classList.add("placeholder");
+  }
+  if (statusDisplay) {
+    statusDisplay.textContent = "Status*";
+    statusDisplay.classList.add("placeholder");
+  }
+  if (bidStrategyDisplay) {
+    bidStrategyDisplay.textContent = "Bid Strategy (Optional)";
+    bidStrategyDisplay.classList.add("placeholder");
+  }
+  if (specialCategoriesDisplay) {
+    specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
+    specialCategoriesDisplay.classList.add("placeholder");
+  }
+  if (specialCountryDisplay) {
+    specialCountryDisplay.textContent = "Special Ad Category Country (Optional)";
+    specialCountryDisplay.classList.add("placeholder");
+  }
+
+  // Clear all selected options
+  const allOptions = dialog.querySelectorAll(".dropdown-options li");
+  allOptions.forEach((opt) => opt.classList.remove("selected"));
+
+  // Show dialog
+  dialog.style.display = "flex";
+  console.log("Dialog display set to flex");
+
+  setTimeout(() => {
+    if (nameInput) nameInput.focus();
+  }, 100);
+
+  // Name input validation
+  if (nameInput) {
+    nameInput.oninput = () => {
+      if (createBtn) {
+        const objective = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display').dataset.value;
+        const status = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display').dataset.value;
+        createBtn.disabled = !nameInput.value.trim() || !objective || !status;
+      }
+    };
+  }
+
+  // Helper function to hide campaign creation column and close dialog
+  const hideCampaignCreationColumn = () => {
+    const campaignCreationColumn = document.getElementById("col-2-5");
+    if (campaignCreationColumn) {
+      campaignCreationColumn.style.display = "none";
+    }
+    dialog.style.display = "none";
+  };
+
+  // Cancel button
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      hideCampaignCreationColumn();
+    };
+  }
+
+  // Close button
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      hideCampaignCreationColumn();
+    };
+  }
+
+  // Close dialog on background click
+  dialog.onclick = (e) => {
+    if (e.target === dialog) {
+      hideCampaignCreationColumn();
+    }
+  };
+
+  // Prevent clicks on dialog content from closing
+  const dialogContent = dialog.querySelector(".dialog-content");
+  if (dialogContent) {
+    dialogContent.onclick = (e) => {
       e.stopPropagation();
-      const value = option.dataset.value;
+    };
+  }
 
-      if (value === "") {
-        // "None" option - clear all selections
-        selectedCategories.length = 0;
-        specialCategoriesOptions.forEach((opt) => opt.classList.remove("selected"));
-        option.classList.add("selected");
-      } else {
-        // Remove "None" selection
-        const noneOption = column.querySelector('.dropdown-options.campaign-special-categories li[data-value=""]');
-        if (noneOption) {
-          noneOption.classList.remove("selected");
+  // Setup dropdown listeners to enable/disable create button
+  const allOptionsForValidation = dialog.querySelectorAll(".dropdown-options li");
+  allOptionsForValidation.forEach((option) => {
+    option.addEventListener("click", () => {
+      setTimeout(() => {
+        if (createBtn && nameInput) {
+          const objective = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display').dataset.value;
+          const status = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display').dataset.value;
+          createBtn.disabled = !nameInput.value.trim() || !objective || !status;
+          console.log("Validation check - objective:", objective, "status:", status, "disabled:", createBtn.disabled);
         }
-
-        // Toggle this category
-        const index = selectedCategories.indexOf(value);
-        if (index > -1) {
-          selectedCategories.splice(index, 1);
-          option.classList.remove("selected");
-        } else {
-          selectedCategories.push(value);
-          option.classList.add("selected");
-        }
-
-        // If all unselected, select "None"
-        if (selectedCategories.length === 0 && noneOption) {
-          noneOption.classList.add("selected");
-        }
-      }
-
-      column.dataset.specialCategories = JSON.stringify(selectedCategories);
-
-      // Update display text
-      const display = column.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
-      if (selectedCategories.length === 0) {
-        display.textContent = "Special Ad Categories (Optional)";
-        display.classList.add("placeholder");
-      } else if (selectedCategories.length === 1) {
-        const selectedOption = Array.from(specialCategoriesOptions).find((opt) => opt.dataset.value === selectedCategories[0]);
-        display.textContent = selectedOption ? selectedOption.textContent : "Special Ad Categories (Optional)";
-        display.classList.remove("placeholder");
-      } else {
-        display.textContent = `${selectedCategories.length} categories selected`;
-        display.classList.remove("placeholder");
-      }
+      }, 50);
     });
   });
 
-  // Handle Create button
-  const createBtn = column.querySelector(".campaign-create-btn");
+  // Create button
   if (createBtn) {
-    createBtn.addEventListener("click", async () => {
-      if (createBtn.disabled) return;
+    createBtn.onclick = async () => {
+      const name = nameInput?.value.trim();
+      const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
+      const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
+      const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
 
-      const nameInput = column.querySelector(".config-campaign-name");
-      const budgetInput = column.querySelector(".config-campaign-budget");
-      const objective = column.dataset.objective;
-      const status = column.dataset.status;
-      const specialCategories = column.dataset.specialCategories ? JSON.parse(column.dataset.specialCategories) : [];
+      const objective = objectiveDisplay?.dataset.value;
+      const status = statusDisplay?.dataset.value;
+      const bidStrategy = bidStrategyDisplay?.dataset.value;
 
-      const campaignName = nameInput.value.trim();
-      const dailyBudget = budgetInput ? budgetInput.value.trim() : "";
+      // Get special categories
+      const specialCategoriesOptions = dialog.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
+      const specialCategories = Array.from(specialCategoriesOptions)
+        .map((opt) => opt.dataset.value)
+        .filter((val) => val !== "");
 
-      if (!campaignName || !objective || !status) {
+      // Get special countries
+      const specialCountryOptions = dialog.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
+      const specialCountries = Array.from(specialCountryOptions)
+        .map((opt) => opt.dataset.value)
+        .filter((val) => val !== "");
+
+      const dailyBudget = dailyBudgetInput?.value;
+      const lifetimeBudget = lifetimeBudgetInput?.value;
+
+      if (!name || !objective || !status) {
         if (window.showError) {
           window.showError("Please fill in all required fields", 3000);
         }
         return;
       }
 
-      // Disable button during creation
+      // Validate that only one budget type is used
+      if (dailyBudget && lifetimeBudget) {
+        if (window.showError) {
+          window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
+        }
+        return;
+      }
+
+      // Show loading state
       createBtn.disabled = true;
       createBtn.textContent = "Creating...";
 
       try {
-        const selectedAccount = appState.getState().selectedAccount;
-
-        const payload = {
+        // Build request body
+        const requestBody = {
           account_id: selectedAccount,
-          name: campaignName,
+          name: name,
           objective: objective,
           status: status,
-          special_ad_categories: specialCategories.length > 0 ? specialCategories : [],
         };
 
-        // Add daily budget if provided (in dollars, backend will convert to cents)
-        if (dailyBudget && parseFloat(dailyBudget) > 0) {
-          payload.daily_budget = parseFloat(dailyBudget);
+        // Add optional fields only if they have values
+        if (specialCategories.length > 0) {
+          requestBody.special_ad_categories = specialCategories;
         }
+
+        if (specialCountries.length > 0) {
+          requestBody.special_ad_category_country = specialCountries;
+        }
+
+        if (bidStrategy) {
+          requestBody.bid_strategy = bidStrategy;
+        }
+
+        if (dailyBudget && parseFloat(dailyBudget) > 0) {
+          requestBody.daily_budget = parseFloat(dailyBudget);
+        }
+
+        if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+          requestBody.lifetime_budget = parseFloat(lifetimeBudget);
+        }
+
+        console.log("Creating campaign with payload:", requestBody);
 
         const response = await fetch("/api/create-campaign", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.details || errorData.error || "Failed to create campaign");
+          throw new Error(errorData.error || errorData.details || "Failed to create campaign");
         }
 
-        const result = await response.json();
+        const data = await response.json();
+        console.log("Campaign created successfully:", data);
 
-        // Close the column
-        column.style.display = "none";
+        // Hide dialog and campaign creation column
+        dialog.style.display = "none";
+        const campaignCreationColumn = document.getElementById("col-2-5");
+        if (campaignCreationColumn) {
+          campaignCreationColumn.style.display = "none";
+        }
 
         // Add the new campaign to the list
-        const newCampaignId = result.campaign_id;
+        const newCampaignId = data.campaign_id;
         const campaignSelection = document.querySelector(".campaign-selection");
 
         if (campaignSelection) {
@@ -5705,13 +6192,13 @@ function initializeCreateCampaignDialog() {
           newCampaignElement.setAttribute("data-col-id", "2");
           newCampaignElement.setAttribute("data-acc-campaign-id", selectedAccount);
           newCampaignElement.setAttribute("data-campaign-id", newCampaignId);
-          newCampaignElement.setAttribute("data-daily-budget", "");
-          newCampaignElement.setAttribute("data-bid-strategy", "");
+          newCampaignElement.setAttribute("data-daily-budget", data.campaign.daily_budget || "");
+          newCampaignElement.setAttribute("data-bid-strategy", data.campaign.bid_strategy || "");
           newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(specialCategories));
           newCampaignElement.style.display = "none";
 
           newCampaignElement.innerHTML = `
-            <h3>${campaignName}</h3>
+            <h3>${name}</h3>
             <ul>
               <li>${status}</li>
               <li>Spend: $0.00</li>
@@ -5728,12 +6215,15 @@ function initializeCreateCampaignDialog() {
           }
 
           // Reinitialize campaign select group
-          const campaignGroup = new SingleSelectGroup(".campaign");
+          if (campaignSelectGroup) {
+            campaignSelectGroup.cleanup();
+          }
+          campaignSelectGroup = new SingleSelectGroup(".campaign");
         }
 
         // Show success message
         if (window.showSuccess) {
-          window.showSuccess(`Campaign "${campaignName}" has been successfully created!`, 4000);
+          window.showSuccess(`Campaign "${name}" has been successfully created!`, 4000);
         }
 
         // Trigger background refresh
@@ -5754,111 +6244,14 @@ function initializeCreateCampaignDialog() {
       } catch (error) {
         console.error("Error creating campaign:", error);
         if (window.showError) {
-          window.showError(error.message || "Failed to create campaign", 5000);
+          window.showError(error.message || "Failed to create campaign. Please try again.", 5000);
         }
-      } finally {
+
+        // Reset button
         createBtn.disabled = false;
         createBtn.textContent = "Create Campaign";
       }
-    });
-  }
-
-  // Handle Cancel button
-  const cancelBtn = column.querySelector(".campaign-cancel-btn");
-  if (cancelBtn) {
-    cancelBtn.addEventListener("click", () => {
-      column.style.display = "none";
-    });
-  }
-
-  console.log("Create Campaign Column initialized");
-}
-
-// Check if create campaign form is valid
-function checkCreateCampaignFormValidity(column) {
-  const nameInput = column.querySelector(".config-campaign-name");
-  const createBtn = column.querySelector(".campaign-create-btn");
-
-  if (!nameInput || !createBtn) return;
-
-  const isValid = nameInput.value.trim() && column.dataset.objective && column.dataset.status;
-  createBtn.disabled = !isValid;
-
-  if (isValid) {
-    createBtn.classList.add("active");
-  } else {
-    createBtn.classList.remove("active");
-  }
-}
-
-// Global function to open create campaign column
-function openCreateCampaignDialog() {
-  console.log("Opening create campaign column");
-
-  const selectedAccount = appState.getState().selectedAccount;
-  if (!selectedAccount) {
-    if (window.showError) {
-      window.showError("Please select an ad account first", 3000);
-    } else {
-      alert("Please select an ad account first");
-    }
-    return;
-  }
-
-  // Hide action column and other columns
-  const actionColumn = document.getElementById("col-3");
-  const uploadColumn = document.getElementById("col-4");
-  if (actionColumn) actionColumn.style.display = "none";
-  if (uploadColumn) uploadColumn.style.display = "none";
-
-  // Show campaign creation column
-  const campaignCreationColumn = document.getElementById("col-2-5");
-  if (campaignCreationColumn) {
-    campaignCreationColumn.style.display = "block";
-
-    // Reset form
-    const nameInput = campaignCreationColumn.querySelector(".config-campaign-name");
-    const budgetInput = campaignCreationColumn.querySelector(".config-campaign-budget");
-    const createBtn = campaignCreationColumn.querySelector(".campaign-create-btn");
-
-    if (nameInput) nameInput.value = "";
-    if (budgetInput) budgetInput.value = "";
-    if (createBtn) {
-      createBtn.classList.remove("active");
-      createBtn.disabled = true;
-    }
-
-    // Reset dropdowns
-    const objectiveDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
-    const statusDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
-    const specialCategoriesDisplay = campaignCreationColumn.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
-
-    if (objectiveDisplay) {
-      objectiveDisplay.textContent = "Campaign Objective*";
-      objectiveDisplay.classList.add("placeholder");
-    }
-    if (statusDisplay) {
-      statusDisplay.textContent = "Status*";
-      statusDisplay.classList.add("placeholder");
-    }
-    if (specialCategoriesDisplay) {
-      specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
-      specialCategoriesDisplay.classList.add("placeholder");
-    }
-
-    // Clear selected states
-    const allOptions = campaignCreationColumn.querySelectorAll(".dropdown-options li");
-    allOptions.forEach((opt) => opt.classList.remove("selected"));
-
-    // Reset data attributes
-    delete campaignCreationColumn.dataset.objective;
-    delete campaignCreationColumn.dataset.status;
-    campaignCreationColumn.dataset.specialCategories = "[]";
-
-    // Focus on name input
-    setTimeout(() => {
-      if (nameInput) nameInput.focus();
-    }, 100);
+    };
   }
 }
 
@@ -5913,7 +6306,7 @@ function getCurrentAdData() {
     const assets = appState.getState().uploadedAssets || [];
 
     // Get selected adset
-    const adsetId = window.selectedAdSet || "";
+    const adsetId = appState.getState().adSetConfig?.id || "";
 
     // Log current state for debugging
     console.log("Current ad data state:", {

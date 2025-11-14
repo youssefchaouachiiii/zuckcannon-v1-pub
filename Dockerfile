@@ -8,7 +8,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm install --only=production
+RUN npm install 
 
 # Copy application code
 COPY . .
@@ -17,7 +17,7 @@ COPY . .
 RUN mkdir -p data uploads creative-library
 
 # Expose application port
-EXPOSE 6969
+EXPOSE 6970
 
 # Start the application
 CMD ["sh", "-c", "node init-directories.js && node server.js"]
