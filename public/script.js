@@ -321,6 +321,9 @@ function populatePixels(pixels) {
   }
   pixelList = document.querySelectorAll(".pixel-option");
   console.log(`Populated ${pixelList.length} pixels`);
+
+  // Re-initialize the dropdown for pixels to attach event listeners
+  new CustomDropdown('.custom-dropdown[data-dropdown="pixel"]');
 }
 
 function populatePages(pages) {
