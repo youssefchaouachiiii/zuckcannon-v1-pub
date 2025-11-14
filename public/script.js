@@ -1285,15 +1285,18 @@ function attachDropdownOptionListeners(dropdown) {
   // The CustomDropdown instance, to call its methods
   const dropdownInstance = dropdown.customDropdownInstance;
 
+  // If there's no instance, we can't attach listeners that depend on it.
+  if (!dropdownInstance) {
+    console.warn("Cannot attach listeners: CustomDropdown instance not found on element.", dropdown);
+    return;
+  }
+
   optionItems.forEach((option) => {
-    // Remove old listener to prevent duplicates
-    option.replaceWith(option.cloneNode(true));
-  });
+    // Check for a flag to prevent adding duplicate listeners
+    if (option.listenerAttached) {
+      return;
+    }
 
-  // Re-query for the new nodes
-  const newOptionItems = options.querySelectorAll("li");
-
-  newOptionItems.forEach((option) => {
     option.addEventListener("click", (e) => {
       e.stopPropagation();
       const text = option.textContent;
@@ -1303,22 +1306,22 @@ function attachDropdownOptionListeners(dropdown) {
       display.classList.remove("placeholder");
       dropdownInstance.setDropdownData(display, option, dropdownType);
 
-      // Update selected state
-      newOptionItems.forEach((opt) => opt.classList.remove("selected"));
+      // Re-query here to handle dynamically added/removed items
+      const currentOptions = options.querySelectorAll("li");
+      currentOptions.forEach((opt) => opt.classList.remove("selected"));
       option.classList.add("selected");
 
-      // Close dropdown
       dropdownInstance.closeDropdown(dropdown);
 
-      // Remove empty input here instead of form validation classlist
       display.parentElement.classList.remove("empty-input");
       console.log(`Selected ${dropdownType}:`, text);
 
-      // Trigger validation check after dropdown selection
       if (typeof checkRequiredFields === "function") {
         checkRequiredFields();
       }
     });
+    // Set the flag
+    option.listenerAttached = true;
   });
 }
 
