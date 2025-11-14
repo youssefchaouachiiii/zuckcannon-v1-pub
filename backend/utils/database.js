@@ -19,7 +19,7 @@ function initializeDb() {
         console.error('Database connection error:', err)
         reject(err)
       } else {
-        console.log('Connected to creative library database')
+        // console.log('Connected to creative library database')
         
         // Promisify database methods for easier async/await usage
         db.runAsync = promisify(db.run.bind(db))
@@ -113,7 +113,7 @@ async function initializeDatabase() {
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_creative_accounts ON creative_accounts(creative_id, ad_account_id)')
     await db.runAsync('CREATE INDEX IF NOT EXISTS idx_ad_account ON creative_accounts(ad_account_id)')
 
-    console.log('Database initialized successfully')
+    // console.log('Database initialized successfully')
   } catch (error) {
     console.error('Error initializing database:', error)
     throw error

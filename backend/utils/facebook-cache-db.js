@@ -15,7 +15,7 @@ const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CR
   if (err) {
     console.error("Error opening database:", err);
   } else {
-    console.log("Connected to Facebook cache database");
+    // console.log("Connected to Facebook cache database");
   }
 });
 
@@ -120,7 +120,7 @@ async function initializeDatabase() {
       await migrateDatabase();
     }
 
-    console.log("Facebook cache database initialized successfully");
+    // console.log("Facebook cache database initialized successfully");
   } catch (error) {
     console.error("Error initializing Facebook cache database:", error);
     throw error;
@@ -472,7 +472,7 @@ export const FacebookCacheDB = {
       await db.runAsync("BEGIN TRANSACTION");
 
       // Clear existing data for this user only to prevent stale records
-      console.log(`Clearing existing cache data for user ${userId}...`);
+      // console.log(`Clearing existing cache data for user ${userId}...`);
       await db.runAsync("DELETE FROM cached_pixels WHERE user_id = ?", [userId]);
       await db.runAsync("DELETE FROM cached_campaigns WHERE user_id = ?", [userId]);
       await db.runAsync("DELETE FROM cached_pages WHERE user_id = ?", [userId]);
