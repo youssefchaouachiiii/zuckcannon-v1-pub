@@ -8,7 +8,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log('Initializing directories...');
+// console.log('Initializing directories...');
 
 // Use local directories in development, /data in production
 const baseDir = process.env.NODE_ENV === 'development' ? __dirname : '/data';
@@ -42,14 +42,14 @@ dirs.forEach(dir => {
   if (!fs.existsSync(dir)) {
     try {
       fs.mkdirSync(dir, { recursive: true });
-      console.log(`Created directory: ${dir}`);
+      // console.log(`Created directory: ${dir}`);
     } catch (error) {
       console.error(`Failed to create directory ${dir}:`, error);
       process.exit(1);
     }
   } else {
-    console.log(`Directory exists: ${dir}`);
+    // console.log(`Directory exists: ${dir}`);
   }
 });
 
-console.log('Directory initialization complete!');
+// console.log('Directory initialization complete!');
