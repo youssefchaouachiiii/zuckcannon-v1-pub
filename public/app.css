@@ -1392,6 +1392,7 @@ h2 {
 .event-type-container {
   position: relative;
   width: 100%;
+  /* z-index: 101; */
 }
 
 .config-event-type {
@@ -1406,6 +1407,9 @@ h2 {
   font-family: inherit;
   font-size: 14px;
   outline: none;
+  position: relative;
+  z-index: 102;
+  background: white;
 }
 
 .event-type-search:focus {
@@ -1427,7 +1431,7 @@ h2 {
   list-style: none;
   margin: 0;
   padding: 0;
-  z-index: 100;
+  z-index: 103;
 }
 
 .event-type-suggestions li {

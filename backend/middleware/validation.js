@@ -452,6 +452,100 @@ export const validateRequest = {
       });
     }
 
+    // Validate adset_schedule if provided
+    if (req.body.adset_schedule) {
+      if (!Array.isArray(req.body.adset_schedule)) {
+        return res.status(400).json({
+          error: "adset_schedule must be an array of schedule objects",
+        });
+      }
+
+      // Validate each schedule object
+      for (let i = 0; i < req.body.adset_schedule.length; i++) {
+        const schedule = req.body.adset_schedule[i];
+
+        // Check required fields
+        if (schedule.start_minute === undefined || schedule.start_minute === null) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute is required`,
+          });
+        }
+
+        if (schedule.end_minute === undefined || schedule.end_minute === null) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: end_minute is required`,
+          });
+        }
+
+        if (!schedule.days || !Array.isArray(schedule.days)) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: days must be an array`,
+          });
+        }
+
+        // Validate start_minute and end_minute are integers
+        if (!Number.isInteger(schedule.start_minute) || !Number.isInteger(schedule.end_minute)) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute and end_minute must be integers`,
+          });
+        }
+
+        // Validate minute range (0-1439 for 24 hours * 60 minutes - 1)
+        if (schedule.start_minute < 0 || schedule.start_minute > 1439) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute must be between 0 and 1439`,
+          });
+        }
+
+        if (schedule.end_minute < 0 || schedule.end_minute > 1439) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: end_minute must be between 0 and 1439`,
+          });
+        }
+
+        // Validate that start and end are at least 1 hour apart (60 minutes)
+        const duration = schedule.end_minute - schedule.start_minute;
+        if (duration < 60) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute and end_minute must be at least 60 minutes apart`,
+          });
+        }
+
+        // Validate days array
+        if (schedule.days.length === 0) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: days array cannot be empty`,
+          });
+        }
+
+        // Validate each day value is 0-6
+        for (const day of schedule.days) {
+          if (!Number.isInteger(day) || day < 0 || day > 6) {
+            return res.status(400).json({
+              error: `adset_schedule[${i}]: days must contain integers between 0 (Sunday) and 6 (Saturday)`,
+            });
+          }
+        }
+
+        // Validate timezone_type if provided
+        if (schedule.timezone_type) {
+          const validTimezoneTypes = ["USER", "ADVERTISER"];
+          if (!validTimezoneTypes.includes(schedule.timezone_type)) {
+            return res.status(400).json({
+              error: `adset_schedule[${i}]: timezone_type must be either USER or ADVERTISER`,
+            });
+          }
+        }
+      }
+
+      // Note: Ad scheduling only works with lifetime budgets
+      // if (!req.body.lifetime_budget) {
+      //   return res.status(400).json({
+      //     error: "adset_schedule requires lifetime_budget to be set (ad scheduling only works with lifetime budgets)",
+      //   });
+      // }
+    }
+
     // Validate bid_strategy if provided
     if (req.body.bid_strategy) {
       const validBidStrategies = [
