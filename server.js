@@ -2024,11 +2024,11 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   }
 
   // Add budget - either daily_budget or lifetime_budget
-  if (req.body.daily_budget) {
-    payload.daily_budget = parseInt(req.body.daily_budget);
-  } else if (req.body.lifetime_budget) {
-    payload.lifetime_budget = parseInt(req.body.lifetime_budget);
-  }
+  // if (req.body.daily_budget) {
+  //   payload.daily_budget = parseInt(req.body.daily_budget);
+  // } else if (req.body.lifetime_budget) {
+  //   payload.lifetime_budget = parseInt(req.body.lifetime_budget);
+  // }
 
   // Handle promoted_object based on optimization goal and campaign objective
   // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-promoted-object
