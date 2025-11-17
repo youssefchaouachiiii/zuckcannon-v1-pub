@@ -2140,6 +2140,11 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.bid_amount = parseInt(req.body.bid_amount);
   }
 
+  // Add adset_schedule if provided
+  if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
+    payload.adset_schedule = req.body.adset_schedule;
+  }
+
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
   const graphUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
 
