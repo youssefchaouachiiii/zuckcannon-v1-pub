@@ -227,7 +227,7 @@
           <!-- Pixel dropdown -->
           <div class="dropdown-container">
             <div class="custom-dropdown">
-              <div class="dropdown-selected" data-dropdown="pixel">
+              <div class="dropdown-selected">
                 <span class="dropdown-display">Pixel</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
@@ -287,7 +287,91 @@
               <ul class="region-suggestions" style="display: none;"></ul>
             </div>
           </div>
-          <button>Create Ad Set</button>
+
+          <!-- Ad Scheduling Section -->
+          <div class="ad-scheduling-container" style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 style="margin: 0; font-size: 16px; color: #333;">Ad Scheduling (Optional)</h3>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" class="enable-scheduling-checkbox" style="cursor: pointer;">
+                <span style="font-size: 14px; color: #666;">Enable Scheduling</span>
+              </label>
+            </div>
+            <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads should run. Requires lifetime budget.</p>
+
+            <div class="scheduling-controls" style="display: none;">
+              <!-- Schedule List -->
+              <div class="schedule-list" style="margin-top: 15px;">
+                <!-- Schedule items will be added here -->
+              </div>
+
+              <!-- Add Schedule Button -->
+              <button type="button" class="add-schedule-btn" style="margin-top: 10px; padding: 8px 16px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                + Add Schedule
+              </button>
+
+              <!-- Schedule Form Template (hidden) -->
+              <div class="schedule-form-template" style="display: none;">
+                <div class="schedule-item" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="font-size: 14px;">Schedule #<span class="schedule-number"></span></strong>
+                    <button type="button" class="remove-schedule-btn" style="padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Remove</button>
+                  </div>
+
+                  <!-- Time Selection -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Time (HH:MM)</label>
+                      <input type="time" class="schedule-start-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">End Time (HH:MM)</label>
+                      <input type="time" class="schedule-end-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                  </div>
+
+                  <!-- Days Selection -->
+                  <div style="margin-bottom: 10px;">
+                    <label style="display: block; font-size: 13px; color: #666; margin-bottom: 8px;">Active Days</label>
+                    <div class="days-selector" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="0" style="cursor: pointer;"> Sun
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="1" style="cursor: pointer;"> Mon
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="2" style="cursor: pointer;"> Tue
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="3" style="cursor: pointer;"> Wed
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="4" style="cursor: pointer;"> Thu
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="5" style="cursor: pointer;"> Fri
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="6" style="cursor: pointer;"> Sat
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Timezone Type -->
+                  <div>
+                    <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Timezone</label>
+                    <select class="schedule-timezone-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                      <option value="USER">User's Timezone</option>
+                      <option value="ADVERTISER">Account Timezone</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="create-adset-btn">Create Ad Set</button>
         </div>
       </div>
       <!-- Creative Upload -->
