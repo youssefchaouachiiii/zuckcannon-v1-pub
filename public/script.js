@@ -196,6 +196,7 @@ class AppStateManager {
       selectedCampaign: null,
       campaignBidStrategy: null,
       campaignDailyBudget: null,
+      campaignLifetimeBudget: null,
       adSetConfig: {},
       uploadedAssets: [],
       adCopyData: {},
@@ -570,7 +571,7 @@ function clearAdSetForm() {
   });
 
   // Reset the Create Ad Set button state
-  const createButton = document.querySelector(".adset-form-container button");
+  const createButton = document.querySelector(".create-adset-btn");
   if (createButton) {
     createButton.classList.remove("active");
   }
@@ -907,7 +908,7 @@ class SingleSelectGroup {
     clearAdSetForm();
 
     // Reset the Create Ad Set button state
-    const createButton = document.querySelector(".adset-form-container button");
+    const createButton = document.querySelector(".create-adset-btn");
     if (createButton) {
       createButton.classList.remove("active");
       // Ensure button is not disabled
@@ -920,6 +921,16 @@ class SingleSelectGroup {
 
       dropdowns.forEach((dropdown) => {
         const clonedDropdown = dropdown.cloneNode(true);
+
+        // Clear listenerAttached flags from cloned options since listeners aren't cloned
+        const clonedOptions = clonedDropdown.querySelectorAll("li");
+        clonedOptions.forEach((option) => {
+          delete option.listenerAttached;
+        });
+
+        // Clear customDropdownInstance from cloned dropdown
+        delete clonedDropdown.customDropdownInstance;
+
         dropdown.parentNode.replaceChild(clonedDropdown, dropdown);
       });
     }
@@ -930,6 +941,16 @@ class SingleSelectGroup {
 
       console.log("Initializing dropdowns for ad set config");
       new CustomDropdown(".adset-config .custom-dropdown");
+
+      // Re-attach event listeners to pixel dropdown options after reinitialization
+      const pixelDropdown = document.querySelector(".adset-config .custom-dropdown .dropdown-options.pixel");
+      if (pixelDropdown) {
+        const pixelDropdownElement = pixelDropdown.closest(".custom-dropdown");
+        if (pixelDropdownElement && pixelDropdownElement.customDropdownInstance) {
+          console.log("Re-attaching listeners for pixel dropdown after initialization");
+          attachDropdownOptionListeners(pixelDropdownElement);
+        }
+      }
 
       // Apply the current campaign's special ad category settings
       const selectedCampaign = document.querySelector(".campaign.selected");
@@ -1301,10 +1322,18 @@ function attachDropdownOptionListeners(dropdown) {
       e.stopPropagation();
       const text = option.textContent;
 
+      // Re-query display element to ensure we have the correct reference after cloning
+      const currentSelected = dropdown.querySelector(".dropdown-selected");
+      const currentDisplay = currentSelected ? currentSelected.querySelector(".dropdown-display") : display;
+
       // Update selected display
-      display.textContent = text;
-      display.classList.remove("placeholder");
-      dropdownInstance.setDropdownData(display, option, dropdownType);
+      console.log(`[Dropdown ${dropdownType}] Updating display to:`, text);
+      console.log(`[Dropdown ${dropdownType}] Display element:`, currentDisplay);
+      console.log(`[Dropdown ${dropdownType}] Is display in DOM?`, document.contains(currentDisplay));
+      currentDisplay.textContent = text;
+      currentDisplay.classList.remove("placeholder");
+      console.log(`[Dropdown ${dropdownType}] Display text after update:`, currentDisplay.textContent);
+      dropdownInstance.setDropdownData(currentDisplay, option, dropdownType);
 
       // Re-query here to handle dynamically added/removed items
       const currentOptions = options.querySelectorAll("li");
@@ -1313,7 +1342,7 @@ function attachDropdownOptionListeners(dropdown) {
 
       dropdownInstance.closeDropdown(dropdown);
 
-      display.parentElement.classList.remove("empty-input");
+      currentDisplay.parentElement.classList.remove("empty-input");
       console.log(`Selected ${dropdownType}:`, text);
 
       if (typeof checkRequiredFields === "function") {
@@ -1460,9 +1489,18 @@ class UploadForm {
         e.preventDefault();
 
         if (e.target.textContent === "Create Ad Set") {
+          console.log("Create Ad Set button clicked. Classes:", e.target.classList.toString());
+          console.log("Has 'active' class:", e.target.classList.contains("active"));
+
           // Only proceed if button is active
           if (e.target.classList.contains("active")) {
             this.validateAndCreateAdSet();
+          } else {
+            console.log("Create Ad Set button clicked but not active. Check validation.");
+            // Call checkRequiredFields to log current validation state
+            if (typeof checkRequiredFields === 'function') {
+              checkRequiredFields();
+            }
           }
         }
       }
@@ -1547,8 +1585,21 @@ class UploadForm {
         // Convert dollars to cents for Facebook API
         payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100);
       } else {
-        // Convert dollars to cents for Facebook API
-        payload.daily_budget = Math.round(parseFloat(daily_budget) * 100);
+        // Check if campaign uses lifetime budget
+        const campaignLifetimeBudget = appState.getState().campaignLifetimeBudget;
+
+        if (campaignLifetimeBudget && campaignLifetimeBudget.trim() !== '') {
+          // Campaign has lifetime budget - use it for ad set
+          payload.lifetime_budget = parseInt(campaignLifetimeBudget);
+
+          // Set end_time to 30 days from now (required for lifetime budget)
+          const endDate = new Date();
+          endDate.setDate(endDate.getDate() + 30);
+          payload.end_time = endDate.toISOString();
+        } else {
+          // Campaign has daily budget - use daily budget for ad set
+          payload.daily_budget = Math.round(parseFloat(daily_budget) * 100);
+        }
       }
 
       // Include age fields only if they're visible (no special ad categories)
@@ -1559,6 +1610,21 @@ class UploadForm {
       if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== "none") {
         payload.min_age = parseInt(minAgeInput.value);
         payload.max_age = parseInt(maxAgeInput.value);
+      }
+
+      // Add ad scheduling if enabled
+      const adSchedule = getAdScheduleData();
+      if (adSchedule) {
+        // Validate schedule
+        const validation = validateAdSchedule(adSchedule);
+        if (!validation.valid) {
+          if (window.showError) {
+            window.showError(validation.error, 5000);
+          }
+          return;
+        }
+
+        payload.adset_schedule = adSchedule;
       }
 
       this.showLoadingState();
@@ -1749,14 +1815,14 @@ class UploadForm {
   }
 
   showLoadingState() {
-    const button = document.querySelector(".adset-form-container button");
+    const button = document.querySelector(".create-adset-btn");
     button.disabled = true;
     button.style.opacity = "0.6";
     animatedEllipsis.start(button, "Creating Ad Set");
   }
 
   hideLoadingState() {
-    const button = document.querySelector(".adset-form-container button");
+    const button = document.querySelector(".create-adset-btn");
     animatedEllipsis.stop(button);
     button.textContent = "Create Ad Set";
     button.disabled = false;
@@ -5224,7 +5290,7 @@ function setupAdSetFormValidation() {
   const adsetForm = document.querySelector(".adset-form-container");
   if (!adsetForm) return;
 
-  const createButton = adsetForm.querySelector("button");
+  const createButton = adsetForm.querySelector(".create-adset-btn");
   const requiredFields = {
     adsetName: adsetForm.querySelector(".config-adset-name"),
     eventType: adsetForm.querySelector(".config-event-type"),
@@ -5317,14 +5383,30 @@ function setupAdSetFormValidation() {
     }
 
     // Enable button only if all required fields are filled
-    // Use a small delay to ensure DOM has settled
-    setTimeout(() => {
-      if (hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget) {
-        createButton.classList.add("active");
+    // Get fresh button reference to avoid stale references
+    const currentButton = document.querySelector(".create-adset-btn");
+
+    if (hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget) {
+      if (currentButton) {
+        const hadActiveClass = currentButton.classList.contains("active");
+        currentButton.classList.add("active");
+        console.log(`✓ Button activated - active class ${hadActiveClass ? 'already present' : 'ADDED'}`);
+        console.log("  Button classes after activation:", currentButton.classList.toString());
       } else {
-        createButton.classList.remove("active");
+        console.error("createButton not found!");
       }
-    }, 0);
+    } else {
+      if (currentButton) {
+        currentButton.classList.remove("active");
+        console.log("✗ Button deactivated - active class removed. Reason:", {
+          hasAdsetName,
+          hasEventType,
+          hasValidAge,
+          hasValidGeo,
+          hasValidBudget
+        });
+      }
+    }
   };
 
   // Add event listeners to all required fields
@@ -6853,4 +6935,154 @@ function showBulkResults(results) {
 document.addEventListener("DOMContentLoaded", () => {
   initBulkUploadButton();
   setupBulkUploadListeners();
+  setupAdScheduling();
 });
+
+// ============================================
+// AD SCHEDULING FUNCTIONALITY
+// ============================================
+
+let scheduleCounter = 0;
+
+function setupAdScheduling() {
+  const enableSchedulingCheckbox = document.querySelector('.enable-scheduling-checkbox');
+  const schedulingControls = document.querySelector('.scheduling-controls');
+  const addScheduleBtn = document.querySelector('.add-schedule-btn');
+
+  // Toggle scheduling controls
+  if (enableSchedulingCheckbox) {
+    enableSchedulingCheckbox.addEventListener('change', (e) => {
+      if (schedulingControls) {
+        schedulingControls.style.display = e.target.checked ? 'block' : 'none';
+
+        // If enabling and no schedules exist, add one
+        if (e.target.checked && document.querySelectorAll('.schedule-list .schedule-item').length === 0) {
+          addScheduleItem();
+        }
+      }
+    });
+  }
+
+  // Add schedule button
+  if (addScheduleBtn) {
+    addScheduleBtn.addEventListener('click', () => {
+      addScheduleItem();
+    });
+  }
+}
+
+function addScheduleItem() {
+  scheduleCounter++;
+  const scheduleList = document.querySelector('.schedule-list');
+  const template = document.querySelector('.schedule-form-template');
+
+  if (!scheduleList || !template) return;
+
+  // Clone the template
+  const scheduleItem = template.querySelector('.schedule-item').cloneNode(true);
+
+  // Update schedule number
+  const scheduleNumber = scheduleItem.querySelector('.schedule-number');
+  if (scheduleNumber) {
+    scheduleNumber.textContent = scheduleCounter;
+  }
+
+  // Set up remove button
+  const removeBtn = scheduleItem.querySelector('.remove-schedule-btn');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      scheduleItem.remove();
+    });
+  }
+
+  // Append to schedule list
+  scheduleList.appendChild(scheduleItem);
+}
+
+function getAdScheduleData() {
+  const enableSchedulingCheckbox = document.querySelector('.enable-scheduling-checkbox');
+
+  // Return null if scheduling is not enabled
+  if (!enableSchedulingCheckbox || !enableSchedulingCheckbox.checked) {
+    return null;
+  }
+
+  const scheduleItems = document.querySelectorAll('.schedule-list .schedule-item');
+
+  if (scheduleItems.length === 0) {
+    return null;
+  }
+
+  const schedules = [];
+
+  scheduleItems.forEach((item) => {
+    const startTime = item.querySelector('.schedule-start-time').value;
+    const endTime = item.querySelector('.schedule-end-time').value;
+    const timezoneType = item.querySelector('.schedule-timezone-type').value;
+
+    // Get selected days
+    const dayCheckboxes = item.querySelectorAll('.days-selector input[type="checkbox"]:checked');
+    const days = Array.from(dayCheckboxes).map(cb => parseInt(cb.value));
+
+    // Validate time inputs
+    if (!startTime || !endTime) {
+      return; // Skip invalid schedules
+    }
+
+    // Convert time (HH:MM) to minutes since midnight
+    const startMinute = timeToMinutes(startTime);
+    const endMinute = timeToMinutes(endTime);
+
+    // Only add if we have at least one day selected
+    if (days.length > 0) {
+      const schedule = {
+        start_minute: startMinute,
+        end_minute: endMinute,
+        days: days
+      };
+
+      // Add timezone_type if not default
+      if (timezoneType && timezoneType !== 'USER') {
+        schedule.timezone_type = timezoneType;
+      }
+
+      schedules.push(schedule);
+    }
+  });
+
+  return schedules.length > 0 ? schedules : null;
+}
+
+function timeToMinutes(timeString) {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function validateAdSchedule(schedules) {
+  if (!schedules || schedules.length === 0) {
+    return { valid: true };
+  }
+
+  for (let i = 0; i < schedules.length; i++) {
+    const schedule = schedules[i];
+
+    // Check duration (minimum 1 hour = 60 minutes)
+    const duration = schedule.end_minute - schedule.start_minute;
+    if (duration < 60) {
+      return {
+        valid: false,
+        error: `Schedule #${i + 1}: Start and end time must be at least 1 hour apart`
+      };
+    }
+
+    // Check if days are selected
+    if (!schedule.days || schedule.days.length === 0) {
+      return {
+        valid: false,
+        error: `Schedule #${i + 1}: Please select at least one day`
+      };
+    }
+  }
+
+  return { valid: true };
+}
