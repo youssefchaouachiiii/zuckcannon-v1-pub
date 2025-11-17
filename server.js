@@ -1752,16 +1752,16 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       name,
       objective,
       status,
-      // Budget options
-      daily_budget,
-      lifetime_budget,
-      spend_cap,
+      // Budget options - MOVED TO AD SET LEVEL
+      // daily_budget,
+      // lifetime_budget,
+      // spend_cap,
       // Special categories
       special_ad_categories,
       special_ad_category,
       special_ad_category_country,
-      // Bid strategy
-      bid_strategy,
+      // Bid strategy - MOVED TO AD SET LEVEL
+      // bid_strategy,
       // Advanced options
       adlabels,
       adset_bid_amounts,
@@ -1777,9 +1777,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       promoted_object,
       // Smart promotion
       smart_promotion_type,
-      // Timing
-      start_time,
-      stop_time,
+      // Timing - MOVED TO AD SET LEVEL
+      // start_time,
+      // stop_time,
     } = req.body;
 
     const userAccessToken = req.user.facebook_access_token;
@@ -1813,24 +1813,24 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     formData.append("status", status || "PAUSED");
     formData.append("access_token", userAccessToken);
 
-    // Determine if campaign-level budget is being used
-    const hasCampaignBudget = !!(daily_budget || lifetime_budget);
+    // Budget fields - MOVED TO AD SET LEVEL
+    // const hasCampaignBudget = !!(daily_budget || lifetime_budget);
+    const hasCampaignBudget = false; // Always false now since budgets moved to ad set level
 
-    // Budget fields
-    if (daily_budget) {
-      const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
-      formData.append("daily_budget", budgetInCents.toString());
-    }
+    // if (daily_budget) {
+    //   const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+    //   formData.append("daily_budget", budgetInCents.toString());
+    // }
 
-    if (lifetime_budget) {
-      const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
-      formData.append("lifetime_budget", budgetInCents.toString());
-    }
+    // if (lifetime_budget) {
+    //   const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+    //   formData.append("lifetime_budget", budgetInCents.toString());
+    // }
 
-    if (spend_cap) {
-      const capInCents = Math.round(parseFloat(spend_cap) * 100);
-      formData.append("spend_cap", capInCents.toString());
-    }
+    // if (spend_cap) {
+    //   const capInCents = Math.round(parseFloat(spend_cap) * 100);
+    //   formData.append("spend_cap", capInCents.toString());
+    // }
 
     // Special ad categories (Meta requires JSON array)
     if (special_ad_categories) {
@@ -1848,10 +1848,10 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("special_ad_category_country", JSON.stringify(special_ad_category_country));
     }
 
-    // Bid strategy
-    if (bid_strategy) {
-      formData.append("bid_strategy", bid_strategy);
-    }
+    // Bid strategy - MOVED TO AD SET LEVEL
+    // if (bid_strategy) {
+    //   formData.append("bid_strategy", bid_strategy);
+    // }
 
     // Advanced campaign options
     if (adlabels) {
@@ -1910,14 +1910,14 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Timing
-    if (start_time) {
-      formData.append("start_time", start_time);
-    }
+    // Timing - MOVED TO AD SET LEVEL
+    // if (start_time) {
+    //   formData.append("start_time", start_time);
+    // }
 
-    if (stop_time) {
-      formData.append("stop_time", stop_time);
-    }
+    // if (stop_time) {
+    //   formData.append("stop_time", stop_time);
+    // }
 
     console.log("Creating campaign:", {
       url: campaignUrl,
@@ -1995,10 +1995,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     name: req.body.name,
     optimization_goal: req.body.optimization_goal,
     billing_event: req.body.billing_event,
-    bid_strategy: req.body.bid_strategy,
+    bid_strategy: req.body.bid_strategy || "LOWEST_COST_WITHOUT_CAP", // Default to LOWEST_COST_WITHOUT_CAP
+    pacing_type: ["day_parting"], // Set pacing type to day_parting
     campaign_id: req.body.campaign_id,
     status: req.body.status,
-    start_time: new Date().toISOString(),
     targeting: {
       geo_locations: req.body.geo_locations || {
         countries: ["US"],
@@ -2023,12 +2023,26 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.destination_type = req.body.destination_type;
   }
 
-  // Add budget - either daily_budget or lifetime_budget
-  // if (req.body.daily_budget) {
-  //   payload.daily_budget = parseInt(req.body.daily_budget);
-  // } else if (req.body.lifetime_budget) {
-  //   payload.lifetime_budget = parseInt(req.body.lifetime_budget);
-  // }
+  // Add budget - either daily_budget or lifetime_budget (moved from campaign level)
+  if (req.body.daily_budget) {
+    const budgetInCents = Math.round(parseFloat(req.body.daily_budget) * 100);
+    payload.daily_budget = budgetInCents;
+  } else if (req.body.lifetime_budget) {
+    const budgetInCents = Math.round(parseFloat(req.body.lifetime_budget) * 100);
+    payload.lifetime_budget = budgetInCents;
+  }
+
+  // Add schedule times (moved from campaign level)
+  if (req.body.start_time) {
+    payload.start_time = req.body.start_time;
+  } else {
+    // Default to now if not provided
+    payload.start_time = new Date().toISOString();
+  }
+
+  if (req.body.end_time) {
+    payload.end_time = req.body.end_time;
+  }
 
   // Handle promoted_object based on optimization goal and campaign objective
   // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-promoted-object

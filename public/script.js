@@ -79,7 +79,7 @@ function updateConversionFieldsVisibility(optimizationGoal) {
     eventTypeContainer.style.opacity = requiresPixelAndEvent ? '1' : '0.7';
   }
 
-  console.log(`Conversion fields ${requiresPixelAndEvent ? 'required' : 'optional'} for optimization goal: ${optimizationGoal}`);
+  // console.log(`Conversion fields ${requiresPixelAndEvent ? 'required' : 'optional'} for optimization goal: ${optimizationGoal}`);
 
   // Don't trigger checkRequiredFields here to avoid infinite recursion
   // checkRequiredFields will call this function if needed
@@ -371,15 +371,12 @@ function populatePixels(pixels) {
     pixelDropdownOptions.innerHTML = "";
 
     if (!pixels || pixels.length === 0) {
-      console.log("No pixels data received");
       pixelDropdownOptions.innerHTML = '<li style="opacity: 0.6; cursor: default;">No pixels available</li>';
       return;
     }
 
     for (const pixel of pixels) {
-      // Check if pixel has adspixels data
       if (!pixel.adspixels || !pixel.adspixels.data) {
-        console.log("Pixel missing adspixels data:", pixel);
         continue;
       }
 
@@ -397,20 +394,16 @@ function populatePixels(pixels) {
       }
     }
 
-    // If no valid pixels were added, show message
     if (pixelDropdownOptions.innerHTML === "") {
       pixelDropdownOptions.innerHTML = '<li style="opacity: 0.6; cursor: default;">No pixels available for your accounts</li>';
     }
 
-    // Re-attach event listeners after updating innerHTML
     const pixelDropdownElement = pixelDropdownOptions.closest(".custom-dropdown");
     if (pixelDropdownElement && pixelDropdownElement.customDropdownInstance) {
-      console.log("Re-attaching listeners for pixel dropdown");
       attachDropdownOptionListeners(pixelDropdownElement);
     }
   }
   pixelList = document.querySelectorAll(".pixel-option");
-  console.log(`Populated ${pixelList.length} pixels`);
 }
 
 function populatePages(pages) {
@@ -464,7 +457,7 @@ function populateSpecialAdCountries() {
     });
   });
 
-  console.log("Populated special ad category country dropdowns with", fbData.countries.length, "countries");
+  // console.log("Populated special ad category country dropdowns with", fbData.countries.length, "countries");
 }
 
 // Main app initialization
@@ -762,51 +755,33 @@ class SingleSelectGroup {
   }
 
   adjustConfigSettings(bidStrategy, campaignDailyBudget, campaignLifetimeBudget) {
-    const dailyBudget = document.querySelector(".config-daily-budget");
-    const dailyBudgetWrapper = document.querySelector(".budget-input-wrapper.daily-budget");
+    // Budget is now set at ad set level via budget type dropdown
+    // This function now only handles bid strategy and cost per result
     const configBidStrategy = document.querySelector(".config-bid-strategy");
     const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
     const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
 
-    // Determine if campaign has CBO (Campaign Budget Optimization)
-    const hasCBO = (campaignDailyBudget && campaignDailyBudget !== "undefined") ||
-                   (campaignLifetimeBudget && campaignLifetimeBudget !== "undefined");
+    // Since budgets moved to ad set level, we don't need CBO logic anymore
+    // Just handle bid strategy and cost per result settings
 
-    if (!hasCBO && bidStrategy === "undefined") {
-      // No CBO - Ad set needs its own budget
-      configBidStrategy.value = "LOWEST_COST_WITHOUT_CAP";
-
-      dailyBudgetWrapper.style.display = "flex";
-      dailyBudget.setAttribute("required", "");
-
-      costPerResultWrapper.style.display = "none";
-      costPerResultGoal.removeAttribute("required");
-    } else if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
+    if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
       // Cost cap or bid cap strategy - show cost per result
-      configBidStrategy.value = bidStrategy;
+      if (configBidStrategy) configBidStrategy.value = bidStrategy;
 
-      dailyBudgetWrapper.style.display = "none";
-      dailyBudget.removeAttribute("required");
+      if (costPerResultWrapper) costPerResultWrapper.style.display = "flex";
+      if (costPerResultGoal) costPerResultGoal.setAttribute("required", "");
+    } else {
+      // Default strategy - hide cost per result
+      if (configBidStrategy) configBidStrategy.value = bidStrategy || "LOWEST_COST_WITHOUT_CAP";
 
-      costPerResultWrapper.style.display = "flex";
-      costPerResultGoal.setAttribute("required", "");
-    } else if (hasCBO && bidStrategy === "LOWEST_COST_WITHOUT_CAP") {
-      // Campaign has CBO (daily or lifetime) - hide ad set budget fields
-      configBidStrategy.value = bidStrategy;
-
-      dailyBudgetWrapper.style.display = "none";
-      dailyBudget.removeAttribute("required");
-
-      costPerResultWrapper.style.display = "none";
-      costPerResultGoal.removeAttribute("required");
+      if (costPerResultWrapper) costPerResultWrapper.style.display = "none";
+      if (costPerResultGoal) costPerResultGoal.removeAttribute("required");
     }
 
-    // Log for debugging
-    console.log("Campaign budget config:", {
+    // Log for debugging (budget now at ad set level)
+    console.log("Bid strategy config:", {
       bidStrategy,
-      campaignDailyBudget,
-      campaignLifetimeBudget,
-      hasCBO,
+      note: "Budget handling moved to ad set level"
     });
 
     // Trigger validation check after adjusting settings
@@ -1356,9 +1331,9 @@ function attachDropdownOptionListeners(dropdown) {
 
 class CustomDropdown {
   constructor(selector) {
-    console.log("CustomDropdown constructor called with selector:", selector);
+    // console.log("CustomDropdown constructor called with selector:", selector);
     this.dropdowns = document.querySelectorAll(selector);
-    console.log("Found dropdowns:", this.dropdowns.length);
+    // console.log("Found dropdowns:", this.dropdowns.length);
     this.init();
   }
 
@@ -1427,7 +1402,6 @@ class CustomDropdown {
       case "pixel":
         const pixelId = option.dataset.pixelId || option.getAttribute("data-pixel-id") || "";
         const pixelAccountId = option.dataset.pixelAccountId || option.getAttribute("data-pixel-account-id") || "";
-        console.log("Setting pixel data:", { pixelId, pixelAccountId, option });
         display.dataset.pixelid = pixelId;
         display.dataset.pixelAccountId = pixelAccountId;
         break;
@@ -1524,22 +1498,31 @@ class UploadForm {
       // Only OFFSITE_CONVERSIONS requires pixel_id + event_type
       // LEAD_GENERATION requires page_id (handled separately)
       // APP_INSTALLS requires application_id + object_store_url (not pixel)
-      const requiresPixelAndEvent = ["OFFSITE_CONVERSIONS"].includes(optimizationGoal);
+      // const requiresPixelAndEvent = ["OFFSITE_CONVERSIONS"].includes(optimizationGoal);
 
-      if (requiresPixelAndEvent) {
-        if (!pixelId || pixelId.trim() === "" || pixelId.startsWith("act_")) {
-          if (window.showError) {
-            window.showError("Please select a valid Meta Pixel from the Conversion section for OFFSITE_CONVERSIONS.", 8000);
-          }
-          return;
-        }
+      // if (requiresPixelAndEvent) {
+      //   if (!pixelId || pixelId.trim() === "" || pixelId.startsWith("act_")) {
+      //     if (window.showError) {
+      //       window.showError("Please select a valid Meta Pixel from the Conversion section for OFFSITE_CONVERSIONS.", 8000);
+      //     }
+      //     return;
+      //   }
 
-        if (!eventType || eventType.trim() === "") {
-          if (window.showError) {
-            window.showError("Please select a conversion event in the Conversion section for OFFSITE_CONVERSIONS.", 8000);
-          }
-          return;
-        }
+      //   if (!eventType || eventType.trim() === "") {
+      //     if (window.showError) {
+      //       window.showError("Please select a conversion event in the Conversion section for OFFSITE_CONVERSIONS.", 8000);
+      //     }
+      //     return;
+      //   }
+      // }
+
+      // Get bid strategy from the dropdown
+      const bidStrategyDisplay = document.querySelector('[data-dropdown="adset-bid-strategy"] .dropdown-display');
+      let bidStrategy = bidStrategyDisplay ? bidStrategyDisplay.dataset.value : "LOWEST_COST_WITHOUT_CAP";
+
+      // If no bid strategy is set, default to LOWEST_COST_WITHOUT_CAP
+      if (!bidStrategy || bidStrategy === "undefined") {
+        bidStrategy = "LOWEST_COST_WITHOUT_CAP";
       }
 
       const payload = {
@@ -1548,7 +1531,7 @@ class UploadForm {
         destination_type: document.querySelector(".config-destination-type").value,
         optimization_goal: optimizationGoal,
         billing_event: document.querySelector(".config-billing-event").value,
-        bid_strategy: document.querySelector(".config-bid-strategy").value,
+        bid_strategy: bidStrategy,
         name: document.querySelector(".config-adset-name").value, // Add 'name' for validation
         adset_name: document.querySelector(".config-adset-name").value, // Keep for server processing
         pixel_id: pixelId,
@@ -1578,28 +1561,50 @@ class UploadForm {
         }
       }
 
-      const bid_amount = document.querySelector(".config-cost-per-result-goal");
-      const daily_budget = document.querySelector(".config-daily-budget").value;
+      // Handle budget (now at ad set level)
+      const budgetTypeDisplay = document.querySelector('[data-dropdown="adset-budget-type"] .dropdown-display');
+      const budgetType = budgetTypeDisplay ? budgetTypeDisplay.dataset.value : null;
+      const budgetAmount = document.querySelector(".config-adset-budget");
+      const startDateTime = document.querySelector(".config-start-datetime");
+      const endDateTime = document.querySelector(".config-end-datetime");
 
-      if (bid_amount.required) {
+      // Validate budget is selected
+      if (!budgetType || !budgetAmount || !budgetAmount.value) {
+        if (window.showError) {
+          window.showError("Please select budget type and enter budget amount", 3000);
+        }
+        this.hideLoadingState(true);
+        return;
+      }
+
+      // Add budget to payload
+      if (budgetType === "daily") {
+        payload.daily_budget = parseFloat(budgetAmount.value);
+      } else if (budgetType === "lifetime") {
+        payload.lifetime_budget = parseFloat(budgetAmount.value);
+      }
+
+      // Handle start and end times
+      if (startDateTime && startDateTime.value) {
+        payload.start_time = new Date(startDateTime.value).toISOString();
+      }
+
+      if (endDateTime && endDateTime.value) {
+        payload.end_time = new Date(endDateTime.value).toISOString();
+      } else if (budgetType === "lifetime") {
+        // Lifetime budget requires end_time
+        if (window.showError) {
+          window.showError("End date is required for lifetime budget", 3000);
+        }
+        this.hideLoadingState(true);
+        return;
+      }
+
+      // Handle bid amount if needed
+      const bid_amount = document.querySelector(".config-cost-per-result-goal");
+      if (bid_amount && bid_amount.required && bid_amount.value) {
         // Convert dollars to cents for Facebook API
         payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100);
-      } else {
-        // Check if campaign uses lifetime budget
-        const campaignLifetimeBudget = appState.getState().campaignLifetimeBudget;
-
-        if (campaignLifetimeBudget && campaignLifetimeBudget.trim() !== '') {
-          // Campaign has lifetime budget - use it for ad set
-          payload.lifetime_budget = parseInt(campaignLifetimeBudget);
-
-          // Set end_time to 30 days from now (required for lifetime budget)
-          const endDate = new Date();
-          endDate.setDate(endDate.getDate() + 30);
-          payload.end_time = endDate.toISOString();
-        } else {
-          // Campaign has daily budget - use daily budget for ad set
-          payload.daily_budget = Math.round(parseFloat(daily_budget) * 100);
-        }
       }
 
       // Include age fields only if they're visible (no special ad categories)
@@ -5326,7 +5331,7 @@ function setupAdSetFormValidation() {
 
       // Debug event type specifically when it's required
       if (!hasEventType && eventTypeField) {
-        console.log("Event type validation failed (required for OFFSITE_CONVERSIONS):", {
+        console.log("", {
           optimizationGoal: optimizationGoal,
           element: eventTypeField,
           value: eventTypeField.value,
@@ -5398,7 +5403,7 @@ function setupAdSetFormValidation() {
     } else {
       if (currentButton) {
         currentButton.classList.remove("active");
-        console.log("✗ Button deactivated - active class removed. Reason:", {
+        console.log("", {
           hasAdsetName,
           hasEventType,
           hasValidAge,
@@ -5531,7 +5536,7 @@ function setupMetaDataUpdates() {
   const eventSource = new EventSource("/api/meta-data-updates");
 
   eventSource.addEventListener("connected", (event) => {
-    console.log("Connected to Meta data updates:", JSON.parse(event.data));
+    // console.log("Connected to Meta data updates:", JSON.parse(event.data));
   });
 
   eventSource.addEventListener("refresh-started", (event) => {
@@ -5710,7 +5715,7 @@ function initializeCreateCampaignDialog() {
   setTimeout(() => {
     // Add event listener to the create campaign button using direct event delegation
     const handleCreateCampaignClick = (e) => {
-      console.log("Button click intercepted - target:", e.target);
+      // console.log("Button click intercepted - target:", e.target);
       if (e.target.classList.contains("create-new-campaign-btn") || e.target.closest(".create-new-campaign-btn")) {
         e.preventDefault();
         e.stopPropagation();
@@ -5789,11 +5794,12 @@ function resetCampaignCreationForm() {
   const nameInput = column.querySelector(".config-campaign-name");
   if (nameInput) nameInput.value = "";
 
-  const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
-  if (dailyBudgetInput) dailyBudgetInput.value = "";
+  // Budget fields - MOVED TO AD SET LEVEL
+  // const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
+  // if (dailyBudgetInput) dailyBudgetInput.value = "";
 
-  const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
-  if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+  // const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
+  // if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
 
   // Reset all dropdowns
   const displayElements = column.querySelectorAll(".dropdown-display");
@@ -5829,8 +5835,9 @@ async function handleCampaignCreation() {
   if (!column) return;
 
   const nameInput = column.querySelector(".config-campaign-name");
-  const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
-  const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
+  // Budget fields - MOVED TO AD SET LEVEL
+  // const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
+  // const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
   const createBtn = column.querySelector(".campaign-create-btn");
 
   if (!createBtn) {
@@ -5841,11 +5848,12 @@ async function handleCampaignCreation() {
   const name = nameInput?.value.trim();
   const objectiveDisplay = column.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
   const statusDisplay = column.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
-  const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+  // Bid strategy - MOVED TO AD SET LEVEL
+  // const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
 
   const objective = objectiveDisplay?.dataset.value;
   const status = statusDisplay?.dataset.value;
-  const bidStrategy = bidStrategyDisplay?.dataset.value;
+  // const bidStrategy = bidStrategyDisplay?.dataset.value;
 
   // Get special categories
   const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
@@ -5859,8 +5867,9 @@ async function handleCampaignCreation() {
     .map((opt) => opt.dataset.value)
     .filter((val) => val !== "");
 
-  const dailyBudget = dailyBudgetInput?.value;
-  const lifetimeBudget = lifetimeBudgetInput?.value;
+  // Budget fields - MOVED TO AD SET LEVEL
+  // const dailyBudget = dailyBudgetInput?.value;
+  // const lifetimeBudget = lifetimeBudgetInput?.value;
 
   if (!name || !objective || !status) {
     if (window.showError) {
@@ -5874,18 +5883,18 @@ async function handleCampaignCreation() {
     return;
   }
 
-  // Validate that only one budget type is used
-  if (dailyBudget && lifetimeBudget) {
-    if (window.showError) {
-      window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
-    }
-    // Reset button state on validation error
-    if (createBtn) {
-      createBtn.disabled = false;
-      createBtn.textContent = "Create Campaign";
-    }
-    return;
-  }
+  // Budget validation - MOVED TO AD SET LEVEL
+  // if (dailyBudget && lifetimeBudget) {
+  //   if (window.showError) {
+  //     window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
+  //   }
+  //   // Reset button state on validation error
+  //   if (createBtn) {
+  //     createBtn.disabled = false;
+  //     createBtn.textContent = "Create Campaign";
+  //   }
+  //   return;
+  // }
 
   // Show loading state
   if (createBtn) {
@@ -5910,17 +5919,19 @@ async function handleCampaignCreation() {
       requestBody.special_ad_category_country = specialCountries;
     }
 
-    if (bidStrategy) {
-      requestBody.bid_strategy = bidStrategy;
-    }
+    // Bid strategy - MOVED TO AD SET LEVEL
+    // if (bidStrategy) {
+    //   requestBody.bid_strategy = bidStrategy;
+    // }
 
-    if (dailyBudget && parseFloat(dailyBudget) > 0) {
-      requestBody.daily_budget = parseFloat(dailyBudget);
-    }
+    // Budget fields - MOVED TO AD SET LEVEL
+    // if (dailyBudget && parseFloat(dailyBudget) > 0) {
+    //   requestBody.daily_budget = parseFloat(dailyBudget);
+    // }
 
-    if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
-      requestBody.lifetime_budget = parseFloat(lifetimeBudget);
-    }
+    // if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+    //   requestBody.lifetime_budget = parseFloat(lifetimeBudget);
+    // }
 
     console.log("Creating campaign with payload:", requestBody);
 
@@ -6043,16 +6054,17 @@ function openCreateCampaignDialog() {
   }
 
   const nameInput = dialog.querySelector("#create-campaign-name");
-  const dailyBudgetInput = dialog.querySelector("#create-campaign-daily-budget");
-  const lifetimeBudgetInput = dialog.querySelector("#create-campaign-lifetime-budget");
+  // Budget fields - MOVED TO AD SET LEVEL
+  // const dailyBudgetInput = dialog.querySelector("#create-campaign-daily-budget");
+  // const lifetimeBudgetInput = dialog.querySelector("#create-campaign-lifetime-budget");
   const createBtn = dialog.querySelector(".campaign-create");
   const cancelBtn = dialog.querySelector(".campaign-cancel");
   const closeBtn = dialog.querySelector(".dialog-close-btn");
 
   // Reset form
   if (nameInput) nameInput.value = "";
-  if (dailyBudgetInput) dailyBudgetInput.value = "";
-  if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+  // if (dailyBudgetInput) dailyBudgetInput.value = "";
+  // if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
   if (createBtn) {
     createBtn.disabled = true;
     createBtn.textContent = "Create Campaign";
@@ -6061,7 +6073,8 @@ function openCreateCampaignDialog() {
   // Reset dropdowns
   const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
   const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
-  const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+  // Bid strategy - MOVED TO AD SET LEVEL
+  // const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
   const specialCategoriesDisplay = dialog.querySelector('[data-dropdown="campaign-special-categories"] .dropdown-display');
   const specialCountryDisplay = dialog.querySelector('[data-dropdown="campaign-special-country"] .dropdown-display');
 
@@ -6073,10 +6086,10 @@ function openCreateCampaignDialog() {
     statusDisplay.textContent = "Status*";
     statusDisplay.classList.add("placeholder");
   }
-  if (bidStrategyDisplay) {
-    bidStrategyDisplay.textContent = "Bid Strategy (Optional)";
-    bidStrategyDisplay.classList.add("placeholder");
-  }
+  // if (bidStrategyDisplay) {
+  //   bidStrategyDisplay.textContent = "Bid Strategy (Optional)";
+  //   bidStrategyDisplay.classList.add("placeholder");
+  // }
   if (specialCategoriesDisplay) {
     specialCategoriesDisplay.textContent = "Special Ad Categories (Optional)";
     specialCategoriesDisplay.classList.add("placeholder");
@@ -6168,11 +6181,12 @@ function openCreateCampaignDialog() {
       const name = nameInput?.value.trim();
       const objectiveDisplay = dialog.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
       const statusDisplay = dialog.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
-      const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+      // Bid strategy - MOVED TO AD SET LEVEL
+      // const bidStrategyDisplay = dialog.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
 
       const objective = objectiveDisplay?.dataset.value;
       const status = statusDisplay?.dataset.value;
-      const bidStrategy = bidStrategyDisplay?.dataset.value;
+      // const bidStrategy = bidStrategyDisplay?.dataset.value;
 
       // Get special categories
       const specialCategoriesOptions = dialog.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
@@ -6186,8 +6200,9 @@ function openCreateCampaignDialog() {
         .map((opt) => opt.dataset.value)
         .filter((val) => val !== "");
 
-      const dailyBudget = dailyBudgetInput?.value;
-      const lifetimeBudget = lifetimeBudgetInput?.value;
+      // Budget fields removed - now handled at ad set level
+      // const dailyBudget = dailyBudgetInput?.value;
+      // const lifetimeBudget = lifetimeBudgetInput?.value;
 
       if (!name || !objective || !status) {
         if (window.showError) {
@@ -6196,13 +6211,13 @@ function openCreateCampaignDialog() {
         return;
       }
 
-      // Validate that only one budget type is used
-      if (dailyBudget && lifetimeBudget) {
-        if (window.showError) {
-          window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
-        }
-        return;
-      }
+      // Budget validation removed - now handled at ad set level
+      // if (dailyBudget && lifetimeBudget) {
+      //   if (window.showError) {
+      //     window.showError("Cannot specify both daily budget and lifetime budget. Please choose one.", 3000);
+      //   }
+      //   return;
+      // }
 
       // Show loading state
       createBtn.disabled = true;
@@ -6230,13 +6245,14 @@ function openCreateCampaignDialog() {
           requestBody.bid_strategy = bidStrategy;
         }
 
-        if (dailyBudget && parseFloat(dailyBudget) > 0) {
-          requestBody.daily_budget = parseFloat(dailyBudget);
-        }
+        // Budget fields removed - now handled at ad set level
+        // if (dailyBudget && parseFloat(dailyBudget) > 0) {
+        //   requestBody.daily_budget = parseFloat(dailyBudget);
+        // }
 
-        if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
-          requestBody.lifetime_budget = parseFloat(lifetimeBudget);
-        }
+        // if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
+        //   requestBody.lifetime_budget = parseFloat(lifetimeBudget);
+        // }
 
         console.log("Creating campaign with payload:", requestBody);
 
@@ -6931,11 +6947,69 @@ function showBulkResults(results) {
   }
 }
 
+// ============================================
+// BUDGET TYPE DROPDOWN FUNCTIONALITY
+// ============================================
+
+function setupBudgetTypeDropdown() {
+  // Set default start datetime to now
+  const startDateInput = document.querySelector('.config-start-datetime');
+  if (startDateInput) {
+    const now = new Date();
+    // Format to YYYY-MM-DDTHH:MM for datetime-local input
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    startDateInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  const budgetTypeOptions = document.querySelectorAll('.dropdown-options.adset-budget-type li');
+
+  budgetTypeOptions.forEach(option => {
+    option.addEventListener('click', () => {
+      const budgetType = option.dataset.value;
+      const budgetWrapper = document.querySelector('.budget-schedule-section .budget-input-wrapper');
+      const budgetInput = document.querySelector('.config-adset-budget');
+      const budgetSuffix = document.querySelector('.budget-type-suffix');
+      const endDateLabel = document.querySelector('.end-date-required-indicator');
+      const endDateOptional = document.querySelector('.end-date-optional-indicator');
+      const endDateInput = document.querySelector('.config-end-datetime');
+
+      if (budgetWrapper && budgetInput && budgetSuffix) {
+        // Show budget input
+        budgetWrapper.style.display = 'flex';
+
+        // Update placeholder and suffix based on budget type
+        if (budgetType === 'daily') {
+          budgetInput.placeholder = 'Enter daily budget (e.g., 50 for $50/day)';
+          budgetSuffix.textContent = '/day';
+
+          // End date is optional for daily budget
+          if (endDateLabel) endDateLabel.style.display = 'none';
+          if (endDateOptional) endDateOptional.style.display = 'inline';
+          if (endDateInput) endDateInput.required = false;
+        } else if (budgetType === 'lifetime') {
+          budgetInput.placeholder = 'Enter lifetime budget (e.g., 1000 for $1000)';
+          budgetSuffix.textContent = ' total';
+
+          // End date is required for lifetime budget
+          if (endDateLabel) endDateLabel.style.display = 'inline';
+          if (endDateOptional) endDateOptional.style.display = 'none';
+          if (endDateInput) endDateInput.required = true;
+        }
+      }
+    });
+  });
+}
+
 // Initialize bulk upload on page load
 document.addEventListener("DOMContentLoaded", () => {
   initBulkUploadButton();
   setupBulkUploadListeners();
   setupAdScheduling();
+  setupBudgetTypeDropdown();
 });
 
 // ============================================
@@ -7055,7 +7129,12 @@ function getAdScheduleData() {
 
 function timeToMinutes(timeString) {
   const [hours, minutes] = timeString.split(':').map(Number);
-  return hours * 60 + minutes;
+  let totalMinutes = hours * 60 + (minutes || 0);
+
+  // Round to nearest hour (multiple of 60) to meet Meta API requirements
+  totalMinutes = Math.round(totalMinutes / 60) * 60;
+
+  return totalMinutes;
 }
 
 function validateAdSchedule(schedules) {
