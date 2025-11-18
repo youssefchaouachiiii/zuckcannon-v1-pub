@@ -72,11 +72,11 @@ function updateConversionFieldsVisibility(optimizationGoal) {
   // Show/hide conversion fields based on requirement
   // For now, always show them but mark as optional unless required
   if (pixelDropdownContainer) {
-    pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? '1' : '0.7';
+    pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? '1' : '1';
   }
 
   if (eventTypeContainer) {
-    eventTypeContainer.style.opacity = requiresPixelAndEvent ? '1' : '0.7';
+    eventTypeContainer.style.opacity = requiresPixelAndEvent ? '1' : '1';
   }
 
   // console.log(`Conversion fields ${requiresPixelAndEvent ? 'required' : 'optional'} for optimization goal: ${optimizationGoal}`);
