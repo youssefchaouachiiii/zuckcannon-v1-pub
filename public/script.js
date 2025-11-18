@@ -1280,6 +1280,20 @@ class SingleSelectGroup {
   }
 }
 
+// Shows/hides the bid amount input based on the selected bid strategy
+function handleBidStrategyChange(bidStrategy) {
+  const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
+  const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
+
+  if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
+    if (costPerResultWrapper) costPerResultWrapper.style.display = "flex";
+    if (costPerResultGoal) costPerResultGoal.required = true;
+  } else {
+    if (costPerResultWrapper) costPerResultWrapper.style.display = "none";
+    if (costPerResultGoal) costPerResultGoal.required = false;
+  }
+}
+
 // This function will be called to attach listeners to dropdown options
 function attachDropdownOptionListeners(dropdown) {
   const selected = dropdown.querySelector(".dropdown-selected");
@@ -1329,6 +1343,12 @@ function attachDropdownOptionListeners(dropdown) {
 
       currentDisplay.parentElement.classList.remove("empty-input");
       console.log(`Selected ${dropdownType}:`, text);
+
+      // Handle bid strategy changes
+      if (dropdownType === "adset-bid-strategy") {
+        const selectedValue = option.dataset.value;
+        handleBidStrategyChange(selectedValue);
+      }
 
       if (typeof checkRequiredFields === "function") {
         checkRequiredFields();

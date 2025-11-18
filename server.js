@@ -3570,7 +3570,16 @@ app.post("/api/create-ad-creative", (req, res) => {
         return data;
       } catch (err) {
         console.log("There was an error creating ad.", err.response?.data);
-        throw err;
+        // Extract a clear error message from the Facebook API response
+        const fbError = err.response?.data?.error;
+        let errorMessage = "Failed to create ad.";
+        if (fbError) {
+          errorMessage = fbError.error_user_msg || fbError.message || "Unknown Facebook API error.";
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
+        // Throw a new, clean Error object so the reason is not empty
+        throw new Error(errorMessage);
       }
     }
   } catch (error) {
