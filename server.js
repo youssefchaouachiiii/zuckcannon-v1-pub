@@ -1996,7 +1996,6 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     optimization_goal: req.body.optimization_goal,
     billing_event: req.body.billing_event,
     bid_strategy: req.body.bid_strategy || "LOWEST_COST_WITHOUT_CAP", // Default to LOWEST_COST_WITHOUT_CAP
-    pacing_type: ["day_parting"], // Set pacing type to day_parting
     campaign_id: req.body.campaign_id,
     status: req.body.status,
     targeting: {
@@ -2016,7 +2015,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
         }),
     },
     access_token: userAccessToken,
-  }
+  };
 
   // Add destination_type only if provided
   if (req.body.destination_type) {
@@ -2157,6 +2156,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Add adset_schedule if provided
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
+    payload.pacing_type = ["day_parting"]; // Only set pacing for scheduled ads
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
