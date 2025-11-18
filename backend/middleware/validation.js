@@ -124,15 +124,8 @@ export const validateRequest = {
         });
       }
 
-      const validCategories = [
-        "NONE",
-        "EMPLOYMENT",
-        "HOUSING",
-        "FINANCIAL_PRODUCTS_SERVICES",
-        "ISSUES_ELECTIONS_POLITICS",
-        "ONLINE_GAMBLING_AND_GAMING",
-      ];
-      
+      const validCategories = ["NONE", "EMPLOYMENT", "HOUSING", "FINANCIAL_PRODUCTS_SERVICES", "ISSUES_ELECTIONS_POLITICS", "ONLINE_GAMBLING_AND_GAMING"];
+
       // Check for deprecated CREDIT category
       if (req.body.special_ad_categories.includes("CREDIT")) {
         return res.status(400).json({
@@ -166,35 +159,259 @@ export const validateRequest = {
           error: "special_ad_category_country must be an array",
         });
       }
-      
+
       const validCountries = [
-        "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX", "AZ",
-        "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY", "BZ",
-        "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ",
-        "DE", "DJ", "DK", "DM", "DO", "DZ",
-        "EC", "EE", "EG", "EH", "ER", "ES", "ET",
-        "FI", "FJ", "FK", "FM", "FO", "FR",
-        "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY",
-        "HK", "HM", "HN", "HR", "HT", "HU",
-        "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT",
-        "JE", "JM", "JO", "JP",
-        "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ",
-        "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY",
-        "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ",
-        "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ",
+        "AD",
+        "AE",
+        "AF",
+        "AG",
+        "AI",
+        "AL",
+        "AM",
+        "AO",
+        "AQ",
+        "AR",
+        "AS",
+        "AT",
+        "AU",
+        "AW",
+        "AX",
+        "AZ",
+        "BA",
+        "BB",
+        "BD",
+        "BE",
+        "BF",
+        "BG",
+        "BH",
+        "BI",
+        "BJ",
+        "BL",
+        "BM",
+        "BN",
+        "BO",
+        "BQ",
+        "BR",
+        "BS",
+        "BT",
+        "BV",
+        "BW",
+        "BY",
+        "BZ",
+        "CA",
+        "CC",
+        "CD",
+        "CF",
+        "CG",
+        "CH",
+        "CI",
+        "CK",
+        "CL",
+        "CM",
+        "CN",
+        "CO",
+        "CR",
+        "CU",
+        "CV",
+        "CW",
+        "CX",
+        "CY",
+        "CZ",
+        "DE",
+        "DJ",
+        "DK",
+        "DM",
+        "DO",
+        "DZ",
+        "EC",
+        "EE",
+        "EG",
+        "EH",
+        "ER",
+        "ES",
+        "ET",
+        "FI",
+        "FJ",
+        "FK",
+        "FM",
+        "FO",
+        "FR",
+        "GA",
+        "GB",
+        "GD",
+        "GE",
+        "GF",
+        "GG",
+        "GH",
+        "GI",
+        "GL",
+        "GM",
+        "GN",
+        "GP",
+        "GQ",
+        "GR",
+        "GS",
+        "GT",
+        "GU",
+        "GW",
+        "GY",
+        "HK",
+        "HM",
+        "HN",
+        "HR",
+        "HT",
+        "HU",
+        "ID",
+        "IE",
+        "IL",
+        "IM",
+        "IN",
+        "IO",
+        "IQ",
+        "IR",
+        "IS",
+        "IT",
+        "JE",
+        "JM",
+        "JO",
+        "JP",
+        "KE",
+        "KG",
+        "KH",
+        "KI",
+        "KM",
+        "KN",
+        "KP",
+        "KR",
+        "KW",
+        "KY",
+        "KZ",
+        "LA",
+        "LB",
+        "LC",
+        "LI",
+        "LK",
+        "LR",
+        "LS",
+        "LT",
+        "LU",
+        "LV",
+        "LY",
+        "MA",
+        "MC",
+        "MD",
+        "ME",
+        "MF",
+        "MG",
+        "MH",
+        "MK",
+        "ML",
+        "MM",
+        "MN",
+        "MO",
+        "MP",
+        "MQ",
+        "MR",
+        "MS",
+        "MT",
+        "MU",
+        "MV",
+        "MW",
+        "MX",
+        "MY",
+        "MZ",
+        "NA",
+        "NC",
+        "NE",
+        "NF",
+        "NG",
+        "NI",
+        "NL",
+        "NO",
+        "NP",
+        "NR",
+        "NU",
+        "NZ",
         "OM",
-        "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY",
+        "PA",
+        "PE",
+        "PF",
+        "PG",
+        "PH",
+        "PK",
+        "PL",
+        "PM",
+        "PN",
+        "PR",
+        "PS",
+        "PT",
+        "PW",
+        "PY",
         "QA",
-        "RE", "RO", "RS", "RU", "RW",
-        "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ",
-        "TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ",
-        "UA", "UG", "UM", "US", "UY", "UZ",
-        "VA", "VC", "VE", "VG", "VI", "VN", "VU",
-        "WF", "WS",
-        "YE", "YT",
-        "ZA", "ZM", "ZW"
+        "RE",
+        "RO",
+        "RS",
+        "RU",
+        "RW",
+        "SA",
+        "SB",
+        "SC",
+        "SD",
+        "SE",
+        "SG",
+        "SH",
+        "SI",
+        "SJ",
+        "SK",
+        "SL",
+        "SM",
+        "SN",
+        "SO",
+        "SR",
+        "SS",
+        "ST",
+        "SV",
+        "SX",
+        "SY",
+        "SZ",
+        "TC",
+        "TD",
+        "TF",
+        "TG",
+        "TH",
+        "TJ",
+        "TK",
+        "TL",
+        "TM",
+        "TN",
+        "TO",
+        "TR",
+        "TT",
+        "TV",
+        "TW",
+        "TZ",
+        "UA",
+        "UG",
+        "UM",
+        "US",
+        "UY",
+        "UZ",
+        "VA",
+        "VC",
+        "VE",
+        "VG",
+        "VI",
+        "VN",
+        "VU",
+        "WF",
+        "WS",
+        "YE",
+        "YT",
+        "ZA",
+        "ZM",
+        "ZW",
       ];
-      
+
       const invalidCountries = req.body.special_ad_category_country.filter((cc) => !validCountries.includes(cc));
       if (invalidCountries.length > 0) {
         return res.status(400).json({
@@ -205,14 +422,7 @@ export const validateRequest = {
 
     // Validate special_ad_category (singular) if provided
     if (req.body.special_ad_category) {
-      const validCategories = [
-        "NONE",
-        "EMPLOYMENT",
-        "HOUSING",
-        "FINANCIAL_PRODUCTS_SERVICES",
-        "ISSUES_ELECTIONS_POLITICS",
-        "ONLINE_GAMBLING_AND_GAMING",
-      ];
+      const validCategories = ["NONE", "EMPLOYMENT", "HOUSING", "FINANCIAL_PRODUCTS_SERVICES", "ISSUES_ELECTIONS_POLITICS", "ONLINE_GAMBLING_AND_GAMING"];
 
       // Check for deprecated CREDIT category
       if (req.body.special_ad_category === "CREDIT") {
@@ -230,14 +440,9 @@ export const validateRequest = {
 
     // Validate that special_ad_category_country is provided when special_ad_categories are selected
     // Per Meta's API requirement: When any special_ad_categories are selected, you must also set a special_ad_category_country
-    const hasSpecialCategoriesArray =
-      req.body.special_ad_categories &&
-      req.body.special_ad_categories.length > 0 &&
-      !(req.body.special_ad_categories.length === 1 && req.body.special_ad_categories[0] === "NONE");
+    const hasSpecialCategoriesArray = req.body.special_ad_categories && req.body.special_ad_categories.length > 0 && !(req.body.special_ad_categories.length === 1 && req.body.special_ad_categories[0] === "NONE");
 
-    const hasSpecialCategorySingular =
-      req.body.special_ad_category &&
-      req.body.special_ad_category !== "NONE";
+    const hasSpecialCategorySingular = req.body.special_ad_category && req.body.special_ad_category !== "NONE";
 
     const hasSpecialCategories = hasSpecialCategoriesArray || hasSpecialCategorySingular;
 
@@ -307,12 +512,7 @@ export const validateRequest = {
     }
 
     // Validate boolean flags
-    const booleanFields = [
-      "budget_rebalance_flag",
-      "is_adset_budget_sharing_enabled",
-      "is_skadnetwork_attribution",
-      "is_using_l3_schedule",
-    ];
+    const booleanFields = ["budget_rebalance_flag", "is_adset_budget_sharing_enabled", "is_skadnetwork_attribution", "is_using_l3_schedule"];
     for (const field of booleanFields) {
       if (req.body[field] !== undefined && typeof req.body[field] !== "boolean") {
         return res.status(400).json({
@@ -432,19 +632,7 @@ export const validateRequest = {
     }
 
     // Validate billing_event
-    const validBillingEvents = [
-      "APP_INSTALLS",
-      "CLICKS",
-      "IMPRESSIONS",
-      "LINK_CLICKS",
-      "NONE",
-      "OFFER_CLAIMS",
-      "PAGE_LIKES",
-      "POST_ENGAGEMENT",
-      "THRUPLAY",
-      "PURCHASE",
-      "LISTING_INTERACTION",
-    ];
+    const validBillingEvents = ["APP_INSTALLS", "CLICKS", "IMPRESSIONS", "LINK_CLICKS", "NONE", "OFFER_CLAIMS", "PAGE_LIKES", "POST_ENGAGEMENT", "THRUPLAY", "PURCHASE", "LISTING_INTERACTION"];
 
     if (!validBillingEvents.includes(req.body.billing_event)) {
       return res.status(400).json({
@@ -452,14 +640,116 @@ export const validateRequest = {
       });
     }
 
+    // Validate adset_schedule if provided
+    if (req.body.adset_schedule) {
+      if (!Array.isArray(req.body.adset_schedule)) {
+        return res.status(400).json({
+          error: "adset_schedule must be an array of schedule objects",
+        });
+      }
+
+      // Validate each schedule object
+      for (let i = 0; i < req.body.adset_schedule.length; i++) {
+        const schedule = req.body.adset_schedule[i];
+
+        // Check required fields
+        if (schedule.start_minute === undefined || schedule.start_minute === null) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute is required`,
+          });
+        }
+
+        if (schedule.end_minute === undefined || schedule.end_minute === null) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: end_minute is required`,
+          });
+        }
+
+        if (!schedule.days || !Array.isArray(schedule.days)) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: days must be an array`,
+          });
+        }
+
+        // Validate start_minute and end_minute are integers
+        if (!Number.isInteger(schedule.start_minute) || !Number.isInteger(schedule.end_minute)) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute and end_minute must be integers`,
+          });
+        }
+
+        // Validate minute range (0-1439 for 24 hours * 60 minutes - 1)
+        if (schedule.start_minute < 0 || schedule.start_minute > 1439) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute must be between 0 and 1439`,
+          });
+        }
+
+        if (schedule.end_minute < 0 || schedule.end_minute > 1439) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: end_minute must be between 0 and 1439`,
+          });
+        }
+
+        // Validate hour-boundaries (multiples of 60)
+        if (schedule.start_minute % 60 !== 0) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute must be a multiple of 60 (full hour)`,
+          });
+        }
+
+        if (schedule.end_minute % 60 !== 0) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: end_minute must be a multiple of 60 (full hour)`,
+          });
+        }
+
+        // Validate that start and end are at least 1 hour apart (60 minutes)
+        const duration = schedule.end_minute - schedule.start_minute;
+        if (duration < 60) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: start_minute and end_minute must be at least 60 minutes apart`,
+          });
+        }
+
+        // Validate days array
+        if (schedule.days.length === 0) {
+          return res.status(400).json({
+            error: `adset_schedule[${i}]: days array cannot be empty`,
+          });
+        }
+
+        // Validate each day value is 0-6
+        for (const day of schedule.days) {
+          if (!Number.isInteger(day) || day < 0 || day > 6) {
+            return res.status(400).json({
+              error: `adset_schedule[${i}]: days must contain integers between 0 (Sunday) and 6 (Saturday)`,
+            });
+          }
+        }
+
+        // Validate timezone_type if provided
+        if (schedule.timezone_type) {
+          const validTimezoneTypes = ["USER", "ADVERTISER"];
+          if (!validTimezoneTypes.includes(schedule.timezone_type)) {
+            return res.status(400).json({
+              error: `adset_schedule[${i}]: timezone_type must be either USER or ADVERTISER`,
+            });
+          }
+        }
+      }
+
+      // Note: Ad scheduling only works with lifetime budgets
+      // if (!req.body.lifetime_budget) {
+      //   return res.status(400).json({
+      //     error: "adset_schedule requires lifetime_budget to be set (ad scheduling only works with lifetime budgets)",
+      //   });
+      // }
+    }
+
     // Validate bid_strategy if provided
     if (req.body.bid_strategy) {
-      const validBidStrategies = [
-        "LOWEST_COST_WITHOUT_CAP",
-        "LOWEST_COST_WITH_BID_CAP",
-        "COST_CAP",
-        "LOWEST_COST_WITH_MIN_ROAS",
-      ];
+      const validBidStrategies = ["LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP", "LOWEST_COST_WITH_MIN_ROAS"];
 
       if (!validBidStrategies.includes(req.body.bid_strategy)) {
         return res.status(400).json({

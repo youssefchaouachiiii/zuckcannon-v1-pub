@@ -599,8 +599,14 @@ h2 {
 
 .targeting-age {
   display: grid;
-  grid-template-columns: auto auto;
-  gap: 5px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.targeting-age input {
+  width: 100%;
+  max-width: 100%;
 }
 
 .adset-config button {
@@ -690,6 +696,7 @@ h2 {
   border: 1px solid #e5e5e5;
   border-top: none;
   list-style: none;
+  list-style-type: none;
   margin: 0;
   padding: 0;
   z-index: 1000;
@@ -706,6 +713,7 @@ h2 {
   color: #333;
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
+  list-style: none;
 }
 
 .dropdown-options li:last-child {
@@ -719,6 +727,25 @@ h2 {
 .dropdown-options li.selected {
   background-color: #e8f2ff;
   color: #103dee;
+}
+
+/* Pixel status indicators */
+.pixel-option .pixel-status-icon {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.pixel-option.pixel-inactive {
+  opacity: 0.6;
+}
+
+.pixel-option.pixel-unavailable {
+  opacity: 0.5;
+  color: #999;
+}
+
+.pixel-option.pixel-active {
+  font-weight: 500;
 }
 
 /* Special Ad Category Country dropdown - limit height and make scrollable */
@@ -1392,6 +1419,8 @@ h2 {
 .event-type-container {
   position: relative;
   width: 100%;
+  opacity: 1;
+  /* z-index: 101; */
 }
 
 .config-event-type {
@@ -1406,6 +1435,9 @@ h2 {
   font-family: inherit;
   font-size: 14px;
   outline: none;
+  position: relative;
+  z-index: 102;
+  background: white;
 }
 
 .event-type-search:focus {
@@ -1427,7 +1459,7 @@ h2 {
   list-style: none;
   margin: 0;
   padding: 0;
-  z-index: 100;
+  z-index: 103;
 }
 
 .event-type-suggestions li {
