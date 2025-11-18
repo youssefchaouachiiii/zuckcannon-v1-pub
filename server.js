@@ -1035,7 +1035,20 @@ async function fetchPixels(account_id, userAccessToken = null) {
     // 3. Filter the original list
     const activePixels = allPixels.filter((pixel, index) => activityResults[index]);
 
-    console.log(`Account ${account_id}: Found ${allPixels.length} total pixels, returning ${activePixels.length} active pixels.`);
+    // Log detailed filtering results
+    const inactivePixels = allPixels.filter((pixel, index) => !activityResults[index]);
+    console.log(`\n====== PIXEL FILTERING RESULTS ======`);
+    console.log(`Account ${account_id}:`);
+    console.log(`  Total pixels: ${allPixels.length}`);
+    console.log(`  Active pixels: ${activePixels.length}`);
+    console.log(`  Inactive pixels: ${inactivePixels.length}`);
+    if (activePixels.length > 0) {
+      console.log(`  Active pixel IDs: ${activePixels.map(p => `${p.name} (${p.id})`).join(', ')}`);
+    }
+    if (inactivePixels.length > 0) {
+      console.log(`  Inactive pixel IDs: ${inactivePixels.map(p => `${p.name} (${p.id})`).join(', ')}`);
+    }
+    console.log(`====================================\n`);
 
     // 4. Return the data in the expected format
     accountData.adspixels.data = activePixels;
