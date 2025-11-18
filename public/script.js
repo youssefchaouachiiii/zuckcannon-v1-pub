@@ -387,8 +387,37 @@ function populatePixels(pixels) {
 
       for (const data of pixelData.data) {
         if (data && data.id && data.name) {
+          // Determine pixel status
+          const isUnavailable = data.is_unavailable === true;
+          const hasRecentActivity = data.last_fired_time && data.last_fired_time > 0;
+
+          // Visual indicators
+          let statusIcon = '';
+          let statusClass = '';
+          let tooltipText = '';
+
+          if (isUnavailable) {
+            statusIcon = '🔴';
+            statusClass = 'pixel-unavailable';
+            tooltipText = 'Pixel unavailable';
+          } else if (hasRecentActivity) {
+            statusIcon = '🟢';
+            statusClass = 'pixel-active';
+            const lastFiredDate = new Date(data.last_fired_time * 1000);
+            tooltipText = `Active - Last fired: ${lastFiredDate.toLocaleDateString()}`;
+          } else {
+            statusIcon = '⚫';
+            statusClass = 'pixel-inactive';
+            tooltipText = 'No recent activity';
+          }
+
           pixelDropdownOptions.innerHTML += `
-                <li class="pixel-option" data-pixel-id="${data.id}" data-pixel-account-id="${pixelData.acc_id}">${data.name}</li>
+                <li class="pixel-option ${statusClass}"
+                    data-pixel-id="${data.id}"
+                    data-pixel-account-id="${pixelData.acc_id}"
+                    title="${tooltipText}">
+                  <span class="pixel-status-icon">${statusIcon}</span> ${data.name}
+                </li>
           `;
         }
       }

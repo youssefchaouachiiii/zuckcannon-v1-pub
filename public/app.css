@@ -722,6 +722,25 @@ h2 {
   color: #103dee;
 }
 
+/* Pixel status indicators */
+.pixel-option .pixel-status-icon {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.pixel-option.pixel-inactive {
+  opacity: 0.6;
+}
+
+.pixel-option.pixel-unavailable {
+  opacity: 0.5;
+  color: #999;
+}
+
+.pixel-option.pixel-active {
+  font-weight: 500;
+}
+
 /* Special Ad Category Country dropdown - limit height and make scrollable */
 .dropdown-options.campaign-special-country {
   max-height: 300px;
