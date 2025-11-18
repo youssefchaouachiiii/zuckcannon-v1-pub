@@ -1392,6 +1392,7 @@ h2 {
 .event-type-container {
   position: relative;
   width: 100%;
+  opacity: 1;
   /* z-index: 101; */
 }
 
