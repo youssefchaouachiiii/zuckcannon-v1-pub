@@ -1012,18 +1012,6 @@ async function fetchPixels(account_id, userAccessToken = null) {
           // Newer (higher timestamp) comes first
           return bTime - aTime;
         });
-
-        // Log sorting results
-        const activeCount = allPixels.filter(p => !p.is_unavailable && p.last_fired_time).length;
-        const inactiveCount = allPixels.length - activeCount;
-
-        console.log(`\n====== PIXEL SORTING RESULTS ======`);
-        console.log(`Account ${account_id}:`);
-        console.log(`  Total pixels: ${allPixels.length}`);
-        console.log(`  Active pixels (with recent activity): ${activeCount}`);
-        console.log(`  Inactive/old pixels: ${inactiveCount}`);
-        console.log(`  (All pixels returned, active ones sorted to top)`);
-        console.log(`====================================\n`);
       }
 
       return accountData;
