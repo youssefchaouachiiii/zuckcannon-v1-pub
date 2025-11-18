@@ -976,33 +976,72 @@ async function fetchCampaigns(account_id, userAccessToken = null) {
 }
 
 // Fetch pixels for ad account
+// Helper function to check a single pixel's activity
+async function isPixelActive(pixelId, token) {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const startTime = Math.floor(thirtyDaysAgo.getTime() / 1000);
+
+  const statsUrl = `https://graph.facebook.com/${api_version}/${pixelId}/stats`;
+  const params = {
+    access_token: token,
+    start_time: startTime,
+    aggregation: "total",
+  };
+
+  try {
+    const statsResponse = await axios.get(statsUrl, { params });
+    const statsData = statsResponse.data?.data;
+
+    if (statsData && statsData.length > 0) {
+      const totalEventsData = statsData[0].data;
+      if (totalEventsData && totalEventsData.length > 0) {
+        const totalCount = totalEventsData.reduce((sum, event) => sum + (event.count || 0), 0);
+        return totalCount > 0;
+      }
+    }
+    return false; // No stats data found
+  } catch (error) {
+    // If stats endpoint fails (e.g., for a very old/broken pixel), treat as inactive.
+    console.error(`Could not fetch stats for pixel ${pixelId}. Treating as inactive. Error: ${error.response?.data?.error?.message || error.message}`);
+    return false;
+  }
+}
+
 async function fetchPixels(account_id, userAccessToken = null) {
   const pixelUrl = `https://graph.facebook.com/${api_version}/${account_id}/`;
   const token = userAccessToken || access_token;
 
-  const params = {
-    fields: "account_id,adspixels{name,id,is_unavailable}", // Request the is_unavailable field
+  // 1. Fetch the initial list of all pixels
+  const initialPixelParams = {
+    fields: "account_id,adspixels{name,id}", // Just get the list first
     access_token: token,
   };
 
   try {
-    const pixelResponse = await axios.get(pixelUrl, { params });
+    const initialResponse = await axios.get(pixelUrl, { params: initialPixelParams });
+    const accountData = initialResponse.data;
 
-    if (pixelResponse.status === 200 && pixelResponse.data) {
-      const accountData = pixelResponse.data;
-
-      // If the account has pixels, filter them to include only active ones
-      if (accountData.adspixels && accountData.adspixels.data) {
-        accountData.adspixels.data = accountData.adspixels.data.filter((pixel) => !pixel.is_unavailable);
-      }
-
-      return accountData;
-    } else {
-      console.log(`Fetch pixels failed for account ${account_id} or returned no data.`);
-      return { id: account_id, adspixels: { data: [] } }; // Return empty structure on failure
+    if (!accountData.adspixels || !accountData.adspixels.data) {
+      return { id: account_id, adspixels: { data: [] } }; // No pixels for this account
     }
+
+    const allPixels = accountData.adspixels.data;
+
+    // 2. For each pixel, create a promise to check its activity
+    const activityCheckPromises = allPixels.map((pixel) => isPixelActive(pixel.id, token));
+    const activityResults = await Promise.all(activityCheckPromises);
+
+    // 3. Filter the original list
+    const activePixels = allPixels.filter((pixel, index) => activityResults[index]);
+
+    console.log(`Account ${account_id}: Found ${allPixels.length} total pixels, returning ${activePixels.length} active pixels.`);
+
+    // 4. Return the data in the expected format
+    accountData.adspixels.data = activePixels;
+    return accountData;
   } catch (err) {
-    console.error(`There was an error fetching pixels for account ${account_id}:`, err.response?.data || err.message);
+    console.error(`There was an error fetching initial pixels for account ${account_id}:`, err.response?.data || err.message);
     return { id: account_id, adspixels: { data: [] } }; // Return empty structure on error
   }
 }
