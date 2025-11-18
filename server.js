@@ -981,22 +981,29 @@ async function fetchPixels(account_id, userAccessToken = null) {
   const token = userAccessToken || access_token;
 
   const params = {
-    fields: "account_id,adspixels{name,id}",
+    fields: "account_id,adspixels{name,id,is_unavailable}", // Request the is_unavailable field
     access_token: token,
   };
 
-  const pixelResponse = await axios.get(pixelUrl, { params });
-
   try {
-    pixelResponse;
-    if (pixelResponse.status === 200) {
-      // console.log("Successfully fetched pixels.");
-      return pixelResponse.data;
+    const pixelResponse = await axios.get(pixelUrl, { params });
+
+    if (pixelResponse.status === 200 && pixelResponse.data) {
+      const accountData = pixelResponse.data;
+
+      // If the account has pixels, filter them to include only active ones
+      if (accountData.adspixels && accountData.adspixels.data) {
+        accountData.adspixels.data = accountData.adspixels.data.filter((pixel) => !pixel.is_unavailable);
+      }
+
+      return accountData;
     } else {
-      console.log("Fetch pixels failed in if else block.");
+      console.log(`Fetch pixels failed for account ${account_id} or returned no data.`);
+      return { id: account_id, adspixels: { data: [] } }; // Return empty structure on failure
     }
   } catch (err) {
-    console.log("There was an error fetching pixels.", err);
+    console.error(`There was an error fetching pixels for account ${account_id}:`, err.response?.data || err.message);
+    return { id: account_id, adspixels: { data: [] } }; // Return empty structure on error
   }
 }
 
