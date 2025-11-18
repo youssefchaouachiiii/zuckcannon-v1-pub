@@ -1224,17 +1224,27 @@ class SingleSelectGroup {
         campaign_id: selectedCampaignId,
       });
 
-      // Show creative upload
+      // Show success screen instead of creative upload
       this.clearUploadColumn();
-      const creativeUpload = document.querySelector(".creative-upload");
-      if (creativeUpload) {
-        creativeUpload.style.display = "block";
-        const uploadTitle = creativeUpload.querySelector("h2");
-        if (uploadTitle) {
-          uploadTitle.textContent = `Creative Upload for Ad Set: ${newName}`;
+      const successSection = document.querySelector(".success-wrapper");
+      if (successSection) {
+        const successMessage = successSection.querySelector("h2");
+        if (successMessage) {
+          successMessage.textContent = "Ad Set Duplicated Successfully";
         }
+        const createMoreBtn = successSection.querySelector("h3");
+        if (createMoreBtn) {
+          createMoreBtn.onclick = () => {
+            location.reload();
+          };
+        }
+        const viewAdsBtn = successSection.querySelector("button");
+        if (viewAdsBtn) {
+          viewAdsBtn.style.display = "none";
+        }
+        successSection.style.display = "block";
+        successSection.scrollIntoView({ behavior: "smooth", block: "start" });
       }
-      window.fileUploadHandler.showStep(2);
 
       // Trigger background refresh to update cache without disrupting UI
       fetch("/api/refresh-meta-cache", { method: "POST" })
