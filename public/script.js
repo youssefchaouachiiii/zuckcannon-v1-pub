@@ -365,12 +365,15 @@ function populateCampaigns(campaigns) {
 }
 
 function populatePixels(pixels) {
+  console.log('[PIXEL DEBUG] populatePixels called with:', pixels);
+
   const pixelDropdownOptions = document.querySelector(".dropdown-options.pixel");
 
   if (pixelDropdownOptions) {
     pixelDropdownOptions.innerHTML = "";
 
     if (!pixels || pixels.length === 0) {
+      console.log('[PIXEL DEBUG] No pixels data received');
       pixelDropdownOptions.innerHTML = '<li style="opacity: 0.6; cursor: default;">No pixels available</li>';
       return;
     }
@@ -387,6 +390,12 @@ function populatePixels(pixels) {
 
       for (const data of pixelData.data) {
         if (data && data.id && data.name) {
+          console.log(`[PIXEL DEBUG] Processing pixel "${data.name}":`, {
+            is_unavailable: data.is_unavailable,
+            last_fired_time: data.last_fired_time,
+            fullData: data
+          });
+
           // Determine pixel status
           const isUnavailable = data.is_unavailable === true;
           const hasRecentActivity = data.last_fired_time && data.last_fired_time > 0;
@@ -410,6 +419,14 @@ function populatePixels(pixels) {
             statusClass = 'pixel-inactive';
             tooltipText = 'No recent activity';
           }
+
+          console.log(`[PIXEL DEBUG] Pixel "${data.name}" status:`, {
+            isUnavailable,
+            hasRecentActivity,
+            statusIcon,
+            statusClass,
+            tooltipText
+          });
 
           pixelDropdownOptions.innerHTML += `
                 <li class="pixel-option ${statusClass}"
@@ -502,7 +519,10 @@ async function init() {
 
     populateAdAccounts(metaResponse.adAccounts);
     populateCampaigns(metaResponse.campaigns);
+
+    console.log('[API DEBUG] metaResponse.pixels:', metaResponse.pixels);
     populatePixels(metaResponse.pixels);
+
     populatePages(metaResponse.pages);
     populateSpecialAdCountries();
 
@@ -5691,6 +5711,7 @@ function updateUIWithFreshData(freshData) {
     window.campaignsData = freshData.campaigns;
   }
   if (freshData.pixels) {
+    console.log('[API DEBUG] freshData.pixels:', freshData.pixels);
     populatePixels(freshData.pixels);
     window.pixelsData = freshData.pixels;
   }
