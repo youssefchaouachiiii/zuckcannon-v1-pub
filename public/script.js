@@ -454,7 +454,6 @@ function populatePixels(pixels) {
               </li>
         `;
       }
-      }
     }
 
     if (pixelDropdownOptions.innerHTML === "") {
