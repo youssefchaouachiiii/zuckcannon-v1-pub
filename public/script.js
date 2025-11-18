@@ -417,40 +417,27 @@ function populatePixels(pixels) {
           }
         }
 
-        // Visual indicators
-        let statusIcon = '';
+        // Determine status class and tooltip (no emoji icons)
         let statusClass = '';
         let tooltipText = '';
 
         if (isUnavailable) {
-          statusIcon = '🔴';
           statusClass = 'pixel-unavailable';
           tooltipText = 'Pixel unavailable';
         } else if (hasRecentActivity) {
-          statusIcon = '🟢';
           statusClass = 'pixel-active';
           tooltipText = `Active - Last fired: ${lastFiredDate.toLocaleDateString()}`;
         } else {
-          statusIcon = '⚫';
           statusClass = 'pixel-inactive';
           tooltipText = 'No recent activity';
         }
-
-        console.log(`[PIXEL DEBUG] Pixel "${data.name}" status:`, {
-          isUnavailable,
-          hasRecentActivity,
-          lastFiredDate: lastFiredDate?.toISOString(),
-          statusIcon,
-          statusClass,
-          tooltipText
-        });
 
         pixelDropdownOptions.innerHTML += `
               <li class="pixel-option ${statusClass}"
                   data-pixel-id="${data.id}"
                   data-pixel-account-id="${pixelData.acc_id}"
                   title="${tooltipText}">
-                <span class="pixel-status-icon">${statusIcon}</span> ${data.name}
+                ${data.name}
               </li>
         `;
       }
