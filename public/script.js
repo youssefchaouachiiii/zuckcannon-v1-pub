@@ -389,54 +389,71 @@ function populatePixels(pixels) {
       };
 
       for (const data of pixelData.data) {
-        if (data && data.id && data.name) {
-          console.log(`[PIXEL DEBUG] Processing pixel "${data.name}":`, {
-            is_unavailable: data.is_unavailable,
-            last_fired_time: data.last_fired_time,
-            fullData: data
-          });
-
-          // Determine pixel status
-          const isUnavailable = data.is_unavailable === true;
-          const hasRecentActivity = data.last_fired_time && data.last_fired_time > 0;
-
-          // Visual indicators
-          let statusIcon = '';
-          let statusClass = '';
-          let tooltipText = '';
-
-          if (isUnavailable) {
-            statusIcon = '🔴';
-            statusClass = 'pixel-unavailable';
-            tooltipText = 'Pixel unavailable';
-          } else if (hasRecentActivity) {
-            statusIcon = '🟢';
-            statusClass = 'pixel-active';
-            const lastFiredDate = new Date(data.last_fired_time * 1000);
-            tooltipText = `Active - Last fired: ${lastFiredDate.toLocaleDateString()}`;
-          } else {
-            statusIcon = '⚫';
-            statusClass = 'pixel-inactive';
-            tooltipText = 'No recent activity';
-          }
-
-          console.log(`[PIXEL DEBUG] Pixel "${data.name}" status:`, {
-            isUnavailable,
-            hasRecentActivity,
-            statusIcon,
-            statusClass,
-            tooltipText
-          });
-
-          pixelDropdownOptions.innerHTML += `
-                <li class="pixel-option ${statusClass}"
-                    data-pixel-id="${data.id}"
-                    data-pixel-account-id="${pixelData.acc_id}"
-                    title="${tooltipText}">
-                  <span class="pixel-status-icon">${statusIcon}</span> ${data.name}
-                </li>
-          `;
+        // Skip invalid pixels (e.g., account IDs mistakenly included)
+        if (!data || !data.id || !data.name || data.id.startsWith('act_')) {
+          continue;
         }
+
+        console.log(`[PIXEL DEBUG] Processing pixel "${data.name}":`, {
+          is_unavailable: data.is_unavailable,
+          last_fired_time: data.last_fired_time,
+          fullData: data
+        });
+
+        // Determine pixel status
+        const isUnavailable = data.is_unavailable === true;
+
+        // Parse last_fired_time (can be ISO string or null)
+        let lastFiredDate = null;
+        let hasRecentActivity = false;
+
+        if (data.last_fired_time) {
+          // Parse ISO 8601 string to Date object
+          lastFiredDate = new Date(data.last_fired_time);
+
+          // Check if it's a valid date
+          if (!isNaN(lastFiredDate.getTime())) {
+            hasRecentActivity = true;
+          }
+        }
+
+        // Visual indicators
+        let statusIcon = '';
+        let statusClass = '';
+        let tooltipText = '';
+
+        if (isUnavailable) {
+          statusIcon = '🔴';
+          statusClass = 'pixel-unavailable';
+          tooltipText = 'Pixel unavailable';
+        } else if (hasRecentActivity) {
+          statusIcon = '🟢';
+          statusClass = 'pixel-active';
+          tooltipText = `Active - Last fired: ${lastFiredDate.toLocaleDateString()}`;
+        } else {
+          statusIcon = '⚫';
+          statusClass = 'pixel-inactive';
+          tooltipText = 'No recent activity';
+        }
+
+        console.log(`[PIXEL DEBUG] Pixel "${data.name}" status:`, {
+          isUnavailable,
+          hasRecentActivity,
+          lastFiredDate: lastFiredDate?.toISOString(),
+          statusIcon,
+          statusClass,
+          tooltipText
+        });
+
+        pixelDropdownOptions.innerHTML += `
+              <li class="pixel-option ${statusClass}"
+                  data-pixel-id="${data.id}"
+                  data-pixel-account-id="${pixelData.acc_id}"
+                  title="${tooltipText}">
+                <span class="pixel-status-icon">${statusIcon}</span> ${data.name}
+              </li>
+        `;
+      }
       }
     }
 
