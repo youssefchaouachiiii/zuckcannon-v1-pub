@@ -1005,8 +1005,9 @@ async function fetchPixels(account_id, userAccessToken = null) {
           if (!aUnavailable && bUnavailable) return -1;
 
           // 2. Both available or both unavailable: sort by last_fired_time
-          const aTime = a.last_fired_time || 0;
-          const bTime = b.last_fired_time || 0;
+          // Handle both ISO string and timestamp formats
+          const aTime = a.last_fired_time ? new Date(a.last_fired_time).getTime() : 0;
+          const bTime = b.last_fired_time ? new Date(b.last_fired_time).getTime() : 0;
 
           // Newer (higher timestamp) comes first
           return bTime - aTime;
