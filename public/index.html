@@ -96,14 +96,14 @@
           </div>
         </div>
 
-        <!-- Budget Options -->
-        <input type="number" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+        <!-- Budget Options - MOVED TO AD SET LEVEL -->
+        <!-- <input type="number" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
           class="config-campaign-daily-budget" step="0.01" min="0" />
         <input type="number" placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)"
-          class="config-campaign-lifetime-budget" step="0.01" min="0" />
+          class="config-campaign-lifetime-budget" step="0.01" min="0" /> -->
 
-        <!-- Bid Strategy dropdown -->
-        <div class="dropdown-container">
+        <!-- Bid Strategy dropdown - MOVED TO AD SET LEVEL -->
+        <!-- <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
               <span class="dropdown-display placeholder" placeholder="Bid Strategy (Optional)">Bid Strategy
@@ -121,7 +121,7 @@
               <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
             </ul>
           </div>
-        </div>
+        </div> -->
 
         <!-- Special Categories dropdown -->
         <div class="dropdown-container">
@@ -228,7 +228,7 @@
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="pixel">
-                <span class="dropdown-display">Pixel</span>
+                <span class="dropdown-display placeholder">Pixel</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -239,18 +239,84 @@
           </div>
 
           <!-- Custom Event Type Selection -->
-          <div class="event-type-container">
+          <div class="event-type-container" style="opacity: 1;">
             <input type="text" placeholder="Custom Event Type" data-container="adset-form-container"
               class="config-event-type" readonly>
             <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
-          <div class="budget-input-wrapper daily-budget" style="display: none;">
-            <span class="currency-prefix">$</span>
-            <input type="number" placeholder="100" data-container="adset-form-container" class="config-daily-budget"
-              step="0.01" min="0" />
-            <span class="currency-suffix">/day</span>
+
+          <!-- Budget & Schedule Section -->
+          <div class="budget-schedule-section" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333;">Budget & Schedule</h3>
+
+            <!-- Budget Type dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="adset-budget-type">
+                  <span class="dropdown-display placeholder" placeholder="Budget Type*">Budget Type*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options adset-budget-type">
+                  <li data-value="daily">Daily Budget</li>
+                  <li data-value="lifetime">Lifetime Budget</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Budget Amount Input -->
+            <div class="budget-input-wrapper" style="display: none;">
+              <span class="currency-prefix">$</span>
+              <input type="number" placeholder="Enter budget amount*" data-container="adset-form-container"
+                class="config-adset-budget" step="0.01" min="1" required />
+              <span class="budget-type-suffix"></span>
+            </div>
+
+            <!-- Start Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Date & Time*</label>
+              <input type="datetime-local" class="config-start-datetime" data-container="adset-form-container"
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required />
+            </div>
+
+            <!-- End Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">
+                End Date & Time<span class="end-date-required-indicator" style="color: #dc3545; display: none;">*</span>
+                <span class="end-date-optional-indicator" style="color: #999;"> (Optional for Daily Budget)</span>
+              </label>
+              <input type="datetime-local" class="config-end-datetime" data-container="adset-form-container"
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+              <small style="display: block; margin-top: 4px; color: #666; font-size: 12px;">
+                Leave empty for ongoing campaign (Daily Budget only)
+              </small>
+            </div>
           </div>
+
+          <!-- Bid Strategy Section -->
+          <div class="bid-strategy-section" style="margin-top: 15px;">
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="adset-bid-strategy">
+                  <span class="dropdown-display" data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options adset-bid-strategy">
+                  <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+                  <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+                  <li data-value="COST_CAP">Cost Cap</li>
+                  <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
           <div class="budget-input-wrapper cost-per-result" style="display: none;">
             <span class="currency-prefix">$</span>
             <input type="number" placeholder="12.50" data-container="adset-form-container"
@@ -287,7 +353,91 @@
               <ul class="region-suggestions" style="display: none;"></ul>
             </div>
           </div>
-          <button>Create Ad Set</button>
+
+          <!-- Ad Scheduling Section -->
+          <div class="ad-scheduling-container" style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 style="margin: 0; font-size: 16px; color: #333;">Ad Scheduling (Optional)</h3>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" class="enable-scheduling-checkbox" style="cursor: pointer;">
+                <span style="font-size: 14px; color: #666;">Enable Scheduling</span>
+              </label>
+            </div>
+            <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads should run.</p>
+
+            <div class="scheduling-controls" style="display: none;">
+              <!-- Schedule List -->
+              <div class="schedule-list" style="margin-top: 15px;">
+                <!-- Schedule items will be added here -->
+              </div>
+
+              <!-- Add Schedule Button -->
+              <button type="button" class="add-schedule-btn" style="margin-top: 10px; padding: 8px 16px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                + Add Schedule
+              </button>
+
+              <!-- Schedule Form Template (hidden) -->
+              <div class="schedule-form-template" style="display: none;">
+                <div class="schedule-item" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="font-size: 14px;">Schedule #<span class="schedule-number"></span></strong>
+                    <button type="button" class="remove-schedule-btn" style="padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Remove</button>
+                  </div>
+
+                  <!-- Time Selection -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Time (HH:MM)</label>
+                      <input type="time" class="schedule-start-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">End Time (HH:MM)</label>
+                      <input type="time" class="schedule-end-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                  </div>
+
+                  <!-- Days Selection -->
+                  <div style="margin-bottom: 10px;">
+                    <label style="display: block; font-size: 13px; color: #666; margin-bottom: 8px;">Active Days</label>
+                    <div class="days-selector" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="0" style="cursor: pointer;"> Sun
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="1" style="cursor: pointer;"> Mon
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="2" style="cursor: pointer;"> Tue
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="3" style="cursor: pointer;"> Wed
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="4" style="cursor: pointer;"> Thu
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="5" style="cursor: pointer;"> Fri
+                      </label>
+                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                        <input type="checkbox" value="6" style="cursor: pointer;"> Sat
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Timezone Type -->
+                  <div>
+                    <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Timezone</label>
+                    <select class="schedule-timezone-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                      <option value="USER">User's Timezone</option>
+                      <option value="ADVERTISER">Account Timezone</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="create-adset-btn">Create Ad Set</button>
         </div>
       </div>
       <!-- Creative Upload -->
@@ -559,14 +709,14 @@
           </div>
         </div>
 
-        <!-- Budget Options -->
-        <input type="number" id="create-campaign-daily-budget" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
+        <!-- Budget Options - MOVED TO AD SET LEVEL -->
+        <!-- <input type="number" id="create-campaign-daily-budget" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
           step="0.01" min="0">
         <input type="number" id="create-campaign-lifetime-budget"
-          placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)" step="0.01" min="0">
+          placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)" step="0.01" min="0"> -->
 
-        <!-- Bid Strategy dropdown -->
-        <div class="dropdown-container">
+        <!-- Bid Strategy dropdown - MOVED TO AD SET LEVEL -->
+        <!-- <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
               <span class="dropdown-display">Bid Strategy (Optional)</span>
@@ -583,7 +733,7 @@
               <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
             </ul>
           </div>
-        </div>
+        </div> -->
 
         <div class="dropdown-container">
           <div class="custom-dropdown">
