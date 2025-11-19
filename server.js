@@ -4730,6 +4730,11 @@ app.get("/api/rules", ensureAuthenticatedAPI, async (req, res) => {
 
       const metaRules = response.data.data || [];
 
+      // DEBUGGING: Log raw data from Meta API
+      console.log("================== RAW META API RULES DATA ==================");
+      console.log(JSON.stringify(metaRules, null, 2));
+      console.log("===========================================================");
+
       // Sync with local database and return combined data
       const localRules = RulesDB.getRules(userId, account_id);
 
