@@ -5180,8 +5180,8 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
 app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
-    const ruleId = parseInt(req.params.id);
-    const { status } = req.body; // ENABLED or DISABLED (Meta format)
+    const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
+    const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -5191,59 +5191,63 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
       });
     }
 
-    const rule = RulesDB.getRuleById(ruleId, userId);
-    if (!rule) {
-      return res.status(404).json({ error: "Rule not found" });
+    // Try to get local rule if local_rule_id is provided and not null
+    let rule = null;
+    if (local_rule_id && local_rule_id !== 'null') {
+      rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
     }
 
     // Update in Meta API with ENABLED/DISABLED format
-    if (rule.meta_rule_id) {
-      const metaApiUrl = `https://graph.facebook.com/${api_version}/${rule.meta_rule_id}`;
+    // Use metaRuleId from URL params (works for both local and non-local rules)
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
 
-      try {
-        // STEP 1: Fetch the current Rule Specs from Meta
-        // Meta requires ALL fields to be provided when updating, not just status
-        const currentRuleResponse = await axios.get(metaApiUrl, {
-          params: {
-            access_token: userAccessToken,
-            fields: 'name,evaluation_spec,execution_spec,schedule_spec'
-          }
-        });
-
-        const currentData = currentRuleResponse.data;
-
-        // STEP 2: Prepare the Update Payload
-        // Send back existing specs + NEW status
-        // Meta API expects specs to be JSON strings in POST body
-        const updatePayload = {
+    try {
+      // STEP 1: Fetch the current Rule Specs from Meta
+      // Meta requires ALL fields to be provided when updating, not just status
+      const currentRuleResponse = await axios.get(metaApiUrl, {
+        params: {
           access_token: userAccessToken,
-          status: status, // 'ENABLED' or 'DISABLED'
-          name: currentData.name,
-          evaluation_spec: JSON.stringify(currentData.evaluation_spec),
-          execution_spec: JSON.stringify(currentData.execution_spec),
-        };
-
-        // Only include schedule_spec if it exists (null for trigger-based rules)
-        if (currentData.schedule_spec) {
-          updatePayload.schedule_spec = JSON.stringify(currentData.schedule_spec);
+          fields: 'name,evaluation_spec,execution_spec,schedule_spec'
         }
+      });
 
-        // STEP 3: Send the Update (data in body, not params)
-        await axios.post(metaApiUrl, updatePayload);
+      const currentData = currentRuleResponse.data;
 
-      } catch (metaError) {
-        console.error("Meta API error updating rule status:", metaError.response?.data || metaError.message);
-        return res.status(400).json({
-          error: "Failed to update rule status in Meta API",
-          details: metaError.response?.data?.error?.message || metaError.message,
-        });
+      // STEP 2: Prepare the Update Payload
+      // Send back existing specs + NEW status
+      // Meta API expects specs to be JSON strings in POST body
+      const updatePayload = {
+        access_token: userAccessToken,
+        status: status, // 'ENABLED' or 'DISABLED'
+        name: currentData.name,
+        evaluation_spec: JSON.stringify(currentData.evaluation_spec),
+        execution_spec: JSON.stringify(currentData.execution_spec),
+      };
+
+      // Only include schedule_spec if it exists (null for trigger-based rules)
+      if (currentData.schedule_spec) {
+        updatePayload.schedule_spec = JSON.stringify(currentData.schedule_spec);
       }
+
+      // STEP 3: Send the Update (data in body, not params)
+      await axios.post(metaApiUrl, updatePayload);
+
+    } catch (metaError) {
+      console.error("Meta API error updating rule status:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to update rule status in Meta API",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
     }
 
-    // Convert to frontend format (ACTIVE/PAUSED) for local DB
-    const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
-    RulesDB.updateRuleStatus(ruleId, userId, frontendStatus);
+    // Update local DB if rule exists locally
+    if (rule) {
+      const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
+      RulesDB.updateRuleStatus(parseInt(local_rule_id), userId, frontendStatus);
+    }
 
+    // Convert to frontend format for response
+    const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
     res.json({ success: true, status: frontendStatus });
   } catch (error) {
     console.error("Error updating rule status:", error);
@@ -5255,7 +5259,8 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
 app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
-    const ruleId = parseInt(req.params.id);
+    const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
+    const { local_rule_id } = req.body; // Optional local_rule_id
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -5265,33 +5270,26 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
       });
     }
 
-    // Get existing rule
-    const existingRule = RulesDB.getRuleById(ruleId, userId);
-    if (!existingRule) {
-      return res.status(404).json({ error: "Rule not found" });
+    // Delete from Meta API using metaRuleId
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
+
+    try {
+      await axios.delete(metaApiUrl, {
+        params: {
+          access_token: userAccessToken,
+        },
+      });
+    } catch (metaError) {
+      console.error("Meta API error deleting rule:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to delete rule from Meta API",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
     }
 
-    // Delete from Meta API
-    if (existingRule.meta_rule_id) {
-      const metaApiUrl = `https://graph.facebook.com/${api_version}/${existingRule.meta_rule_id}`;
-
-      try {
-        await axios.delete(metaApiUrl, {
-          params: {
-            access_token: userAccessToken,
-          },
-        });
-      } catch (metaError) {
-        console.error("Meta API error deleting rule:", metaError.response?.data || metaError.message);
-        // Continue with local deletion even if Meta API fails
-      }
-    }
-
-    // Delete from local database
-    const deleted = RulesDB.deleteRule(ruleId, userId);
-
-    if (!deleted) {
-      return res.status(404).json({ error: "Rule not found" });
+    // Delete from local database if local_rule_id exists
+    if (local_rule_id && local_rule_id !== 'null') {
+      RulesDB.deleteRule(parseInt(local_rule_id), userId);
     }
 
     res.json({

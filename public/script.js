@@ -7477,6 +7477,7 @@ class AutomatedRulesManager {
       }
 
       const data = await response.json();
+      this.cachedRules = data.rules; // Cache rules for edit function
       this.renderRulesList(data.rules);
     } catch (error) {
       console.error('Error loading rules:', error);
@@ -7499,26 +7500,26 @@ class AutomatedRulesManager {
         : '<span class="status-badge status-paused">Paused</span>';
 
       return `
-        <tr data-rule-id="${rule.id}">
+        <tr data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
           <td>${rule.name}</td>
           <td>${rule.entity_type}</td>
           <td>${statusBadge}</td>
           <td>${scheduleText}</td>
           <td class="rule-actions">
-            <button class="btn-icon toggle-rule-btn" title="${rule.status === 'ACTIVE' ? 'Disable' : 'Enable'}" data-rule-id="${rule.id}" data-status="${rule.status}">
+            <button class="btn-icon toggle-rule-btn" title="${rule.status === 'ACTIVE' ? 'Disable' : 'Enable'}" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}" data-status="${rule.status}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 ${rule.status === 'ACTIVE'
                   ? '<path d="M18 6L6 18M6 6l12 12"></path>'  // X icon for disable
                   : '<path d="M5 12l5 5 9-9"></path>'}  // Check icon for enable
               </svg>
             </button>
-            <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}">
+            <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
               </svg>
             </button>
-            <button class="btn-icon delete-rule-btn" title="Delete" data-rule-id="${rule.id}">
+            <button class="btn-icon delete-rule-btn" title="Delete" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -7531,15 +7532,15 @@ class AutomatedRulesManager {
 
     // Bind action buttons
     tbody.querySelectorAll('.toggle-rule-btn').forEach(btn => {
-      btn.addEventListener('click', () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.status));
+      btn.addEventListener('click', () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.metaRuleId, btn.dataset.status));
     });
 
     tbody.querySelectorAll('.edit-rule-btn').forEach(btn => {
-      btn.addEventListener('click', () => this.editRule(btn.dataset.ruleId));
+      btn.addEventListener('click', () => this.editRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
     });
 
     tbody.querySelectorAll('.delete-rule-btn').forEach(btn => {
-      btn.addEventListener('click', () => this.deleteRule(btn.dataset.ruleId));
+      btn.addEventListener('click', () => this.deleteRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
     });
   }
 
@@ -7569,17 +7570,18 @@ class AutomatedRulesManager {
     this.rulesModal.style.display = 'none';
   }
 
-  async openEditor(ruleId = null) {
+  async openEditor(ruleId = null, metaRuleId = null) {
     this.currentRuleId = ruleId;
+    this.currentMetaRuleId = metaRuleId;
     this.conditions = [];
 
     const title = this.editorModal.querySelector('.rule-editor-title');
     const saveBtn = this.editorModal.querySelector('.save-rule-btn');
 
-    if (ruleId) {
+    if (ruleId || metaRuleId) {
       title.textContent = 'Edit Automated Rule';
       saveBtn.textContent = 'Update Rule';
-      this.loadRuleData(ruleId);
+      await this.loadRuleData(ruleId, metaRuleId);
     } else {
       title.textContent = 'Create Automated Rule';
       saveBtn.textContent = 'Create Rule';
@@ -7839,20 +7841,34 @@ class AutomatedRulesManager {
     }
   }
 
-  async editRule(ruleId) {
-    this.openEditor(ruleId);
+  async editRule(ruleId, metaRuleId) {
+    this.openEditor(ruleId, metaRuleId);
   }
 
-  async loadRuleData(ruleId) {
+  async loadRuleData(ruleId, metaRuleId) {
     try {
-      const response = await fetch(`/api/rules/${ruleId}`);
-
-      if (!response.ok) {
-        throw new Error('Failed to load rule');
+      // Try to get rule from cached rules first (more efficient)
+      let rule = null;
+      if (this.cachedRules) {
+        rule = this.cachedRules.find(r =>
+          (ruleId && r.id && r.id == ruleId) ||
+          (metaRuleId && r.meta_rule_id === metaRuleId)
+        );
       }
 
-      const data = await response.json();
-      const rule = data.rule;
+      // If not in cache, fetch from API (fallback)
+      if (!rule) {
+        // Use metaRuleId for API if available, otherwise use ruleId
+        const apiId = metaRuleId || ruleId;
+        const response = await fetch(`/api/rules/${apiId}`);
+
+        if (!response.ok) {
+          throw new Error('Failed to load rule');
+        }
+
+        const data = await response.json();
+        rule = data.rule;
+      }
 
       // Populate form
       this.editorModal.querySelector('#rule-name').value = rule.name;
@@ -7958,16 +7974,16 @@ class AutomatedRulesManager {
     }
   }
 
-  async toggleRuleStatus(ruleId, currentStatus) {
+  async toggleRuleStatus(ruleId, metaRuleId, currentStatus) {
     try {
       // Meta API uses ENABLED/DISABLED, not ACTIVE/PAUSED
       const newStatus = currentStatus === 'ACTIVE' ? 'DISABLED' : 'ENABLED';
       const action = newStatus === 'ENABLED' ? 'enable' : 'disable';
 
-      const response = await fetch(`/api/rules/${ruleId}/status`, {
+      const response = await fetch(`/api/rules/${metaRuleId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, local_rule_id: ruleId })
       });
 
       if (!response.ok) {
@@ -7998,14 +8014,16 @@ class AutomatedRulesManager {
     }
   }
 
-  async deleteRule(ruleId) {
+  async deleteRule(ruleId, metaRuleId) {
     if (!confirm('Are you sure you want to delete this rule?')) {
       return;
     }
 
     try {
-      const response = await fetch(`/api/rules/${ruleId}`, {
-        method: 'DELETE'
+      const response = await fetch(`/api/rules/${metaRuleId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local_rule_id: ruleId })
       });
 
       if (!response.ok) {
