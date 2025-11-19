@@ -4785,6 +4785,7 @@ app.get("/api/rules", ensureAuthenticatedAPI, async (req, res) => {
           meta_rule_id: metaRule.id,
           name: metaRule.name,
           entity_type: entityType,
+          rule_type: localRule?.rule_type || 'SCHEDULE', // <-- ADDED THIS LINE
           status: metaRule.status === 'ENABLED' ? 'ACTIVE' : metaRule.status === 'DISABLED' ? 'PAUSED' : metaRule.status,
           evaluation_spec: processedEvalSpec,
           execution_spec: processedExecSpec,
