@@ -5177,14 +5177,14 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
 });
 
 // Toggle rule status (Enable/Disable)
-app.patch("/api/rules/:ruleId/status", ensureAuthenticatedAPI, async (req, res) => {
+app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
-    const ruleId = parseInt(req.params.ruleId);
-    const { status } = req.body; // 'ENABLED' or 'DISABLED'
+    const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
+    const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
     const userAccessToken = req.user?.facebook_access_token;
 
-    console.log('Toggle status request:', { ruleId, status, userId });
+    console.log('Toggle status request:', { metaRuleId, status, local_rule_id, userId });
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -5192,30 +5192,21 @@ app.patch("/api/rules/:ruleId/status", ensureAuthenticatedAPI, async (req, res) 
         needsAuth: true,
       });
     }
-    
-    if (!['ENABLED', 'DISABLED'].includes(status)) {
-        return res.status(400).json({ error: "Invalid status provided. Must be ENABLED or DISABLED." });
+
+    // Try to get local rule if local_rule_id is provided and not null
+    let rule = null;
+    if (local_rule_id && local_rule_id !== 'null') {
+      rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
+      console.log('Local rule found:', rule ? 'yes' : 'no');
     }
 
-    // Get the local rule using the reliable local ID
-    const rule = RulesDB.getRuleById(ruleId, userId);
-    if (!rule) {
-        return res.status(404).json({ error: "Rule not found or you do not have permission to modify it." });
-    }
-
-    // Check if the rule is synced with Meta
-    if (!rule.meta_rule_id) {
-        return res.status(400).json({
-            error: "Rule Not Synced",
-            details: "This rule is not synced with Facebook and its status cannot be changed online. It may have failed during creation.",
-        });
-    }
-
-    // If synced, proceed to update in Meta API
-    const metaApiUrl = `https://graph.facebook.com/${api_version}/${rule.meta_rule_id}`;
+    // Update in Meta API with ENABLED/DISABLED format
+    // Use metaRuleId from URL params (works for both local and non-local rules)
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
 
     try {
-      // Meta requires sending the full spec when updating status, so we fetch it first.
+      // STEP 1: Fetch the current Rule Specs from Meta
+      // Meta requires ALL fields to be provided when updating, not just status
       const currentRuleResponse = await axios.get(metaApiUrl, {
         params: {
           access_token: userAccessToken,
@@ -5224,20 +5215,26 @@ app.patch("/api/rules/:ruleId/status", ensureAuthenticatedAPI, async (req, res) 
       });
 
       const currentData = currentRuleResponse.data;
+
+      // STEP 2: Prepare the Update Payload
+      // Send back existing specs + NEW status
+      // Meta API expects specs to be JSON strings in POST body
       const updatePayload = {
         access_token: userAccessToken,
-        status: status,
+        status: status, // 'ENABLED' or 'DISABLED'
         name: currentData.name,
         evaluation_spec: JSON.stringify(currentData.evaluation_spec),
         execution_spec: JSON.stringify(currentData.execution_spec),
       };
 
+      // Only include schedule_spec if it exists (null for trigger-based rules)
       if (currentData.schedule_spec) {
         updatePayload.schedule_spec = JSON.stringify(currentData.schedule_spec);
       }
 
+      // STEP 3: Send the Update (data in body, not params)
       await axios.post(metaApiUrl, updatePayload);
-      console.log('Meta API status update successful for meta_rule_id:', rule.meta_rule_id);
+      console.log('Meta API update successful');
 
     } catch (metaError) {
       console.error("Meta API error updating rule status:", metaError.response?.data || metaError.message);
@@ -5247,11 +5244,17 @@ app.patch("/api/rules/:ruleId/status", ensureAuthenticatedAPI, async (req, res) 
       });
     }
 
-    // Finally, update the status in the local DB
-    const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : 'PAUSED';
-    RulesDB.updateRule(ruleId, userId, { status: frontendStatus });
-    console.log('Local DB status updated for rule_id:', ruleId);
+    // Update local DB if rule exists locally
+    if (rule) {
+      console.log('Updating local DB for rule:', local_rule_id);
+      const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
+      RulesDB.updateRuleStatus(parseInt(local_rule_id), userId, frontendStatus);
+      console.log('Local DB updated');
+    }
 
+    // Convert to frontend format for response
+    const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
+    console.log('Sending response:', { success: true, status: frontendStatus });
     res.json({ success: true, status: frontendStatus });
   } catch (error) {
     console.error("Error updating rule status:", error);
