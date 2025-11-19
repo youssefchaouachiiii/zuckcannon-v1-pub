@@ -5184,6 +5184,8 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
     const userAccessToken = req.user?.facebook_access_token;
 
+    console.log('Toggle status request:', { metaRuleId, status, local_rule_id, userId });
+
     if (!userAccessToken) {
       return res.status(403).json({
         error: "Facebook account not connected",
@@ -5195,6 +5197,7 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     let rule = null;
     if (local_rule_id && local_rule_id !== 'null') {
       rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
+      console.log('Local rule found:', rule ? 'yes' : 'no');
     }
 
     // Update in Meta API with ENABLED/DISABLED format
@@ -5231,6 +5234,7 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
 
       // STEP 3: Send the Update (data in body, not params)
       await axios.post(metaApiUrl, updatePayload);
+      console.log('Meta API update successful');
 
     } catch (metaError) {
       console.error("Meta API error updating rule status:", metaError.response?.data || metaError.message);
@@ -5242,16 +5246,19 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
 
     // Update local DB if rule exists locally
     if (rule) {
+      console.log('Updating local DB for rule:', local_rule_id);
       const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
       RulesDB.updateRuleStatus(parseInt(local_rule_id), userId, frontendStatus);
+      console.log('Local DB updated');
     }
 
     // Convert to frontend format for response
     const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
+    console.log('Sending response:', { success: true, status: frontendStatus });
     res.json({ success: true, status: frontendStatus });
   } catch (error) {
     console.error("Error updating rule status:", error);
-    // res.status(500).json({ error: "Failed to update rule status" });
+    res.status(500).json({ error: "Failed to update rule status", details: error.message });
   }
 });
 

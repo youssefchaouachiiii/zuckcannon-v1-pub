@@ -7976,9 +7976,13 @@ class AutomatedRulesManager {
 
   async toggleRuleStatus(ruleId, metaRuleId, currentStatus) {
     try {
+      console.log('Toggle status clicked:', { ruleId, metaRuleId, currentStatus });
+
       // Meta API uses ENABLED/DISABLED, not ACTIVE/PAUSED
       const newStatus = currentStatus === 'ACTIVE' ? 'DISABLED' : 'ENABLED';
       const action = newStatus === 'ENABLED' ? 'enable' : 'disable';
+
+      console.log('Sending request to:', `/api/rules/${metaRuleId}/status`, { status: newStatus, local_rule_id: ruleId });
 
       const response = await fetch(`/api/rules/${metaRuleId}/status`, {
         method: 'PATCH',
@@ -7986,12 +7990,15 @@ class AutomatedRulesManager {
         body: JSON.stringify({ status: newStatus, local_rule_id: ruleId })
       });
 
+      console.log('Response received:', response.status, response.ok);
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to ${action} rule`);
       }
 
       const result = await response.json();
+      console.log('Response data:', result);
 
       // Show correct message based on the new frontend status
       const frontendStatus = result.status; // 'ACTIVE' or 'PAUSED'
@@ -8001,10 +8008,13 @@ class AutomatedRulesManager {
       // Get account ID from dropdown if currentAccountId not set
       if (!this.currentAccountId) {
         this.currentAccountId = this.rulesModal.querySelector('.rules-account-dropdown').value;
+        console.log('Account ID from dropdown:', this.currentAccountId);
       }
 
       if (this.currentAccountId) {
+        console.log('Reloading rules for account:', this.currentAccountId);
         await this.loadRules(this.currentAccountId);
+        console.log('Rules reloaded');
       } else {
         console.warn('No account ID available to reload rules');
       }
