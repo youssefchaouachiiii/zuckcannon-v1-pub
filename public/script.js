@@ -7974,55 +7974,49 @@ class AutomatedRulesManager {
     }
   }
 
-  async toggleRuleStatus(ruleId, metaRuleId, currentStatus) {
-    try {
-      console.log('Toggle status clicked:', { ruleId, metaRuleId, currentStatus });
+    async toggleRuleStatus(ruleId, currentStatus) {
+      const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      // Convert to Meta API format for the backend
+      const metaStatus = newStatus === 'ACTIVE' ? 'ENABLED' : 'DISABLED';
 
-      // Meta API uses ENABLED/DISABLED, not ACTIVE/PAUSED
-      const newStatus = currentStatus === 'ACTIVE' ? 'DISABLED' : 'ENABLED';
-      const action = newStatus === 'ENABLED' ? 'enable' : 'disable';
+      try {
+        const response = await fetch(`/api/rules/${ruleId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: metaStatus })
+        });
 
-      console.log('Sending request to:', `/api/rules/${metaRuleId}/status`, { status: newStatus, local_rule_id: ruleId });
+        const data = await response.json();
 
-      const response = await fetch(`/api/rules/${metaRuleId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, local_rule_id: ruleId })
-      });
+        if (!response.ok) {
+          throw new Error(data.details || data.error || 'Failed to update status');
+        }
 
-      console.log('Response received:', response.status, response.ok);
+        showSuccess(`Rule successfully ${newStatus === 'ACTIVE' ? 'enabled' : 'disabled'}.`);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to ${action} rule`);
+        // Manually update the button state in the UI to provide instant feedback
+        const ruleRow = this.rulesModal.querySelector(`tr[data-rule-id="${ruleId}"]`);
+        if (ruleRow) {
+            const button = ruleRow.querySelector('.toggle-rule-btn');
+            const statusBadge = ruleRow.querySelector('.status-badge');
+            if (button) {
+                button.dataset.status = newStatus;
+                button.title = newStatus === 'ACTIVE' ? 'Disable' : 'Enable';
+                button.innerHTML = newStatus === 'ACTIVE'
+                    ? `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="icon-pause"><path d="M10 4H6V20H10V4Z" fill="currentColor"/><path d="M18 4H14V20H18V4Z" fill="currentColor"/></svg>`
+                    : `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="icon-play"><path d="M8 5V19L19 12L8 5Z" fill="currentColor"/></svg>`;
+            }
+            if (statusBadge) {
+                statusBadge.className = `status-badge status-${newStatus.toLowerCase()}`;
+                statusBadge.textContent = newStatus;
+            }
+        }
+      
+      } catch (error) {
+        console.error('Error toggling rule status:', error);
+        showError(error.message || 'Failed to toggle rule status');
       }
-
-      const result = await response.json();
-      console.log('Response data:', result);
-
-      // Show correct message based on the new frontend status
-      const frontendStatus = result.status; // 'ACTIVE' or 'PAUSED'
-      showSuccess(`Rule ${frontendStatus === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`);
-
-      // Reload rules to refresh UI
-      // Get account ID from dropdown if currentAccountId not set
-      if (!this.currentAccountId) {
-        this.currentAccountId = this.rulesModal.querySelector('.rules-account-dropdown').value;
-        console.log('Account ID from dropdown:', this.currentAccountId);
-      }
-
-      if (this.currentAccountId) {
-        console.log('Reloading rules for account:', this.currentAccountId);
-        await this.loadRules(this.currentAccountId);
-        console.log('Rules reloaded');
-      } else {
-        console.warn('No account ID available to reload rules');
-      }
-    } catch (error) {
-      console.error('Error toggling rule status:', error);
-      showError(error.message || 'Failed to toggle rule status');
     }
-  }
 
   async deleteRule(ruleId, metaRuleId) {
     if (!confirm('Are you sure you want to delete this rule?')) {
