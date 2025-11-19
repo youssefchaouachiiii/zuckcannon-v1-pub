@@ -7888,7 +7888,7 @@ class AutomatedRulesManager {
       const evalSpec = rule.evaluation_spec;
       if (evalSpec && evalSpec.filters) {
         const conditionFilters = evalSpec.filters.filter(f =>
-          !['id', 'entity_type', 'time_preset'].includes(f.field)
+          !['id', 'entity_type', 'time_preset', 'effective_status'].includes(f.field)
         );
 
         // DEBUG: Log the conditions that were found
