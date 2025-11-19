@@ -5576,6 +5576,10 @@ app.get("/api/account/:account_id/users", ensureAuthenticatedAPI, async (req, re
       });
     } catch (metaError) {
       console.error("Meta API error fetching account users:", metaError.response?.data || metaError.message);
+      // DEBUGGING: Log actual Meta API error for users endpoint
+      console.error("================== RAW META API USERS ERROR DATA ==================");
+      console.error(JSON.stringify(metaError.response?.data || { message: metaError.message }, null, 2));
+      console.error("===================================================================");
 
       // Return empty array instead of error to allow rule creation without subscribers
       res.json({
