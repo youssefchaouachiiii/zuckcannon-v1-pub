@@ -1050,6 +1050,325 @@ export const validateRequest = {
 
     next();
   },
+
+  // Validate automated rule creation
+  createRule: (req, res, next) => {
+    const { name, ad_account_id, entity_type, conditions, action, rule_type, schedule } = req.body;
+
+    // Required fields
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    if (!ad_account_id) {
+      return res.status(400).json({ error: "ad_account_id is required" });
+    }
+
+    if (!entity_type) {
+      return res.status(400).json({ error: "entity_type is required" });
+    }
+
+    // Validate entity_type
+    const validEntityTypes = ["CAMPAIGN", "ADSET", "AD"];
+    if (!validEntityTypes.includes(entity_type)) {
+      return res.status(400).json({
+        error: `Invalid entity_type. Must be one of: ${validEntityTypes.join(", ")}`,
+      });
+    }
+
+    // Validate rule_type
+    if (rule_type) {
+      const validRuleTypes = ["TRIGGER", "SCHEDULE"];
+      if (!validRuleTypes.includes(rule_type)) {
+        return res.status(400).json({
+          error: `Invalid rule_type. Must be one of: ${validRuleTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate conditions
+    if (!conditions || !Array.isArray(conditions) || conditions.length === 0) {
+      return res.status(400).json({ error: "conditions array is required and must not be empty" });
+    }
+
+    // Validate each condition
+    for (let i = 0; i < conditions.length; i++) {
+      const condition = conditions[i];
+
+      if (!condition.field) {
+        return res.status(400).json({
+          error: `Condition at index ${i} is missing required field: field`,
+        });
+      }
+
+      if (!condition.operator) {
+        return res.status(400).json({
+          error: `Condition at index ${i} is missing required field: operator`,
+        });
+      }
+
+      if (condition.value === undefined || condition.value === null) {
+        return res.status(400).json({
+          error: `Condition at index ${i} is missing required field: value`,
+        });
+      }
+
+      // Validate operator
+      const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL"];
+      if (!validOperators.includes(condition.operator)) {
+        return res.status(400).json({
+          error: `Condition at index ${i} has invalid operator. Must be one of: ${validOperators.join(", ")}`,
+        });
+      }
+
+      // Validate common metric fields
+      const validFields = [
+        "spend",
+        "impressions",
+        "clicks",
+        "reach",
+        "frequency",
+        "cpm",
+        "cpc",
+        "ctr",
+        "cost_per_action_type",
+        "actions",
+        "conversions",
+        "cost_per_conversion",
+        "roas",
+        "purchase_value",
+        "cost_per_purchase",
+        "video_thruplay_watched_actions",
+        "video_p100_watched_actions",
+      ];
+
+      if (!validFields.includes(condition.field)) {
+        console.warn(`Warning: Condition field '${condition.field}' is not in the common fields list. It may still be valid.`);
+      }
+    }
+
+    // Validate action
+    if (!action) {
+      return res.status(400).json({ error: "action is required" });
+    }
+
+    if (!action.type) {
+      return res.status(400).json({ error: "action.type is required" });
+    }
+
+    const validActionTypes = ["PAUSE", "UNPAUSE", "CHANGE_BUDGET", "CHANGE_BID", "SEND_NOTIFICATION"];
+    if (!validActionTypes.includes(action.type)) {
+      return res.status(400).json({
+        error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
+      });
+    }
+
+    // Validate action-specific fields
+    if (action.type === "CHANGE_BUDGET") {
+      if (!action.budget_change_type) {
+        return res.status(400).json({
+          error: "action.budget_change_type is required for CHANGE_BUDGET action",
+        });
+      }
+
+      const validBudgetChangeTypes = ["INCREASE", "DECREASE", "SET"];
+      if (!validBudgetChangeTypes.includes(action.budget_change_type)) {
+        return res.status(400).json({
+          error: `Invalid action.budget_change_type. Must be one of: ${validBudgetChangeTypes.join(", ")}`,
+        });
+      }
+
+      if (action.amount === undefined || action.amount === null) {
+        return res.status(400).json({
+          error: "action.amount is required for CHANGE_BUDGET action",
+        });
+      }
+
+      if (isNaN(parseFloat(action.amount))) {
+        return res.status(400).json({
+          error: "action.amount must be a valid number",
+        });
+      }
+    }
+
+    if (action.type === "CHANGE_BID") {
+      if (action.bid_amount === undefined || action.bid_amount === null) {
+        return res.status(400).json({
+          error: "action.bid_amount is required for CHANGE_BID action",
+        });
+      }
+
+      if (isNaN(parseFloat(action.bid_amount))) {
+        return res.status(400).json({
+          error: "action.bid_amount must be a valid number",
+        });
+      }
+    }
+
+    // Validate schedule if provided
+    if (schedule) {
+      if (!schedule.frequency) {
+        return res.status(400).json({ error: "schedule.frequency is required" });
+      }
+
+      const validFrequencies = ["HOURLY", "DAILY", "CUSTOM"];
+      if (!validFrequencies.includes(schedule.frequency)) {
+        return res.status(400).json({
+          error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,
+        });
+      }
+
+      // Validate CUSTOM schedule
+      if (schedule.frequency === "CUSTOM") {
+        if (!schedule.days || !Array.isArray(schedule.days) || schedule.days.length === 0) {
+          return res.status(400).json({
+            error: "schedule.days array is required for CUSTOM frequency",
+          });
+        }
+
+        // Validate days (0-6, Sunday-Saturday)
+        for (const day of schedule.days) {
+          if (!Number.isInteger(day) || day < 0 || day > 6) {
+            return res.status(400).json({
+              error: "schedule.days must contain integers between 0 (Sunday) and 6 (Saturday)",
+            });
+          }
+        }
+
+        if (schedule.start_minute === undefined || schedule.start_minute === null) {
+          return res.status(400).json({
+            error: "schedule.start_minute is required for CUSTOM frequency",
+          });
+        }
+
+        if (schedule.end_minute === undefined || schedule.end_minute === null) {
+          return res.status(400).json({
+            error: "schedule.end_minute is required for CUSTOM frequency",
+          });
+        }
+
+        // Validate minute range (0-1439)
+        if (!Number.isInteger(schedule.start_minute) || schedule.start_minute < 0 || schedule.start_minute > 1439) {
+          return res.status(400).json({
+            error: "schedule.start_minute must be an integer between 0 and 1439",
+          });
+        }
+
+        if (!Number.isInteger(schedule.end_minute) || schedule.end_minute < 0 || schedule.end_minute > 1439) {
+          return res.status(400).json({
+            error: "schedule.end_minute must be an integer between 0 and 1439",
+          });
+        }
+      }
+    }
+
+    next();
+  },
+
+  // Validate rule update
+  updateRule: (req, res, next) => {
+    const { name, entity_type, conditions, action, rule_type, schedule, status } = req.body;
+
+    // At least one field must be provided for update
+    if (!name && !entity_type && !conditions && !action && !rule_type && !schedule && !status) {
+      return res.status(400).json({
+        error: "At least one field must be provided for update",
+      });
+    }
+
+    // Validate entity_type if provided
+    if (entity_type) {
+      const validEntityTypes = ["CAMPAIGN", "ADSET", "AD"];
+      if (!validEntityTypes.includes(entity_type)) {
+        return res.status(400).json({
+          error: `Invalid entity_type. Must be one of: ${validEntityTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate rule_type if provided
+    if (rule_type) {
+      const validRuleTypes = ["TRIGGER", "SCHEDULE"];
+      if (!validRuleTypes.includes(rule_type)) {
+        return res.status(400).json({
+          error: `Invalid rule_type. Must be one of: ${validRuleTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate status if provided
+    if (status) {
+      const validStatuses = ["ACTIVE", "PAUSED", "DELETED"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate conditions if provided
+    if (conditions) {
+      if (!Array.isArray(conditions) || conditions.length === 0) {
+        return res.status(400).json({ error: "conditions must be a non-empty array" });
+      }
+
+      // Validate each condition (same as create)
+      for (let i = 0; i < conditions.length; i++) {
+        const condition = conditions[i];
+
+        if (!condition.field || !condition.operator || (condition.value === undefined || condition.value === null)) {
+          return res.status(400).json({
+            error: `Condition at index ${i} is missing required fields (field, operator, value)`,
+          });
+        }
+
+        const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL"];
+        if (!validOperators.includes(condition.operator)) {
+          return res.status(400).json({
+            error: `Condition at index ${i} has invalid operator`,
+          });
+        }
+      }
+    }
+
+    // Validate action if provided
+    if (action) {
+      if (!action.type) {
+        return res.status(400).json({ error: "action.type is required" });
+      }
+
+      const validActionTypes = ["PAUSE", "UNPAUSE", "CHANGE_BUDGET", "CHANGE_BID", "SEND_NOTIFICATION"];
+      if (!validActionTypes.includes(action.type)) {
+        return res.status(400).json({
+          error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate schedule if provided (same validation as create)
+    if (schedule) {
+      if (!schedule.frequency) {
+        return res.status(400).json({ error: "schedule.frequency is required" });
+      }
+
+      const validFrequencies = ["HOURLY", "DAILY", "CUSTOM"];
+      if (!validFrequencies.includes(schedule.frequency)) {
+        return res.status(400).json({
+          error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,
+        });
+      }
+
+      if (schedule.frequency === "CUSTOM") {
+        if (!schedule.days || !Array.isArray(schedule.days) || schedule.days.length === 0) {
+          return res.status(400).json({
+            error: "schedule.days array is required for CUSTOM frequency",
+          });
+        }
+      }
+    }
+
+    next();
+  },
 };
 
 // Rate limiting middleware factory
