@@ -24,6 +24,9 @@
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
         </svg>
       </button>
+      <button class="rules-btn" title="Automated Rules">
+        <p>Manage Rules</p>
+      </button>
     </h1>
     <div class="header-controls">
       <span id="username-display"></span>
@@ -247,7 +250,8 @@
           </div>
 
           <!-- Budget & Schedule Section -->
-          <div class="budget-schedule-section" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+          <div class="budget-schedule-section"
+            style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
             <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333;">Budget & Schedule</h3>
 
             <!-- Budget Type dropdown -->
@@ -277,7 +281,8 @@
 
             <!-- Start Date & Time -->
             <div style="margin-top: 10px;">
-              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Date & Time*</label>
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Date &
+                Time*</label>
               <input type="datetime-local" class="config-start-datetime" data-container="adset-form-container"
                 style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required />
             </div>
@@ -335,8 +340,8 @@
             <div class="country-selection">
               <div class="selected-countries-container">
                 <div class="selected-tags" id="selected-countries"></div>
-                <input type="text" placeholder="Search countries (please match with campaign)*" class="country-search-input"
-                  data-container="adset-form-container" />
+                <input type="text" placeholder="Search countries (please match with campaign)*"
+                  class="country-search-input" data-container="adset-form-container" />
               </div>
               <ul class="country-suggestions" style="display: none;"></ul>
             </div>
@@ -355,7 +360,8 @@
           </div>
 
           <!-- Ad Scheduling Section -->
-          <div class="ad-scheduling-container" style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+          <div class="ad-scheduling-container"
+            style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
               <h3 style="margin: 0; font-size: 16px; color: #333;">Ad Scheduling (Optional)</h3>
               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -363,7 +369,8 @@
                 <span style="font-size: 14px; color: #666;">Enable Scheduling</span>
               </label>
             </div>
-            <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads should run.</p>
+            <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads
+              should run.</p>
 
             <div class="scheduling-controls" style="display: none;">
               <!-- Schedule List -->
@@ -372,27 +379,34 @@
               </div>
 
               <!-- Add Schedule Button -->
-              <button type="button" class="add-schedule-btn" style="margin-top: 10px; padding: 8px 16px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              <button type="button" class="add-schedule-btn"
+                style="margin-top: 10px; padding: 8px 16px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
                 + Add Schedule
               </button>
 
               <!-- Schedule Form Template (hidden) -->
               <div class="schedule-form-template" style="display: none;">
-                <div class="schedule-item" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                <div class="schedule-item"
+                  style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: white;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <strong style="font-size: 14px;">Schedule #<span class="schedule-number"></span></strong>
-                    <button type="button" class="remove-schedule-btn" style="padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Remove</button>
+                    <button type="button" class="remove-schedule-btn"
+                      style="padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Remove</button>
                   </div>
 
                   <!-- Time Selection -->
                   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                     <div>
-                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Time (HH:MM)</label>
-                      <input type="time" class="schedule-start-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Time
+                        (HH:MM)</label>
+                      <input type="time" class="schedule-start-time" required
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
                     <div>
-                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">End Time (HH:MM)</label>
-                      <input type="time" class="schedule-end-time" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                      <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">End Time
+                        (HH:MM)</label>
+                      <input type="time" class="schedule-end-time" required
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
                   </div>
 
@@ -400,25 +414,32 @@
                   <div style="margin-bottom: 10px;">
                     <label style="display: block; font-size: 13px; color: #666; margin-bottom: 8px;">Active Days</label>
                     <div class="days-selector" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="0" style="cursor: pointer;"> Sun
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="1" style="cursor: pointer;"> Mon
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="2" style="cursor: pointer;"> Tue
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="3" style="cursor: pointer;"> Wed
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="4" style="cursor: pointer;"> Thu
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="5" style="cursor: pointer;"> Fri
                       </label>
-                      <label class="day-checkbox" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
+                      <label class="day-checkbox"
+                        style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
                         <input type="checkbox" value="6" style="cursor: pointer;"> Sat
                       </label>
                     </div>
@@ -427,7 +448,8 @@
                   <!-- Timezone Type -->
                   <div>
                     <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Timezone</label>
-                    <select class="schedule-timezone-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <select class="schedule-timezone-type"
+                      style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                       <option value="USER">User's Timezone</option>
                       <option value="ADVERTISER">Account Timezone</option>
                     </select>
@@ -934,6 +956,232 @@
       <div class="library-selected-info">
         <span class="selected-count">0 selected</span>
         <button class="add-selected-btn" disabled>Add Selected Creatives</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Automated Rules Modal -->
+  <div class="automated-rules-modal" style="display: none;">
+    <div class="modal-content rules-modal-content">
+      <div class="modal-header">
+        <h2>Automated Rules</h2>
+        <div class="modal-header-buttons">
+          <button class="btn-primary create-rule-btn">+ Create Rule</button>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Account selector -->
+        <div class="rules-account-selector">
+          <label>Ad Account:</label>
+          <select class="rules-account-dropdown">
+            <option value="">Select an account...</option>
+          </select>
+          <button class="btn-secondary load-rules-btn" style="margin-left: 10px;">Load Rules</button>
+        </div>
+
+        <!-- Rules list -->
+        <div class="rules-list-container">
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>Rule Name</th>
+                <th>Entity Type</th>
+                <th>Status</th>
+                <th>Schedule</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody class="rules-list">
+              <tr class="empty-state">
+                <td colspan="5">No rules found. Create a rule to get started.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Rule Modal -->
+  <div class="rule-editor-modal" style="display: none;">
+    <div class="modal-content rule-editor-content">
+      <div class="modal-header">
+        <h2 class="rule-editor-title">Create Automated Rule</h2>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <form class="rule-form">
+          <!-- Rule Name -->
+          <div class="form-group">
+            <label for="rule-name">Rule Name*</label>
+            <input type="text" id="rule-name" class="form-input" placeholder="e.g., Stop Loss Rule" required />
+          </div>
+
+          <!-- Rule Type -->
+          <div class="form-group">
+            <label>Rule Type*</label>
+            <div class="rule-type-selector">
+              <label class="radio-label">
+                <input type="radio" name="rule-type" value="SCHEDULE" checked />
+                <span>Schedule - Run at specific times</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="rule-type" value="TRIGGER" />
+                <span>Trigger - Run based on stats changes</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Apply Rule To -->
+          <div class="form-group">
+            <label>Apply Rule To*</label>
+            <select id="rule-entity-type" class="form-select" required>
+              <option value="">Select entity type...</option>
+              <option value="CAMPAIGN">All Active Campaigns</option>
+              <option value="ADSET">All Active Ad Sets</option>
+              <option value="AD">All Active Ads</option>
+            </select>
+          </div>
+
+          <!-- Action Section -->
+          <div class="form-section">
+            <h3>Action*</h3>
+            <select id="rule-action-type" class="form-select" required>
+              <option value="">Select action...</option>
+              <option value="PAUSE">Turn off (Pause)</option>
+              <option value="UNPAUSE">Turn on (Unpause)</option>
+              <option value="SEND_NOTIFICATION">Send notification only</option>
+              <option value="CHANGE_BUDGET">Adjust budget</option>
+              <option value="CHANGE_BID">Adjust manual bid</option>
+            </select>
+
+            <!-- Budget change options (hidden by default) -->
+            <div class="budget-change-options" style="display: none;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Change Type</label>
+                  <select id="budget-change-type" class="form-select">
+                    <option value="INCREASE">Increase daily budget by</option>
+                    <option value="DECREASE">Decrease daily budget by</option>
+                    <option value="SET">Set daily budget to</option>
+                    <option value="INCREASE_LIFETIME">Increase lifetime budget by</option>
+                    <option value="DECREASE_LIFETIME">Decrease lifetime budget by</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Unit</label>
+                  <select id="budget-unit" class="form-select">
+                    <option value="CURRENCY">Dollar amount ($)</option>
+                    <option value="PERCENTAGE">Percentage (%)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Amount</label>
+                  <input type="number" id="budget-amount" class="form-input" placeholder="0.00" step="0.01" min="0" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Bid change options (hidden by default) -->
+            <div class="bid-change-options" style="display: none;">
+              <div class="form-group">
+                <label>Bid Amount ($)</label>
+                <input type="number" id="bid-amount" class="form-input" placeholder="0.00" step="0.01" min="0" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Conditions Section -->
+          <div class="form-section">
+            <h3>Conditions</h3>
+            <p class="form-help-text">All conditions must be met (AND logic)</p>
+            <div class="conditions-container">
+              <!-- Conditions will be added dynamically -->
+            </div>
+            <button type="button" class="btn-secondary add-condition-btn">+ Add Condition</button>
+          </div>
+
+          <!-- Time Range Section -->
+          <div class="form-section">
+            <h3>Time Range*</h3>
+            <select id="rule-time-range" class="form-select" required>
+              <option value="TODAY">Today</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="LAST_3D">Last 3 days</option>
+              <option value="LAST_7D" selected>Last 7 days (maximum)</option>
+              <option value="LAST_14D">Last 14 days</option>
+              <option value="LAST_28D">Last 28 days</option>
+              <option value="LAST_30D">Last 30 days</option>
+              <option value="THIS_MONTH">This month</option>
+              <option value="THIS_WEEK_MON_TODAY">This week (Mon-Today)</option>
+              <option value="THIS_WEEK_SUN_TODAY">This week (Sun-Today)</option>
+              <option value="LIFETIME">Lifetime</option>
+            </select>
+            <p class="form-help-text">Note: Some ad metrics can be delayed and would fluctuate for hours. Consider
+              adding some buffers to your metric-based conditions to help avoid false positives.</p>
+          </div>
+
+          <!-- Schedule Section -->
+          <div class="form-section schedule-section">
+            <h3>Schedule*</h3>
+            <select id="rule-schedule-frequency" class="form-select" required>
+              <option value="HOURLY">Hourly</option>
+              <option value="DAILY">Daily (12:00 PM)</option>
+              <option value="CUSTOM">Custom</option>
+            </select>
+
+            <!-- Custom schedule options (hidden by default) -->
+            <div class="custom-schedule-options" style="display: none;">
+              <div class="form-group">
+                <label>Days of Week</label>
+                <div class="days-selector">
+                  <label class="day-checkbox"><input type="checkbox" value="0" /> Sun</label>
+                  <label class="day-checkbox"><input type="checkbox" value="1" /> Mon</label>
+                  <label class="day-checkbox"><input type="checkbox" value="2" /> Tue</label>
+                  <label class="day-checkbox"><input type="checkbox" value="3" /> Wed</label>
+                  <label class="day-checkbox"><input type="checkbox" value="4" /> Thu</label>
+                  <label class="day-checkbox"><input type="checkbox" value="5" /> Fri</label>
+                  <label class="day-checkbox"><input type="checkbox" value="6" /> Sat</label>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Start Time</label>
+                  <input type="time" id="schedule-start-time" class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label>End Time</label>
+                  <input type="time" id="schedule-end-time" class="form-input" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subscribers Section -->
+          <div class="form-section">
+            <h3>Subscriber</h3>
+            <p class="form-help-text">Only people with access to this ad account can receive rule results.</p>
+            <select id="rule-subscribers" class="form-select">
+              <option value="">Select subscriber...</option>
+            </select>
+            <p class="form-help-text" style="font-size: 12px; margin-top: 5px;">Note: You'll receive a notification when
+              conditions for this rule have been met.</p>
+          </div>
+
+          <!-- JSON Preview -->
+          <!-- <div class="form-section">
+            <h3>JSON Preview</h3>
+            <pre class="json-preview"><code>{}</code></pre>
+          </div> -->
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary cancel-rule-btn">Cancel</button>
+        <button type="button" class="btn-primary save-rule-btn">Create Rule</button>
       </div>
     </div>
   </div>
