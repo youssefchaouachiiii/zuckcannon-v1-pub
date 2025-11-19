@@ -7654,8 +7654,6 @@ class AutomatedRulesManager {
         <select class="form-select condition-operator" data-index="${conditionIndex}">
           <option value="GREATER_THAN">is greater than (>)</option>
           <option value="LESS_THAN">is less than (<)</option>
-          <option value="GREATER_THAN_OR_EQUAL">is greater than or equal to (>=)</option>
-          <option value="LESS_THAN_OR_EQUAL">is less than or equal to (<=)</option>
           <option value="EQUAL">is equal to (=)</option>
           <option value="NOT_EQUAL">is not equal to (≠)</option>
           <option value="IN_RANGE">is in range</option>
@@ -7735,7 +7733,8 @@ class AutomatedRulesManager {
     const timeRange = this.editorModal.querySelector('#rule-time-range').value;
 
     // Collect conditions (filter out null/deleted ones)
-    const conditions = this.conditions.filter(c => c !== null && c.field && c.value);
+    // Note: c.value can be 0, so check for null/undefined explicitly
+    const conditions = this.conditions.filter(c => c !== null && c.field && (c.value !== null && c.value !== undefined && c.value !== ''));
 
     // Build action object
     const action = { type: actionType };
@@ -7964,14 +7963,21 @@ class AutomatedRulesManager {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to ${action} rule`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${action} rule`);
       }
 
-      showSuccess(`Rule ${newStatus === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`);
-      this.loadRules(this.currentAccountId);
+      const result = await response.json();
+
+      // Show correct message based on the new frontend status
+      const frontendStatus = result.status; // 'ACTIVE' or 'PAUSED'
+      showSuccess(`Rule ${frontendStatus === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`);
+
+      // Reload rules to refresh UI
+      await this.loadRules(this.currentAccountId);
     } catch (error) {
       console.error('Error toggling rule status:', error);
-      showError('Failed to toggle rule status');
+      showError(error.message || 'Failed to toggle rule status');
     }
   }
 

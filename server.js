@@ -4957,9 +4957,11 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       } else if (schedule.frequency === "CUSTOM") {
         schedule_spec = {
           schedule_type: "CUSTOM",
-          days: schedule.days,
-          start_minute: schedule.start_minute,
-          end_minute: schedule.end_minute,
+          schedule: [{
+            days: schedule.days,
+            start_minute: schedule.start_minute,
+            end_minute: schedule.end_minute,
+          }]
         };
       }
     }
@@ -5118,9 +5120,11 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       } else if (schedule.frequency === "CUSTOM") {
         updatedScheduleSpec = {
           schedule_type: "CUSTOM",
-          days: schedule.days,
-          start_minute: schedule.start_minute,
-          end_minute: schedule.end_minute,
+          schedule: [{
+            days: schedule.days,
+            start_minute: schedule.start_minute,
+            end_minute: schedule.end_minute,
+          }]
         };
       }
     }
