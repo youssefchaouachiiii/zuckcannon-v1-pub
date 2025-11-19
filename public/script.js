@@ -7550,7 +7550,10 @@ class AutomatedRulesManager {
     if (scheduleSpec.schedule_type === 'DAILY') return 'Daily (12:00 PM)';
     if (scheduleSpec.schedule_type === 'CUSTOM') {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const dayNames = scheduleSpec.days.map(d => days[d]).join(', ');
+      // Meta API returns nested schedule array format
+      const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
+      const daysList = schedule.days || [];
+      const dayNames = daysList.map(d => days[d]).join(', ');
       return `Custom: ${dayNames}`;
     }
 
@@ -7909,23 +7912,28 @@ class AutomatedRulesManager {
         if (freq === 'CUSTOM') {
           this.editorModal.querySelector('.custom-schedule-options').style.display = 'block';
 
+          // Meta API returns nested schedule array format
+          const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
+
           // Set days
-          scheduleSpec.days.forEach(day => {
-            const checkbox = this.editorModal.querySelector(`.days-selector input[value="${day}"]`);
-            if (checkbox) checkbox.checked = true;
-          });
+          if (schedule.days) {
+            schedule.days.forEach(day => {
+              const checkbox = this.editorModal.querySelector(`.days-selector input[value="${day}"]`);
+              if (checkbox) checkbox.checked = true;
+            });
+          }
 
           // Set times
-          if (scheduleSpec.start_minute !== undefined) {
-            const hours = Math.floor(scheduleSpec.start_minute / 60);
-            const minutes = scheduleSpec.start_minute % 60;
+          if (schedule.start_minute !== undefined) {
+            const hours = Math.floor(schedule.start_minute / 60);
+            const minutes = schedule.start_minute % 60;
             this.editorModal.querySelector('#schedule-start-time').value =
               `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
           }
 
-          if (scheduleSpec.end_minute !== undefined) {
-            const hours = Math.floor(scheduleSpec.end_minute / 60);
-            const minutes = scheduleSpec.end_minute % 60;
+          if (schedule.end_minute !== undefined) {
+            const hours = Math.floor(schedule.end_minute / 60);
+            const minutes = schedule.end_minute % 60;
             this.editorModal.querySelector('#schedule-end-time').value =
               `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
           }
@@ -7974,7 +7982,16 @@ class AutomatedRulesManager {
       showSuccess(`Rule ${frontendStatus === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`);
 
       // Reload rules to refresh UI
-      await this.loadRules(this.currentAccountId);
+      // Get account ID from dropdown if currentAccountId not set
+      if (!this.currentAccountId) {
+        this.currentAccountId = this.rulesModal.querySelector('.rules-account-dropdown').value;
+      }
+
+      if (this.currentAccountId) {
+        await this.loadRules(this.currentAccountId);
+      } else {
+        console.warn('No account ID available to reload rules');
+      }
     } catch (error) {
       console.error('Error toggling rule status:', error);
       showError(error.message || 'Failed to toggle rule status');
@@ -7996,7 +8013,15 @@ class AutomatedRulesManager {
       }
 
       showSuccess('Rule deleted successfully');
-      this.loadRules(this.currentAccountId);
+
+      // Get account ID from dropdown if currentAccountId not set
+      if (!this.currentAccountId) {
+        this.currentAccountId = this.rulesModal.querySelector('.rules-account-dropdown').value;
+      }
+
+      if (this.currentAccountId) {
+        await this.loadRules(this.currentAccountId);
+      }
     } catch (error) {
       console.error('Error deleting rule:', error);
       showError('Failed to delete rule');
