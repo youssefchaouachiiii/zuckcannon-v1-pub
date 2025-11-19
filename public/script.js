@@ -7616,6 +7616,9 @@ class AutomatedRulesManager {
   }
 
   addCondition() {
+    // DEBUG: Log when this function is called
+    console.log('[DEBUG] addCondition called. Current condition count:', this.conditions.length);
+
     const conditionIndex = this.conditions.length;
 
     // Note: Fields are automatically mapped to Meta API format by the backend
@@ -7847,6 +7850,9 @@ class AutomatedRulesManager {
 
   async loadRuleData(ruleId, metaRuleId) {
     try {
+      // DEBUG: Log the start of the function
+      console.log(`[DEBUG] loadRuleData called for ruleId: ${ruleId}, metaRuleId: ${metaRuleId}`);
+
       // Try to get rule from cached rules first (more efficient)
       let rule = null;
       if (this.cachedRules) {
@@ -7884,6 +7890,9 @@ class AutomatedRulesManager {
         const conditionFilters = evalSpec.filters.filter(f =>
           !['id', 'entity_type', 'time_preset'].includes(f.field)
         );
+
+        // DEBUG: Log the conditions that were found
+        console.log(`[DEBUG] Found ${conditionFilters.length} conditions to load:`, JSON.stringify(conditionFilters));
 
         conditionFilters.forEach(filter => {
           this.addCondition();
