@@ -7235,3 +7235,773 @@ function validateAdSchedule(schedules) {
 
   return { valid: true };
 }
+
+// ========================================
+// Automated Rules Manager
+// ========================================
+
+class AutomatedRulesManager {
+  constructor() {
+    this.rulesModal = document.querySelector('.automated-rules-modal');
+    this.editorModal = document.querySelector('.rule-editor-modal');
+    this.currentAccountId = null;
+    this.currentRuleId = null;
+    this.conditions = [];
+
+    this.init();
+  }
+
+  init() {
+    // Bind modal close buttons
+    this.rulesModal.querySelectorAll('.modal-close-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.closeModal());
+    });
+
+    this.editorModal.querySelectorAll('.modal-close-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.closeEditor());
+    });
+
+    // Click outside to close
+    this.rulesModal.addEventListener('click', (e) => {
+      if (e.target === this.rulesModal) this.closeModal();
+    });
+
+    this.editorModal.addEventListener('click', (e) => {
+      if (e.target === this.editorModal) this.closeEditor();
+    });
+
+    // Create rule button
+    this.rulesModal.querySelector('.create-rule-btn').addEventListener('click', () => {
+      if (!this.currentAccountId) {
+        showError('Please select an ad account first');
+        return;
+      }
+      this.openEditor();
+    });
+
+    // Account dropdown change
+    this.rulesModal.querySelector('.rules-account-dropdown').addEventListener('change', (e) => {
+      this.currentAccountId = e.target.value;
+      // Don't auto-load, user must click "Load Rules" button
+    });
+
+    // Load Rules button
+    this.rulesModal.querySelector('.load-rules-btn').addEventListener('click', () => {
+      if (!this.currentAccountId) {
+        showError('Please select an ad account first');
+        return;
+      }
+      this.loadRules(this.currentAccountId);
+    });
+
+    // Editor form controls
+    this.setupEditorControls();
+
+    // Load ad accounts
+    this.loadAdAccounts();
+  }
+
+  setupEditorControls() {
+    // Add condition button
+    this.editorModal.querySelector('.add-condition-btn').addEventListener('click', () => {
+      this.addCondition();
+    });
+
+    // Entity type change - update available actions
+    const entityTypeSelect = this.editorModal.querySelector('#rule-entity-type');
+    entityTypeSelect.addEventListener('change', (e) => {
+      this.updateAvailableActions(e.target.value);
+    });
+
+    // Action type change
+    const actionSelect = this.editorModal.querySelector('#rule-action-type');
+    actionSelect.addEventListener('change', (e) => {
+      const budgetOptions = this.editorModal.querySelector('.budget-change-options');
+      const bidOptions = this.editorModal.querySelector('.bid-change-options');
+      budgetOptions.style.display = e.target.value === 'CHANGE_BUDGET' ? 'block' : 'none';
+      bidOptions.style.display = e.target.value === 'CHANGE_BID' ? 'block' : 'none';
+      this.updateJSONPreview();
+    });
+
+    // Schedule frequency change
+    const scheduleSelect = this.editorModal.querySelector('#rule-schedule-frequency');
+    scheduleSelect.addEventListener('change', (e) => {
+      const customOptions = this.editorModal.querySelector('.custom-schedule-options');
+      customOptions.style.display = e.target.value === 'CUSTOM' ? 'block' : 'none';
+      this.updateJSONPreview();
+    });
+
+    // Form field changes update JSON preview
+    const formInputs = this.editorModal.querySelectorAll('input, select');
+    formInputs.forEach(input => {
+      input.addEventListener('change', () => this.updateJSONPreview());
+      input.addEventListener('input', () => this.updateJSONPreview());
+    });
+
+    // Save button
+    this.editorModal.querySelector('.save-rule-btn').addEventListener('click', () => {
+      this.saveRule();
+    });
+
+    // Cancel button
+    this.editorModal.querySelector('.cancel-rule-btn').addEventListener('click', () => {
+      this.closeEditor();
+    });
+  }
+
+  updateAvailableActions(entityType) {
+    const actionSelect = this.editorModal.querySelector('#rule-action-type');
+    const currentValue = actionSelect.value;
+
+    // Clear and rebuild options based on entity type
+    actionSelect.innerHTML = '<option value="">Select action...</option>';
+
+    // Always available actions
+    actionSelect.innerHTML += '<option value="PAUSE">Turn off (Pause)</option>';
+    actionSelect.innerHTML += '<option value="UNPAUSE">Turn on (Unpause)</option>';
+    actionSelect.innerHTML += '<option value="SEND_NOTIFICATION">Send notification only</option>';
+
+    // Conditional actions based on entity type
+    // Adjust budget: NOT available for Ads
+    if (entityType !== 'AD') {
+      actionSelect.innerHTML += '<option value="CHANGE_BUDGET">Adjust budget</option>';
+    }
+
+    // Adjust manual bid: Only available for Ads and Ad Sets
+    if (entityType === 'AD' || entityType === 'ADSET') {
+      actionSelect.innerHTML += '<option value="CHANGE_BID">Adjust manual bid</option>';
+    }
+
+    // Try to restore previous selection if still valid
+    const newOptions = Array.from(actionSelect.options).map(opt => opt.value);
+    if (newOptions.includes(currentValue)) {
+      actionSelect.value = currentValue;
+    } else {
+      actionSelect.value = '';
+      // Hide option panels if selection was reset
+      this.editorModal.querySelector('.budget-change-options').style.display = 'none';
+      this.editorModal.querySelector('.bid-change-options').style.display = 'none';
+    }
+
+    this.updateJSONPreview();
+  }
+
+  async loadAdAccounts() {
+    try {
+      const accountsList = document.getElementById('ad-acc-list');
+      const accounts = Array.from(accountsList.querySelectorAll('li')).map(li => {
+        const accountLink = li.querySelector('a.account');
+        return {
+          id: accountLink?.dataset.campaignId || accountLink?.getAttribute('data-campaign-id'),
+          name: accountLink?.textContent?.trim() || li.textContent.trim()
+        };
+      });
+
+      const dropdown = this.rulesModal.querySelector('.rules-account-dropdown');
+      dropdown.innerHTML = '<option value="">Select an account...</option>';
+
+      accounts.forEach(account => {
+        if (account.id) {
+          const option = document.createElement('option');
+          option.value = account.id;
+          option.textContent = account.name;
+          dropdown.appendChild(option);
+        }
+      });
+    } catch (error) {
+      console.error('Error loading ad accounts:', error);
+    }
+  }
+
+  // DOM to load Ad Rule Subscriber
+  // TODO: After found the way to get subscriber, need to readjust that into this DOM
+  async loadUsers() {
+    try {
+      const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
+
+      // Reset dropdown
+      subscriberDropdown.innerHTML = '<option value="">Select subscriber (optional)...</option>';
+
+      // First, try to get users from cached ad account data
+      let users = [];
+      if (window.adAccountsData && window.adAccountsData.length > 0) {
+        const account = window.adAccountsData.find(acc =>
+          acc.id === this.currentAccountId || acc.account_id === this.currentAccountId || acc.id === `act_${this.currentAccountId}`
+        );
+
+        if (account && account.users && account.users.length > 0) {
+          users = account.users;
+          console.info('Using cached users from ad account data:', users.length);
+        }
+      }
+
+      // If no cached users, try to fetch from API
+      if (users.length === 0) {
+        try {
+          const response = await fetch(`/api/account/${this.currentAccountId}/users`);
+          if (response.ok) {
+            const data = await response.json();
+            users = data.users || [];
+          }
+        } catch (fetchError) {
+          console.warn('Could not fetch users from API:', fetchError);
+        }
+      }
+
+      // Populate with users
+      if (users.length > 0) {
+        users.forEach(user => {
+          const option = document.createElement('option');
+          option.value = user.id || user.user_id;
+          option.textContent = user.name + (user.email ? ` (${user.email})` : '');
+          subscriberDropdown.appendChild(option);
+        });
+      } else {
+        // If no users available, show a note but don't prevent rule creation
+        subscriberDropdown.innerHTML = '<option value="">No users found (optional)</option>';
+        console.info('No users found for account:', this.currentAccountId);
+      }
+    } catch (error) {
+      console.error('Error loading subscribers:', error);
+      const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
+      subscriberDropdown.innerHTML = '<option value="">Error loading users (optional)</option>';
+    }
+  }
+
+  async loadRules(accountId) {
+    try {
+      const response = await fetch(`/api/rules?account_id=${accountId}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to load rules');
+      }
+
+      const data = await response.json();
+      this.renderRulesList(data.rules);
+    } catch (error) {
+      console.error('Error loading rules:', error);
+      showError('Failed to load automated rules');
+    }
+  }
+
+  renderRulesList(rules) {
+    const tbody = this.rulesModal.querySelector('.rules-list');
+
+    if (!rules || rules.length === 0) {
+      tbody.innerHTML = '<tr class="empty-state"><td colspan="5">No rules found. Create a rule to get started.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rules.map(rule => {
+      const scheduleText = this.getScheduleText(rule.schedule_spec);
+      const statusBadge = rule.status === 'ACTIVE'
+        ? '<span class="status-badge status-active">Active</span>'
+        : '<span class="status-badge status-paused">Paused</span>';
+
+      return `
+        <tr data-rule-id="${rule.id}">
+          <td>${rule.name}</td>
+          <td>${rule.entity_type}</td>
+          <td>${statusBadge}</td>
+          <td>${scheduleText}</td>
+          <td class="rule-actions">
+            <button class="btn-icon toggle-rule-btn" title="${rule.status === 'ACTIVE' ? 'Disable' : 'Enable'}" data-rule-id="${rule.id}" data-status="${rule.status}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                ${rule.status === 'ACTIVE'
+                  ? '<path d="M18 6L6 18M6 6l12 12"></path>'  // X icon for disable
+                  : '<path d="M5 12l5 5 9-9"></path>'}  // Check icon for enable
+              </svg>
+            </button>
+            <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+            <button class="btn-icon delete-rule-btn" title="Delete" data-rule-id="${rule.id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Bind action buttons
+    tbody.querySelectorAll('.toggle-rule-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.status));
+    });
+
+    tbody.querySelectorAll('.edit-rule-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.editRule(btn.dataset.ruleId));
+    });
+
+    tbody.querySelectorAll('.delete-rule-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteRule(btn.dataset.ruleId));
+    });
+  }
+
+  getScheduleText(scheduleSpec) {
+    if (!scheduleSpec) return 'Trigger';
+
+    if (scheduleSpec.schedule_type === 'HOURLY') return 'Hourly';
+    if (scheduleSpec.schedule_type === 'DAILY') return 'Daily (12:00 PM)';
+    if (scheduleSpec.schedule_type === 'CUSTOM') {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayNames = scheduleSpec.days.map(d => days[d]).join(', ');
+      return `Custom: ${dayNames}`;
+    }
+
+    return 'Unknown';
+  }
+
+  openModal() {
+    this.rulesModal.style.display = 'block';
+    this.loadAdAccounts();
+  }
+
+  closeModal() {
+    this.rulesModal.style.display = 'none';
+  }
+
+  async openEditor(ruleId = null) {
+    this.currentRuleId = ruleId;
+    this.conditions = [];
+
+    const title = this.editorModal.querySelector('.rule-editor-title');
+    const saveBtn = this.editorModal.querySelector('.save-rule-btn');
+
+    if (ruleId) {
+      title.textContent = 'Edit Automated Rule';
+      saveBtn.textContent = 'Update Rule';
+      this.loadRuleData(ruleId);
+    } else {
+      title.textContent = 'Create Automated Rule';
+      saveBtn.textContent = 'Create Rule';
+      this.resetForm();
+      this.addCondition(); // Add one default condition
+    }
+
+    // Load subscribers for the selected account
+    if (this.currentAccountId) {
+      await this.loadUsers();
+    }
+
+    this.editorModal.style.display = 'block';
+    this.updateJSONPreview();
+  }
+
+  closeEditor() {
+    this.editorModal.style.display = 'none';
+    this.currentRuleId = null;
+  }
+
+  resetForm() {
+    this.editorModal.querySelector('#rule-name').value = '';
+    this.editorModal.querySelector('input[name="rule-type"][value="SCHEDULE"]').checked = true;
+    this.editorModal.querySelector('#rule-entity-type').value = '';
+    this.editorModal.querySelector('#rule-action-type').value = '';
+    this.editorModal.querySelector('#rule-schedule-frequency').value = 'HOURLY';
+    this.editorModal.querySelector('.budget-change-options').style.display = 'none';
+    this.editorModal.querySelector('.custom-schedule-options').style.display = 'none';
+    this.editorModal.querySelector('.conditions-container').innerHTML = '';
+    this.conditions = [];
+  }
+
+  addCondition() {
+    const conditionIndex = this.conditions.length;
+
+    // Note: Fields are automatically mapped to Meta API format by the backend
+    // Monetary values (spent, budgets, costs) are converted to cents
+    const conditionHTML = `
+      <div class="condition-row" data-condition-index="${conditionIndex}">
+        <select class="form-select condition-field" data-index="${conditionIndex}">
+          <option value="">Select metric...</option>
+          <optgroup label="Cost & Budget">
+            <option value="spent">Amount Spent ($)</option>
+            <option value="daily_budget">Daily Budget ($)</option>
+            <option value="lifetime_budget">Lifetime Budget ($)</option>
+            <option value="cpc">Cost Per Click ($)</option>
+            <option value="cpm">Cost Per 1,000 Impressions ($)</option>
+            <option value="cpp">Cost Per Pixel Purchase ($)</option>
+            <option value="cost_per_unique_click">Cost Per Unique Click ($)</option>
+          </optgroup>
+          <optgroup label="ROAS">
+            <option value="website_purchase_roas">Website Purchase ROAS (ratio)</option>
+            <option value="mobile_app_purchase_roas">Mobile App Purchase ROAS (ratio)</option>
+          </optgroup>
+          <optgroup label="Traffic & Engagement">
+            <option value="impressions">Impressions</option>
+            <option value="reach">Reach</option>
+            <option value="clicks">Clicks (All)</option>
+            <option value="link_click">Link Clicks</option>
+            <option value="ctr">Click-Through Rate (%)</option>
+            <option value="frequency">Frequency</option>
+          </optgroup>
+          <optgroup label="Conversions & Results">
+            <option value="results">Results (Generic)</option>
+            <option value="result_rate">Result Rate (%)</option>
+            <option value="leadgen">Lead Form Submissions</option>
+            <option value="mobile_app_install">App Installs</option>
+            <option value="post_comment">Post Comments</option>
+            <option value="post_like">Post Likes</option>
+            <option value="video_view">Video Views (3s+)</option>
+          </optgroup>
+        </select>
+
+        <select class="form-select condition-operator" data-index="${conditionIndex}">
+          <option value="GREATER_THAN">is greater than (>)</option>
+          <option value="LESS_THAN">is less than (<)</option>
+          <option value="GREATER_THAN_OR_EQUAL">is greater than or equal to (>=)</option>
+          <option value="LESS_THAN_OR_EQUAL">is less than or equal to (<=)</option>
+          <option value="EQUAL">is equal to (=)</option>
+          <option value="NOT_EQUAL">is not equal to (≠)</option>
+          <option value="IN_RANGE">is in range</option>
+          <option value="NOT_IN_RANGE">is not in range</option>
+          <option value="IN">is in list</option>
+          <option value="NOT_IN">is not in list</option>
+          <option value="CONTAIN">contains</option>
+          <option value="NOT_CONTAIN">does not contain</option>
+        </select>
+
+        <input type="number" class="form-input condition-value" placeholder="Value" step="0.01" data-index="${conditionIndex}" />
+
+        <button type="button" class="btn-icon remove-condition-btn" data-index="${conditionIndex}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+
+    const container = this.editorModal.querySelector('.conditions-container');
+    container.insertAdjacentHTML('beforeend', conditionHTML);
+
+    this.conditions.push({ field: '', operator: 'GREATER_THAN', value: 0 });
+
+    // Bind remove button
+    const removeBtn = container.querySelector(`[data-condition-index="${conditionIndex}"] .remove-condition-btn`);
+    removeBtn.addEventListener('click', () => this.removeCondition(conditionIndex));
+
+    // Bind change events
+    const field = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-field`);
+    const operator = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-operator`);
+    const value = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-value`);
+
+    field.addEventListener('change', (e) => {
+      this.conditions[conditionIndex].field = e.target.value;
+      this.updateJSONPreview();
+    });
+
+    operator.addEventListener('change', (e) => {
+      this.conditions[conditionIndex].operator = e.target.value;
+      this.updateJSONPreview();
+    });
+
+    value.addEventListener('input', (e) => {
+      this.conditions[conditionIndex].value = parseFloat(e.target.value) || 0;
+      this.updateJSONPreview();
+    });
+  }
+
+  removeCondition(index) {
+    const container = this.editorModal.querySelector('.conditions-container');
+    const row = container.querySelector(`[data-condition-index="${index}"]`);
+    if (row) {
+      row.remove();
+      this.conditions[index] = null; // Mark as deleted
+      this.updateJSONPreview();
+    }
+  }
+
+  updateJSONPreview() {
+    // JSON preview is commented out in HTML, so skip this
+    const preview = this.editorModal.querySelector('.json-preview code');
+    if (preview) {
+      const ruleData = this.collectFormData();
+      preview.textContent = JSON.stringify(ruleData, null, 2);
+    }
+  }
+
+  collectFormData() {
+    const name = this.editorModal.querySelector('#rule-name').value;
+    const ruleType = this.editorModal.querySelector('input[name="rule-type"]:checked').value;
+    const entityType = this.editorModal.querySelector('#rule-entity-type').value;
+    const actionType = this.editorModal.querySelector('#rule-action-type').value;
+    const scheduleFrequency = this.editorModal.querySelector('#rule-schedule-frequency').value;
+    const timeRange = this.editorModal.querySelector('#rule-time-range').value;
+
+    // Collect conditions (filter out null/deleted ones)
+    const conditions = this.conditions.filter(c => c !== null && c.field && c.value);
+
+    // Build action object
+    const action = { type: actionType };
+    if (actionType === 'CHANGE_BUDGET') {
+      const budgetChangeType = this.editorModal.querySelector('#budget-change-type').value;
+      action.budget_change_type = budgetChangeType.replace('_LIFETIME', ''); // INCREASE, DECREASE, SET
+      action.target_field = budgetChangeType.includes('LIFETIME') ? 'lifetime_budget' : 'daily_budget';
+      action.unit = this.editorModal.querySelector('#budget-unit').value;
+      action.amount = parseFloat(this.editorModal.querySelector('#budget-amount').value) || 0;
+    } else if (actionType === 'CHANGE_BID') {
+      action.bid_amount = parseFloat(this.editorModal.querySelector('#bid-amount').value) || 0;
+    }
+
+    // Collect subscriber (now a dropdown, single selection)
+    const subscriberId = this.editorModal.querySelector('#rule-subscribers').value;
+    const subscribers = subscriberId ? [subscriberId] : [];
+
+    // Build schedule object
+    const schedule = { frequency: scheduleFrequency };
+    if (scheduleFrequency === 'CUSTOM') {
+      const dayCheckboxes = this.editorModal.querySelectorAll('.days-selector input[type="checkbox"]:checked');
+      schedule.days = Array.from(dayCheckboxes).map(cb => parseInt(cb.value));
+
+      const startTime = this.editorModal.querySelector('#schedule-start-time').value;
+      const endTime = this.editorModal.querySelector('#schedule-end-time').value;
+
+      if (startTime) schedule.start_minute = timeToMinutes(startTime);
+      if (endTime) schedule.end_minute = timeToMinutes(endTime);
+    }
+
+    return {
+      name,
+      ad_account_id: this.currentAccountId,
+      entity_type: entityType,
+      rule_type: ruleType,
+      time_preset: timeRange,
+      conditions,
+      action,
+      schedule,
+      subscribers
+    };
+  }
+
+  async saveRule() {
+    try {
+      const ruleData = this.collectFormData();
+
+      // Validation
+      if (!ruleData.name) {
+        showError('Please enter a rule name');
+        return;
+      }
+
+      if (!this.currentAccountId) {
+        showError('Please select an ad account first');
+        return;
+      }
+
+      if (!ruleData.entity_type) {
+        showError('Please select entity type');
+        return;
+      }
+
+      if (ruleData.conditions.length === 0) {
+        showError('Please add at least one condition');
+        return;
+      }
+
+      if (!ruleData.action.type) {
+        showError('Please select an action');
+        return;
+      }
+
+      const url = this.currentRuleId
+        ? `/api/rules/${this.currentRuleId}`
+        : '/api/rules';
+
+      const method = this.currentRuleId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ruleData)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || 'Failed to save rule');
+      }
+
+      const result = await response.json();
+      showSuccess(this.currentRuleId ? 'Rule updated successfully' : 'Rule created successfully');
+
+      this.closeEditor();
+      this.loadRules(this.currentAccountId);
+    } catch (error) {
+      console.error('Error saving rule:', error);
+      showError(error.message);
+    }
+  }
+
+  async editRule(ruleId) {
+    this.openEditor(ruleId);
+  }
+
+  async loadRuleData(ruleId) {
+    try {
+      const response = await fetch(`/api/rules/${ruleId}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to load rule');
+      }
+
+      const data = await response.json();
+      const rule = data.rule;
+
+      // Populate form
+      this.editorModal.querySelector('#rule-name').value = rule.name;
+      this.editorModal.querySelector(`input[name="rule-type"][value="${rule.rule_type}"]`).checked = true;
+      this.editorModal.querySelector('#rule-entity-type').value = rule.entity_type;
+
+      // Load conditions
+      this.conditions = [];
+      this.editorModal.querySelector('.conditions-container').innerHTML = '';
+
+      const evalSpec = rule.evaluation_spec;
+      if (evalSpec && evalSpec.filters) {
+        const conditionFilters = evalSpec.filters.filter(f =>
+          !['id', 'entity_type', 'time_preset'].includes(f.field)
+        );
+
+        conditionFilters.forEach(filter => {
+          this.addCondition();
+          const index = this.conditions.length - 1;
+          this.conditions[index] = {
+            field: filter.field,
+            operator: filter.operator,
+            value: filter.value
+          };
+
+          // Set form values
+          const container = this.editorModal.querySelector('.conditions-container');
+          const row = container.querySelector(`[data-condition-index="${index}"]`);
+          row.querySelector('.condition-field').value = filter.field;
+          row.querySelector('.condition-operator').value = filter.operator;
+          row.querySelector('.condition-value').value = filter.value;
+        });
+      }
+
+      // Load action
+      const execSpec = rule.execution_spec;
+      if (execSpec) {
+        this.editorModal.querySelector('#rule-action-type').value = execSpec.execution_type;
+
+        if (execSpec.execution_type === 'CHANGE_BUDGET' && execSpec.execution_options) {
+          const budgetOption = execSpec.execution_options[0];
+          this.editorModal.querySelector('.budget-change-options').style.display = 'block';
+          this.editorModal.querySelector('#budget-change-type').value =
+            budgetOption.operator === 'ADD' ? 'INCREASE' :
+            budgetOption.operator === 'SUBTRACT' ? 'DECREASE' : 'SET';
+          this.editorModal.querySelector('#budget-amount').value = budgetOption.value;
+        }
+      }
+
+      // Load schedule
+      const scheduleSpec = rule.schedule_spec;
+      if (scheduleSpec) {
+        const freq = scheduleSpec.schedule_type === 'HOURLY' ? 'HOURLY' :
+                     scheduleSpec.schedule_type === 'DAILY' ? 'DAILY' : 'CUSTOM';
+        this.editorModal.querySelector('#rule-schedule-frequency').value = freq;
+
+        if (freq === 'CUSTOM') {
+          this.editorModal.querySelector('.custom-schedule-options').style.display = 'block';
+
+          // Set days
+          scheduleSpec.days.forEach(day => {
+            const checkbox = this.editorModal.querySelector(`.days-selector input[value="${day}"]`);
+            if (checkbox) checkbox.checked = true;
+          });
+
+          // Set times
+          if (scheduleSpec.start_minute !== undefined) {
+            const hours = Math.floor(scheduleSpec.start_minute / 60);
+            const minutes = scheduleSpec.start_minute % 60;
+            this.editorModal.querySelector('#schedule-start-time').value =
+              `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          }
+
+          if (scheduleSpec.end_minute !== undefined) {
+            const hours = Math.floor(scheduleSpec.end_minute / 60);
+            const minutes = scheduleSpec.end_minute % 60;
+            this.editorModal.querySelector('#schedule-end-time').value =
+              `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      // Load subscriber - wait for dropdown to be populated first
+      if (rule.subscriber_id) {
+        // Wait a bit for loadUsers to complete
+        setTimeout(() => {
+          const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
+          if (subscriberDropdown) {
+            subscriberDropdown.value = rule.subscriber_id;
+          }
+        }, 500);
+      }
+
+      this.updateJSONPreview();
+    } catch (error) {
+      console.error('Error loading rule data:', error);
+      showError('Failed to load rule data');
+    }
+  }
+
+  async toggleRuleStatus(ruleId, currentStatus) {
+    try {
+      // Meta API uses ENABLED/DISABLED, not ACTIVE/PAUSED
+      const newStatus = currentStatus === 'ACTIVE' ? 'DISABLED' : 'ENABLED';
+      const action = newStatus === 'ENABLED' ? 'enable' : 'disable';
+
+      const response = await fetch(`/api/rules/${ruleId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${action} rule`);
+      }
+
+      showSuccess(`Rule ${newStatus === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`);
+      this.loadRules(this.currentAccountId);
+    } catch (error) {
+      console.error('Error toggling rule status:', error);
+      showError('Failed to toggle rule status');
+    }
+  }
+
+  async deleteRule(ruleId) {
+    if (!confirm('Are you sure you want to delete this rule?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rules/${ruleId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete rule');
+      }
+
+      showSuccess('Rule deleted successfully');
+      this.loadRules(this.currentAccountId);
+    } catch (error) {
+      console.error('Error deleting rule:', error);
+      showError('Failed to delete rule');
+    }
+  }
+}
+
+// Initialize Automated Rules Manager
+const automatedRulesManager = new AutomatedRulesManager();
+
+// Bind rules button click
+document.querySelector('.rules-btn').addEventListener('click', () => {
+  automatedRulesManager.openModal();
+});
