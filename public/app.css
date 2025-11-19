@@ -2888,7 +2888,16 @@ h2 {
 .rules-table td {
   padding: 12px;
   border-bottom: 1px solid #dee2e6;
-  vertical-align: middle;
+  vertical-align: top;
+}
+
+/* Fix table row alignment issues when rule names span multiple lines */
+.rules-table tbody tr {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.rules-table tbody td {
+  border-bottom: none;
 }
 
 .rules-table tr:hover {
