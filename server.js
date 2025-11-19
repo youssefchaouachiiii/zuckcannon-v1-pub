@@ -5253,7 +5253,7 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     if (rule) {
       console.log('Updating local DB for rule:', local_rule_id);
       const frontendStatus = status === 'ENABLED' ? 'ACTIVE' : status === 'DISABLED' ? 'PAUSED' : status;
-      RulesDB.updateRuleStatus(parseInt(local_rule_id), userId, frontendStatus);
+      RulesDB.updateRule(parseInt(local_rule_id), userId, { status: frontendStatus });
       console.log('Local DB updated');
     }
 
