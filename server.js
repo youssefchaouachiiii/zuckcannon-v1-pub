@@ -4894,6 +4894,24 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       evaluation_spec.filters.push(processed);
     }
 
+    // Add budget type filter for CHANGE_BUDGET actions on ADSET
+    // This ensures the rule only runs on adsets with the correct budget type
+    if (action.type === 'CHANGE_BUDGET' && entity_type === 'ADSET') {
+      if (action.budget_type === 'daily_budget') {
+        evaluation_spec.filters.push({
+          field: "daily_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      } else if (action.budget_type === 'lifetime_budget') {
+        evaluation_spec.filters.push({
+          field: "lifetime_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      }
+    }
+
     // Build execution_spec for Meta API
     const execution_spec = {};
     const exec_type = action.type;
@@ -5159,6 +5177,24 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       for (const condition of conditions) {
         const processed = processConditionForMeta(condition);
         updatedEvalSpec.filters.push(processed);
+      }
+
+      // Add budget type filter for CHANGE_BUDGET actions on ADSET
+      // This ensures the rule only runs on adsets with the correct budget type
+      if (action && action.type === 'CHANGE_BUDGET' && (entity_type || existingRule.entity_type) === 'ADSET') {
+        if (action.budget_type === 'daily_budget') {
+          updatedEvalSpec.filters.push({
+            field: "daily_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        } else if (action.budget_type === 'lifetime_budget') {
+          updatedEvalSpec.filters.push({
+            field: "lifetime_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        }
       }
     }
 

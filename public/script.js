@@ -7751,7 +7751,7 @@ class AutomatedRulesManager {
     if (actionType === 'CHANGE_BUDGET') {
       const budgetChangeType = this.editorModal.querySelector('#budget-change-type').value;
       action.budget_change_type = budgetChangeType.replace('_LIFETIME', ''); // INCREASE, DECREASE, SET
-      action.target_field = budgetChangeType.includes('LIFETIME') ? 'lifetime_budget' : 'daily_budget';
+      action.budget_type = budgetChangeType.includes('LIFETIME') ? 'lifetime_budget' : 'daily_budget';
       action.unit = this.editorModal.querySelector('#budget-unit').value;
       action.amount = parseFloat(this.editorModal.querySelector('#budget-amount').value) || 0;
     } else if (actionType === 'CHANGE_BID') {
