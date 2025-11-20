@@ -1196,6 +1196,22 @@ export const validateRequest = {
           error: "action.amount must be a valid number",
         });
       }
+
+      // Validate budget_type for ADSET entity_type
+      if (entity_type === "ADSET") {
+        if (!action.budget_type) {
+          return res.status(400).json({
+            error: "action.budget_type is required for CHANGE_BUDGET action on ADSET",
+          });
+        }
+
+        const validBudgetTypes = ["daily_budget", "lifetime_budget"];
+        if (!validBudgetTypes.includes(action.budget_type)) {
+          return res.status(400).json({
+            error: `Invalid action.budget_type. Must be one of: ${validBudgetTypes.join(", ")}`,
+          });
+        }
+      }
     }
 
     if (action.type === "CHANGE_BID") {
