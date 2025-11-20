@@ -4975,6 +4975,7 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       // Build change_spec untuk CHANGE_BID
       const changeSpecData = {
         amount: Math.round(bidAmount * 100), // Convert to cents
+        unit: "ABSOLUTE"  // Set bid to absolute value
       };
 
       // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
@@ -5234,6 +5235,7 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
         // Build change_spec untuk CHANGE_BID
         const changeSpecData = {
           amount: Math.round(bidAmount * 100), // Convert to cents
+          unit: "ABSOLUTE"  // Set bid to absolute value
         };
 
         // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
