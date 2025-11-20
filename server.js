@@ -4954,10 +4954,9 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
           unit: unit
         };
 
-        // Tambahkan target_field jika ada (opsional)
-        if (action.target_field) {
-          changeSpecData.target_field = action.target_field;
-        }
+        // NOTE: target_field TIDAK digunakan untuk CHANGE_BUDGET
+        // Meta API tidak menerima target_field seperti "daily_budget" atau "lifetime_budget"
+        // Budget type (daily vs lifetime) sudah ditentukan oleh adset itu sendiri
 
         // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
         if (isScheduleRule) {
@@ -5206,10 +5205,9 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
             unit: unit
           };
 
-          // Tambahkan target_field jika ada (opsional)
-          if (action.target_field) {
-            changeSpecData.target_field = action.target_field;
-          }
+          // NOTE: target_field TIDAK digunakan untuk CHANGE_BUDGET
+          // Meta API tidak menerima target_field seperti "daily_budget" atau "lifetime_budget"
+          // Budget type (daily vs lifetime) sudah ditentukan oleh adset itu sendiri
 
           // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
           if (isScheduleRule) {
