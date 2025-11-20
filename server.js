@@ -4899,26 +4899,6 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     const exec_type = action.type;
     const isScheduleRule = (rule_type === 'SCHEDULE');
 
-    // Add budget type filter for CHANGE_BUDGET action on ADSET
-    // This ensures the rule only affects adsets with the correct budget type
-    if (exec_type === 'CHANGE_BUDGET' && entity_type === 'ADSET' && action.target_field) {
-      if (action.target_field === 'lifetime_budget') {
-        // Filter untuk adset yang memiliki lifetime_budget (bukan null)
-        evaluation_spec.filters.push({
-          field: "lifetime_budget",
-          operator: "GREATER_THAN",
-          value: 0
-        });
-      } else if (action.target_field === 'daily_budget') {
-        // Filter untuk adset yang memiliki daily_budget (bukan null)
-        evaluation_spec.filters.push({
-          field: "daily_budget",
-          operator: "GREATER_THAN",
-          value: 0
-        });
-      }
-    }
-
     if (exec_type === 'CHANGE_BUDGET') {
       if (entity_type === 'CAMPAIGN') {
         // Campaigns use a different spec and execution type
@@ -4948,6 +4928,17 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
             operator: "EQUAL",
             value: changeSpecData
           }];
+
+          // Tambahkan action_spec untuk specify budget field (untuk CAMPAIGN biasanya daily_budget)
+          if (action.target_field) {
+            execution_spec.execution_options.push({
+              field: "action_spec",
+              operator: "EQUAL",
+              value: {
+                field: action.target_field
+              }
+            });
+          }
         } else {
           execution_spec.change_spec = changeSpecData;
         }
@@ -4974,9 +4965,8 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
           unit: unit
         };
 
-        // NOTE: target_field TIDAK digunakan untuk CHANGE_BUDGET
-        // Meta API tidak menerima target_field seperti "daily_budget" atau "lifetime_budget"
-        // Budget type (daily vs lifetime) sudah ditentukan oleh adset itu sendiri
+        // NOTE: target_field TIDAK dimasukkan ke change_spec
+        // Tapi perlu ditambahkan sebagai action_spec di execution_options untuk SCHEDULE rules
 
         // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
         if (isScheduleRule) {
@@ -4985,6 +4975,17 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
             operator: "EQUAL",
             value: changeSpecData
           }];
+
+          // Tambahkan action_spec untuk specify budget field (daily_budget vs lifetime_budget)
+          if (action.target_field) {
+            execution_spec.execution_options.push({
+              field: "action_spec",
+              operator: "EQUAL",
+              value: {
+                field: action.target_field  // "daily_budget" atau "lifetime_budget"
+              }
+            });
+          }
         } else {
           execution_spec.change_spec = changeSpecData;
         }
@@ -5160,23 +5161,6 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
         const processed = processConditionForMeta(condition);
         updatedEvalSpec.filters.push(processed);
       }
-
-      // Add budget type filter for CHANGE_BUDGET action on ADSET
-      if (action && action.type === 'CHANGE_BUDGET' && (entity_type || existingRule.entity_type) === 'ADSET' && action.target_field) {
-        if (action.target_field === 'lifetime_budget') {
-          updatedEvalSpec.filters.push({
-            field: "lifetime_budget",
-            operator: "GREATER_THAN",
-            value: 0
-          });
-        } else if (action.target_field === 'daily_budget') {
-          updatedEvalSpec.filters.push({
-            field: "daily_budget",
-            operator: "GREATER_THAN",
-            value: 0
-          });
-        }
-      }
     }
 
     // Update execution_spec if action changed
@@ -5216,6 +5200,17 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
               operator: "EQUAL",
               value: changeSpecData
             }];
+
+            // Tambahkan action_spec untuk specify budget field
+            if (action.target_field) {
+              updatedExecSpec.execution_options.push({
+                field: "action_spec",
+                operator: "EQUAL",
+                value: {
+                  field: action.target_field
+                }
+              });
+            }
           } else {
             updatedExecSpec.change_spec = changeSpecData;
           }
@@ -5242,9 +5237,8 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
             unit: unit
           };
 
-          // NOTE: target_field TIDAK digunakan untuk CHANGE_BUDGET
-          // Meta API tidak menerima target_field seperti "daily_budget" atau "lifetime_budget"
-          // Budget type (daily vs lifetime) sudah ditentukan oleh adset itu sendiri
+          // NOTE: target_field TIDAK dimasukkan ke change_spec
+          // Tapi perlu ditambahkan sebagai action_spec di execution_options untuk SCHEDULE rules
 
           // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
           if (isScheduleRule) {
@@ -5253,6 +5247,17 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
               operator: "EQUAL",
               value: changeSpecData
             }];
+
+            // Tambahkan action_spec untuk specify budget field (daily_budget vs lifetime_budget)
+            if (action.target_field) {
+              updatedExecSpec.execution_options.push({
+                field: "action_spec",
+                operator: "EQUAL",
+                value: {
+                  field: action.target_field  // "daily_budget" atau "lifetime_budget"
+                }
+              });
+            }
           } else {
             updatedExecSpec.change_spec = changeSpecData;
           }
