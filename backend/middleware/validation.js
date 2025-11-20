@@ -1211,7 +1211,7 @@ export const validateRequest = {
         return res.status(400).json({ error: "schedule.frequency is required" });
       }
 
-      const validFrequencies = ["HOURLY", "DAILY", "CUSTOM"];
+      const validFrequencies = ["HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
       if (!validFrequencies.includes(schedule.frequency)) {
         return res.status(400).json({
           error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,
@@ -1351,7 +1351,7 @@ export const validateRequest = {
         return res.status(400).json({ error: "schedule.frequency is required" });
       }
 
-      const validFrequencies = ["HOURLY", "DAILY", "CUSTOM"];
+      const validFrequencies = ["HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
       if (!validFrequencies.includes(schedule.frequency)) {
         return res.status(400).json({
           error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,

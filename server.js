@@ -4638,9 +4638,9 @@ function formatAccountId(accountId) {
 // Monetary fields need conversion to cents (multiply by 100)
 const FIELD_CONFIG = {
   // Monetary fields (convert dollars to cents)
+  // Based on Meta API documentation for Automated Rules
   monetary: [
-    'spent', 'daily_budget', 'lifetime_budget', 'bid_amount',
-    'cpc', 'cpm', 'cpp', 'cost_per_unique_click'
+    'spent', 'cpc', 'cpm', 'cpp', 'cost_per_unique_click'
   ],
   // ROAS fields (keep as decimal ratio)
   roas: ['website_purchase_roas', 'mobile_app_purchase_roas'],
@@ -4648,9 +4648,8 @@ const FIELD_CONFIG = {
   percentage: ['ctr', 'result_rate'],
   // Count fields (keep as-is)
   count: [
-    'impressions', 'reach', 'clicks', 'link_click', 'frequency',
-    'results', 'leadgen', 'mobile_app_install', 'post_comment',
-    'post_like', 'video_view'
+    'impressions', 'unique_impressions', 'reach', 'clicks',
+    'unique_clicks', 'frequency'
   ]
 };
 
@@ -4955,6 +4954,10 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
         schedule_spec = {
           schedule_type: "HOURLY",
         };
+      } else if (schedule.frequency === "SEMI_HOURLY") {
+        schedule_spec = {
+          schedule_type: "SEMI_HOURLY",
+        };
       } else if (schedule.frequency === "DAILY") {
         schedule_spec = {
           schedule_type: "DAILY",
@@ -5117,6 +5120,10 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       if (schedule.frequency === "HOURLY") {
         updatedScheduleSpec = {
           schedule_type: "HOURLY",
+        };
+      } else if (schedule.frequency === "SEMI_HOURLY") {
+        updatedScheduleSpec = {
+          schedule_type: "SEMI_HOURLY",
         };
       } else if (schedule.frequency === "DAILY") {
         updatedScheduleSpec = {
@@ -5534,7 +5541,7 @@ app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async 
 });
 
 // Get ad account users for subscriber dropdown
-// TODO: it should show accounts on the same Meta App (ex: YC can assign R or F or D's account to be the ad rule's subscriber) need to find API to get the data
+// Skip subscriber pick for now, cause it's not essential for schedule rules
 app.get("/api/account/:account_id/users", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const accountId = req.params.account_id;

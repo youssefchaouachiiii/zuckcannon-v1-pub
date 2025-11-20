@@ -7367,8 +7367,8 @@ class AutomatedRulesManager {
       actionSelect.innerHTML += '<option value="CHANGE_BUDGET">Adjust budget</option>';
     }
 
-    // Adjust manual bid: Only available for Ads and Ad Sets
-    if (entityType === 'AD' || entityType === 'ADSET') {
+    // Adjust manual bid: Only available for Ad Sets
+    if (entityType === 'ADSET') {
       actionSelect.innerHTML += '<option value="CHANGE_BID">Adjust manual bid</option>';
     }
 
@@ -7414,10 +7414,16 @@ class AutomatedRulesManager {
   }
 
   // DOM to load Ad Rule Subscriber
-  // TODO: After found the way to get subscriber, need to readjust that into this DOM
+  // Skip ad rule subscriber for now
   async loadUsers() {
     try {
       const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
+
+      // If subscriber dropdown doesn't exist (commented out in HTML), skip loading users
+      if (!subscriberDropdown) {
+        console.info('Subscriber dropdown not found in modal, skipping user load');
+        return;
+      }
 
       // Reset dropdown
       subscriberDropdown.innerHTML = '<option value="">Select subscriber (optional)...</option>';
@@ -7464,7 +7470,9 @@ class AutomatedRulesManager {
     } catch (error) {
       console.error('Error loading subscribers:', error);
       const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
-      subscriberDropdown.innerHTML = '<option value="">Error loading users (optional)</option>';
+      if (subscriberDropdown) {
+        subscriberDropdown.innerHTML = '<option value="">Error loading users (optional)</option>';
+      }
     }
   }
 
@@ -7548,6 +7556,7 @@ class AutomatedRulesManager {
     if (!scheduleSpec) return 'Trigger';
 
     if (scheduleSpec.schedule_type === 'HOURLY') return 'Hourly';
+    if (scheduleSpec.schedule_type === 'SEMI_HOURLY') return 'Semi-Hourly (Every 30 Minutes)';
     if (scheduleSpec.schedule_type === 'DAILY') return 'Daily (12:00 PM)';
     if (scheduleSpec.schedule_type === 'CUSTOM') {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -7628,34 +7637,27 @@ class AutomatedRulesManager {
         <select class="form-select condition-field" data-index="${conditionIndex}">
           <option value="">Select metric...</option>
           <optgroup label="Cost & Budget">
-            <option value="spent">Amount Spent ($)</option>
-            <option value="daily_budget">Daily Budget ($)</option>
-            <option value="lifetime_budget">Lifetime Budget ($)</option>
+            <option value="spent">Spent ($)</option>
             <option value="cpc">Cost Per Click ($)</option>
             <option value="cpm">Cost Per 1,000 Impressions ($)</option>
-            <option value="cpp">Cost Per Pixel Purchase ($)</option>
+            <option value="cpp">Cost Per Purchase ($)</option>
             <option value="cost_per_unique_click">Cost Per Unique Click ($)</option>
           </optgroup>
           <optgroup label="ROAS">
-            <option value="website_purchase_roas">Website Purchase ROAS (ratio)</option>
-            <option value="mobile_app_purchase_roas">Mobile App Purchase ROAS (ratio)</option>
+            <option value="website_purchase_roas">Website Purchase ROAS</option>
+            <option value="mobile_app_purchase_roas">In-App Purchase ROAS</option>
           </optgroup>
           <optgroup label="Traffic & Engagement">
             <option value="impressions">Impressions</option>
+            <option value="unique_impressions">Unique Impressions</option>
             <option value="reach">Reach</option>
-            <option value="clicks">Clicks (All)</option>
-            <option value="link_click">Link Clicks</option>
+            <option value="clicks">Clicks</option>
+            <option value="unique_clicks">Unique Clicks</option>
             <option value="ctr">Click-Through Rate (%)</option>
             <option value="frequency">Frequency</option>
           </optgroup>
           <optgroup label="Conversions & Results">
-            <option value="results">Results (Generic)</option>
             <option value="result_rate">Result Rate (%)</option>
-            <option value="leadgen">Lead Form Submissions</option>
-            <option value="mobile_app_install">App Installs</option>
-            <option value="post_comment">Post Comments</option>
-            <option value="post_like">Post Likes</option>
-            <option value="video_view">Video Views (3s+)</option>
           </optgroup>
         </select>
 
@@ -7757,7 +7759,8 @@ class AutomatedRulesManager {
     }
 
     // Collect subscriber (now a dropdown, single selection)
-    const subscriberId = this.editorModal.querySelector('#rule-subscribers').value;
+    const subscriberDropdown = this.editorModal.querySelector('#rule-subscribers');
+    const subscriberId = subscriberDropdown ? subscriberDropdown.value : '';
     const subscribers = subscriberId ? [subscriberId] : [];
 
     // Build schedule object
@@ -7931,6 +7934,7 @@ class AutomatedRulesManager {
       const scheduleSpec = rule.schedule_spec;
       if (scheduleSpec) {
         const freq = scheduleSpec.schedule_type === 'HOURLY' ? 'HOURLY' :
+                     scheduleSpec.schedule_type === 'SEMI_HOURLY' ? 'SEMI_HOURLY' :
                      scheduleSpec.schedule_type === 'DAILY' ? 'DAILY' : 'CUSTOM';
         this.editorModal.querySelector('#rule-schedule-frequency').value = freq;
 

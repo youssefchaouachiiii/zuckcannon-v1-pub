@@ -1028,10 +1028,10 @@
                 <input type="radio" name="rule-type" value="SCHEDULE" checked />
                 <span>Schedule - Run at specific times</span>
               </label>
-              <label class="radio-label">
+              <!-- <label class="radio-label">
                 <input type="radio" name="rule-type" value="TRIGGER" />
                 <span>Trigger - Run based on stats changes</span>
-              </label>
+              </label> -->
             </div>
           </div>
 
@@ -1108,10 +1108,10 @@
           <div class="form-section">
             <h3>Time Range*</h3>
             <select id="rule-time-range" class="form-select" required>
-              <option value="TODAY">Today</option>
+              <option value="TODAY" selected>Today</option>
               <option value="YESTERDAY">Yesterday</option>
               <option value="LAST_3D">Last 3 days</option>
-              <option value="LAST_7D" selected>Last 7 days (maximum)</option>
+              <option value="LAST_7D">Last 7 days</option>
               <option value="LAST_14D">Last 14 days</option>
               <option value="LAST_28D">Last 28 days</option>
               <option value="LAST_30D">Last 30 days</option>
@@ -1129,7 +1129,8 @@
             <h3>Schedule*</h3>
             <select id="rule-schedule-frequency" class="form-select" required>
               <option value="HOURLY">Hourly</option>
-              <option value="DAILY">Daily (12:00 PM)</option>
+              <option value="SEMI_HOURLY">Semi-Hourly (Every 30 Minutes)</option>
+              <option value="DAILY">Daily (Start 12 AM)</option>
               <option value="CUSTOM">Custom</option>
             </select>
 
@@ -1161,7 +1162,7 @@
           </div>
 
           <!-- Subscribers Section -->
-          <div class="form-section">
+          <!-- <div class="form-section">
             <h3>Subscriber</h3>
             <p class="form-help-text">Only people with access to this ad account can receive rule results.</p>
             <select id="rule-subscribers" class="form-select">
@@ -1169,7 +1170,7 @@
             </select>
             <p class="form-help-text" style="font-size: 12px; margin-top: 5px;">Note: You'll receive a notification when
               conditions for this rule have been met.</p>
-          </div>
+          </div> -->
 
           <!-- JSON Preview -->
           <!-- <div class="form-section">
