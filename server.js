@@ -4913,32 +4913,25 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
 
     // Add action-specific params with value conversion
     if (action.type === "CHANGE_BUDGET") {
-      const targetField = action.target_field || "daily_budget"; // daily_budget or lifetime_budget
-      const operator = action.budget_change_type === "INCREASE" ? "ADD" : action.budget_change_type === "DECREASE" ? "SUBTRACT" : "SET";
-
-      let value;
-      if (action.unit === "PERCENTAGE") {
-        // For percentage changes, send the percentage value as-is
-        value = action.amount;
-      } else {
-        // For currency, convert dollars to cents
-        value = Math.round(action.amount * 100);
+      let amount = parseFloat(action.amount);
+      if (action.budget_change_type === "DECREASE") {
+        amount = -Math.abs(amount);
+      } else { // Handles "INCREASE"
+        amount = Math.abs(amount);
       }
 
-      execution_spec.execution_options.push({
-        field: targetField,
-        operator: operator,
-        value: value,
-      });
+      const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
 
-      // If using percentage, add the unit indicator
-      if (action.unit === "PERCENTAGE") {
-        execution_spec.execution_options.push({
-          field: "change_type",
-          operator: "EQUAL",
-          value: "PERCENTAGE",
-        });
+      // For currency, convert dollars to cents
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100);
       }
+
+      execution_spec.change_spec = {
+        amount: amount,
+        unit: unit,
+      };
+
     } else if (action.type === "CHANGE_BID") {
       execution_spec.execution_options.push({
         field: "bid_amount",
@@ -5097,13 +5090,25 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       };
 
       if (action.type === "CHANGE_BUDGET") {
-        updatedExecSpec.execution_options = [
-          {
-            field: "daily_budget",
-            operator: action.budget_change_type === "INCREASE" ? "ADD" : action.budget_change_type === "DECREASE" ? "SUBTRACT" : "SET",
-            value: Math.round(action.amount * 100), // Convert dollars to cents
-          },
-        ];
+        let amount = parseFloat(action.amount);
+        if (action.budget_change_type === "DECREASE") {
+          amount = -Math.abs(amount);
+        } else { // Handles "INCREASE"
+          amount = Math.abs(amount);
+        }
+
+        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+
+        // For currency, convert dollars to cents
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100);
+        }
+
+        updatedExecSpec.change_spec = {
+          amount: amount,
+          unit: unit,
+        };
+
       } else if (action.type === "CHANGE_BID") {
         updatedExecSpec.execution_options = [
           {
