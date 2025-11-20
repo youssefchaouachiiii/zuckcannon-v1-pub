@@ -1199,15 +1199,28 @@ export const validateRequest = {
     }
 
     if (action.type === "CHANGE_BID") {
-      if (action.bid_amount === undefined || action.bid_amount === null) {
+      if (!action.bid_change_type) {
         return res.status(400).json({
-          error: "action.bid_amount is required for CHANGE_BID action",
+          error: "action.bid_change_type is required for CHANGE_BID action",
         });
       }
 
-      if (isNaN(parseFloat(action.bid_amount))) {
+      const validBidChangeTypes = ["INCREASE", "DECREASE", "SET"];
+      if (!validBidChangeTypes.includes(action.bid_change_type)) {
         return res.status(400).json({
-          error: "action.bid_amount must be a valid number",
+          error: `Invalid action.bid_change_type. Must be one of: ${validBidChangeTypes.join(", ")}`,
+        });
+      }
+
+      if (action.amount === undefined || action.amount === null) {
+        return res.status(400).json({
+          error: "action.amount is required for CHANGE_BID action",
+        });
+      }
+
+      if (isNaN(parseFloat(action.amount))) {
+        return res.status(400).json({
+          error: "action.amount must be a valid number",
         });
       }
     }
