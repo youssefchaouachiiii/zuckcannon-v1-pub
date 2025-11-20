@@ -4897,6 +4897,7 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     // Build execution_spec for Meta API
     const execution_spec = {};
     const exec_type = action.type;
+    const isScheduleRule = (rule_type === 'SCHEDULE');
 
     if (exec_type === 'CHANGE_BUDGET') {
       if (entity_type === 'CAMPAIGN') {
@@ -4909,19 +4910,30 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
         } else {
           amount = Math.abs(amount);
         }
-        
+
         const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
         if (unit === "ACCOUNT_CURRENCY") {
           amount = Math.round(amount * 100);
         }
 
-        execution_spec.change_spec = {
+        const changeSpecData = {
           amount: amount,
           unit: unit
         };
 
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          execution_spec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          execution_spec.change_spec = changeSpecData;
+        }
+
       } else if (entity_type === 'ADSET') {
-        // Adsets juga menggunakan change_spec (sama seperti CAMPAIGN)
+        // Adsets juga menggunakan change_spec
         execution_spec.execution_type = 'CHANGE_BUDGET';
 
         // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
@@ -4937,15 +4949,25 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
           amount = Math.round(amount * 100); // Convert to cents
         }
 
-        // Struktur yang BENAR: gunakan change_spec
-        execution_spec.change_spec = {
+        const changeSpecData = {
           amount: amount,
           unit: unit
         };
 
         // Tambahkan target_field jika ada (opsional)
         if (action.target_field) {
-          execution_spec.change_spec.target_field = action.target_field;
+          changeSpecData.target_field = action.target_field;
+        }
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          execution_spec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          execution_spec.change_spec = changeSpecData;
         }
       }
     } else {
@@ -5126,6 +5148,8 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       updatedExecSpec = {}; // Initialize as empty object
       const exec_type = action.type;
       const current_entity_type = entity_type || existingRule.entity_type;
+      const current_rule_type = rule_type || existingRule.rule_type;
+      const isScheduleRule = (current_rule_type === 'SCHEDULE');
 
       if (exec_type === 'CHANGE_BUDGET') {
         if (current_entity_type === 'CAMPAIGN') {
@@ -5138,19 +5162,30 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
           } else {
             amount = Math.abs(amount);
           }
-          
+
           const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
           if (unit === "ACCOUNT_CURRENCY") {
             amount = Math.round(amount * 100);
           }
 
-          updatedExecSpec.change_spec = {
+          const changeSpecData = {
             amount: amount,
             unit: unit
           };
 
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [{
+              field: "change_spec",
+              operator: "EQUAL",
+              value: changeSpecData
+            }];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
+          }
+
         } else if (current_entity_type === 'ADSET') {
-          // Adsets juga menggunakan change_spec (sama seperti CAMPAIGN)
+          // Adsets juga menggunakan change_spec
           updatedExecSpec.execution_type = 'CHANGE_BUDGET';
 
           // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
@@ -5166,15 +5201,25 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
             amount = Math.round(amount * 100); // Convert to cents
           }
 
-          // Struktur yang BENAR: gunakan change_spec
-          updatedExecSpec.change_spec = {
+          const changeSpecData = {
             amount: amount,
             unit: unit
           };
 
           // Tambahkan target_field jika ada (opsional)
           if (action.target_field) {
-            updatedExecSpec.change_spec.target_field = action.target_field;
+            changeSpecData.target_field = action.target_field;
+          }
+
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [{
+              field: "change_spec",
+              operator: "EQUAL",
+              value: changeSpecData
+            }];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
           }
         }
       } else {
