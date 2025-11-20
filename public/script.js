@@ -7751,11 +7751,13 @@ class AutomatedRulesManager {
     if (actionType === 'CHANGE_BUDGET') {
       const budgetChangeType = this.editorModal.querySelector('#budget-change-type').value;
       action.budget_change_type = budgetChangeType.replace('_LIFETIME', ''); // INCREASE, DECREASE, SET
-      action.target_field = budgetChangeType.includes('LIFETIME') ? 'lifetime_budget' : 'daily_budget';
+      action.budget_type = budgetChangeType.includes('LIFETIME') ? 'lifetime_budget' : 'daily_budget';
       action.unit = this.editorModal.querySelector('#budget-unit').value;
       action.amount = parseFloat(this.editorModal.querySelector('#budget-amount').value) || 0;
     } else if (actionType === 'CHANGE_BID') {
-      action.bid_amount = parseFloat(this.editorModal.querySelector('#bid-amount').value) || 0;
+      action.bid_change_type = this.editorModal.querySelector('#bid-change-type').value;
+      action.unit = this.editorModal.querySelector('#bid-unit').value;
+      action.amount = parseFloat(this.editorModal.querySelector('#bid-amount').value) || 0;
     }
 
     // Collect subscriber (now a dropdown, single selection)

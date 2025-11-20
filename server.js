@@ -4894,56 +4894,146 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       evaluation_spec.filters.push(processed);
     }
 
-    // Build execution_spec for Meta API
-    const execution_spec = {
-      execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type === "SEND_NOTIFICATION" ? "NOTIFICATION" : action.type,
-    };
+    // Add budget type filter for CHANGE_BUDGET actions on ADSET
+    // This ensures the rule only runs on adsets with the correct budget type
+    if (action.type === 'CHANGE_BUDGET' && entity_type === 'ADSET') {
+      if (action.budget_type === 'daily_budget') {
+        evaluation_spec.filters.push({
+          field: "daily_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      } else if (action.budget_type === 'lifetime_budget') {
+        evaluation_spec.filters.push({
+          field: "lifetime_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      }
+    }
 
-    // Initialize execution_options array
-    execution_spec.execution_options = [];
+    // Build execution_spec for Meta API
+    const execution_spec = {};
+    const exec_type = action.type;
+    const isScheduleRule = (rule_type === 'SCHEDULE');
+
+    if (exec_type === 'CHANGE_BUDGET') {
+      if (entity_type === 'CAMPAIGN') {
+        // Campaigns use a different spec and execution type
+        execution_spec.execution_type = 'CHANGE_CAMPAIGN_BUDGET';
+
+        let amount = parseFloat(action.amount);
+        if (action.budget_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+
+        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100);
+        }
+
+        const changeSpecData = {
+          amount: amount,
+          unit: unit
+        };
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          execution_spec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          execution_spec.change_spec = changeSpecData;
+        }
+
+      } else if (entity_type === 'ADSET') {
+        // Adsets juga menggunakan change_spec
+        execution_spec.execution_type = 'CHANGE_BUDGET';
+
+        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+        let amount = parseFloat(action.amount);
+        if (action.budget_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+
+        const unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+
+        const changeSpecData = {
+          amount: amount,
+          unit: unit
+        };
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          execution_spec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          execution_spec.change_spec = changeSpecData;
+        }
+      }
+    } else if (exec_type === 'CHANGE_BID') {
+      // Handle CHANGE_BID action
+      execution_spec.execution_type = 'CHANGE_BID';
+
+      // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+      let amount = parseFloat(action.amount);
+      if (action.bid_change_type === 'DECREASE') {
+        amount = -Math.abs(amount);
+      } else if (action.bid_change_type === 'INCREASE') {
+        amount = Math.abs(amount);
+      }
+      // Untuk SET, gunakan amount as-is
+
+      const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100); // Convert to cents
+      }
+
+      // Build change_spec untuk CHANGE_BID
+      const changeSpecData = {
+        amount: amount,
+        unit: unit
+      };
+
+      // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+      if (isScheduleRule) {
+        execution_spec.execution_options = [{
+          field: "change_spec",
+          operator: "EQUAL",
+          value: changeSpecData
+        }];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
+    } else {
+      // Handle other action types (PAUSE, UNPAUSE, NOTIFICATION)
+      execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
+    }
+
+
+    // Initialize execution_options array for other actions like NOTIFICATION
+    if (!execution_spec.execution_options) {
+      execution_spec.execution_options = [];
+    }
 
     // Add subscribers for notifications
-    if (subscribers && subscribers.length > 0) {
+    if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
       execution_spec.execution_options.push({
         field: "user_ids",
         operator: "EQUAL",
         value: subscribers,
-      });
-    }
-
-    // Add action-specific params with value conversion
-    if (action.type === "CHANGE_BUDGET") {
-      const targetField = action.target_field || "daily_budget"; // daily_budget or lifetime_budget
-      const operator = action.budget_change_type === "INCREASE" ? "ADD" : action.budget_change_type === "DECREASE" ? "SUBTRACT" : "SET";
-
-      let value;
-      if (action.unit === "PERCENTAGE") {
-        // For percentage changes, send the percentage value as-is
-        value = action.amount;
-      } else {
-        // For currency, convert dollars to cents
-        value = Math.round(action.amount * 100);
-      }
-
-      execution_spec.execution_options.push({
-        field: targetField,
-        operator: operator,
-        value: value,
-      });
-
-      // If using percentage, add the unit indicator
-      if (action.unit === "PERCENTAGE") {
-        execution_spec.execution_options.push({
-          field: "change_type",
-          operator: "EQUAL",
-          value: "PERCENTAGE",
-        });
-      }
-    } else if (action.type === "CHANGE_BID") {
-      execution_spec.execution_options.push({
-        field: "bid_amount",
-        operator: "SET",
-        value: Math.round(action.bid_amount * 100), // Convert dollars to cents
       });
     }
 
@@ -5088,30 +5178,137 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
         const processed = processConditionForMeta(condition);
         updatedEvalSpec.filters.push(processed);
       }
+
+      // Add budget type filter for CHANGE_BUDGET actions on ADSET
+      // This ensures the rule only runs on adsets with the correct budget type
+      if (action && action.type === 'CHANGE_BUDGET' && (entity_type || existingRule.entity_type) === 'ADSET') {
+        if (action.budget_type === 'daily_budget') {
+          updatedEvalSpec.filters.push({
+            field: "daily_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        } else if (action.budget_type === 'lifetime_budget') {
+          updatedEvalSpec.filters.push({
+            field: "lifetime_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        }
+      }
     }
 
     // Update execution_spec if action changed
     if (action) {
-      updatedExecSpec = {
-        execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type,
-      };
+      updatedExecSpec = {}; // Initialize as empty object
+      const exec_type = action.type;
+      const current_entity_type = entity_type || existingRule.entity_type;
+      const current_rule_type = rule_type || existingRule.rule_type;
+      const isScheduleRule = (current_rule_type === 'SCHEDULE');
 
-      if (action.type === "CHANGE_BUDGET") {
-        updatedExecSpec.execution_options = [
-          {
-            field: "daily_budget",
-            operator: action.budget_change_type === "INCREASE" ? "ADD" : action.budget_change_type === "DECREASE" ? "SUBTRACT" : "SET",
-            value: Math.round(action.amount * 100), // Convert dollars to cents
-          },
-        ];
-      } else if (action.type === "CHANGE_BID") {
-        updatedExecSpec.execution_options = [
-          {
-            field: "bid_amount",
-            operator: "SET",
-            value: Math.round(action.bid_amount * 100), // Convert dollars to cents
-          },
-        ];
+      if (exec_type === 'CHANGE_BUDGET') {
+        if (current_entity_type === 'CAMPAIGN') {
+          // Campaigns use a different spec and execution type
+          updatedExecSpec.execution_type = 'CHANGE_CAMPAIGN_BUDGET';
+
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === 'DECREASE') {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+
+          const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100);
+          }
+
+          const changeSpecData = {
+            amount: amount,
+            unit: unit
+          };
+
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [{
+              field: "change_spec",
+              operator: "EQUAL",
+              value: changeSpecData
+            }];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
+          }
+
+        } else if (current_entity_type === 'ADSET') {
+          // Adsets juga menggunakan change_spec
+          updatedExecSpec.execution_type = 'CHANGE_BUDGET';
+
+          // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === 'DECREASE') {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+
+          const unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100); // Convert to cents
+          }
+
+          const changeSpecData = {
+            amount: amount,
+            unit: unit
+          };
+
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [{
+              field: "change_spec",
+              operator: "EQUAL",
+              value: changeSpecData
+            }];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
+          }
+        }
+      } else if (exec_type === 'CHANGE_BID') {
+        // Handle CHANGE_BID action
+        updatedExecSpec.execution_type = 'CHANGE_BID';
+
+        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+        let amount = parseFloat(action.amount);
+        if (action.bid_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else if (action.bid_change_type === 'INCREASE') {
+          amount = Math.abs(amount);
+        }
+        // Untuk SET, gunakan amount as-is
+
+        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+
+        // Build change_spec untuk CHANGE_BID
+        const changeSpecData = {
+          amount: amount,
+          unit: unit
+        };
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          updatedExecSpec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          updatedExecSpec.change_spec = changeSpecData;
+        }
+      } else {
+        // Handle other action types
+        updatedExecSpec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type;
       }
     }
 
