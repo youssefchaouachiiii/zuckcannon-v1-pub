@@ -7755,7 +7755,9 @@ class AutomatedRulesManager {
       action.unit = this.editorModal.querySelector('#budget-unit').value;
       action.amount = parseFloat(this.editorModal.querySelector('#budget-amount').value) || 0;
     } else if (actionType === 'CHANGE_BID') {
-      action.bid_amount = parseFloat(this.editorModal.querySelector('#bid-amount').value) || 0;
+      action.bid_change_type = this.editorModal.querySelector('#bid-change-type').value;
+      action.unit = this.editorModal.querySelector('#bid-unit').value;
+      action.amount = parseFloat(this.editorModal.querySelector('#bid-amount').value) || 0;
     }
 
     // Collect subscriber (now a dropdown, single selection)
