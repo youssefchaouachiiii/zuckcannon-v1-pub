@@ -4895,66 +4895,115 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     }
 
     // Build execution_spec for Meta API
-    const execution_spec = {
-      execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type === "SEND_NOTIFICATION" ? "NOTIFICATION" : action.type,
-    };
+    const execution_spec = {};
+    const exec_type = action.type;
 
-    // Initialize execution_options array
-    execution_spec.execution_options = [];
+    if (exec_type === 'CHANGE_BUDGET') {
+      if (entity_type === 'CAMPAIGN') {
+        execution_spec.execution_type = 'CHANGE_CAMPAIGN_BUDGET';
 
+        let amount = parseFloat(action.amount);
+        if (action.budget_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+        
+        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100);
+        }
+
+        execution_spec.change_spec = {
+          amount: amount,
+          unit: unit
+        };
+
+      } else if (entity_type === 'ADSET') {
+        execution_spec.execution_type = 'CHANGE_BUDGET';
+        const unit = action.unit;
+        const amount = parseFloat(action.amount);
+
+        if (action.budget_change_type === 'SET') {
+          const budgetInCents = Math.round(amount * 100);
+          const budgetField = action.target_field || 'daily_budget';
+          execution_spec[budgetField] = budgetInCents;
+        } else { // INCREASE or DECREASE
+          let changeAmount = Math.abs(amount);
+          if (action.budget_change_type === 'DECREASE') {
+            changeAmount = -changeAmount;
+          }
+          
+          if (unit === 'PERCENTAGE') {
+            execution_spec.budget_change_percentage = changeAmount;
+          } else { // CURRENCY
+            execution_spec.budget_change_absolute = Math.round(changeAmount * 100);
+          }
+        }
+      }
+    } else {
+      // Handle other action types
+      execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
+    }
+
+
+    // Initialize execution_options array for other actions like NOTIFICATION
+    if (!execution_spec.execution_options) {
+      execution_spec.execution_options = [];
+    }
+    
     // Add subscribers for notifications
-    if (subscribers && subscribers.length > 0) {
+    if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
       execution_spec.execution_options.push({
         field: "user_ids",
         operator: "EQUAL",
         value: subscribers,
       });
     }
-
+    
+    // This block is now handled above, so it is commented out to avoid duplication
+    /*
     // Add action-specific params with value conversion
     if (action.type === "CHANGE_BUDGET") {
-      // Determine the correct field based on the change type
-      let specField;
-      if (action.budget_change_type === "INCREASE") {
-        specField = "budget_increase_spec";
-      } else if (action.budget_change_type === "DECREASE") {
-        specField = "budget_decrease_spec";
-      } else { // "SET"
-        specField = "budget_set_spec";
-      }
+      const targetField = action.target_field || "daily_budget"; // daily_budget or lifetime_budget
+      const operator = action.budget_change_type === "INCREASE" ? "ADD" : action.budget_change_type === "DECREASE" ? "SUBTRACT" : "SET";
 
-      const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-      let amount = parseFloat(action.amount);
-
-      // Amount for increase/decrease is always positive in the spec.
-      amount = Math.abs(amount);
-
-      // For currency, convert dollars to cents
-      if (unit === "ACCOUNT_CURRENCY") {
-        amount = Math.round(amount * 100);
-      }
-
-      const specValue = {
-        unit: unit,
-        amount: amount
-      };
-
-      // The target_field (daily vs lifetime) is part of the value object.
-      if (action.target_field) {
-        specValue.target_field = action.target_field;
+      let value;
+      if (action.unit === "PERCENTAGE") {
+        // For percentage changes, send the percentage value as-is
+        value = action.amount;
+      } else {
+        // For currency, convert dollars to cents
+        value = Math.round(action.amount * 100);
       }
 
       execution_spec.execution_options.push({
-        field: specField,
-        operator: "EQUAL",
-        value: specValue
+        field: targetField,
+        operator: operator,
+        value: value,
       });
-      
+
+      // If using percentage, add the unit indicator
+      if (action.unit === "PERCENTAGE") {
+        execution_spec.execution_options.push({
+          field: "change_type",
+          operator: "EQUAL",
+          value: "PERCENTAGE",
+        });
+      }
     } else if (action.type === "CHANGE_BID") {
       execution_spec.execution_options.push({
         field: "bid_amount",
         operator: "SET",
         value: Math.round(action.bid_amount * 100), // Convert dollars to cents
+      });
+    }
+    */
+    if (action.type === "CHANGE_BID") {
+      execution_spec.execution_options.push({
+        field: "bid_amount",
+        operator: "SET",
+        value: Math.round(action.amount * 100), // Convert dollars to cents
       });
     }
 
@@ -5103,45 +5152,61 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
 
     // Update execution_spec if action changed
     if (action) {
-      updatedExecSpec = {
-        execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type,
-      };
-      updatedExecSpec.execution_options = []; // Initialize options
+      updatedExecSpec = {}; // Initialize as empty object
+      const exec_type = action.type;
+      const current_entity_type = entity_type || existingRule.entity_type;
 
-      if (action.type === "CHANGE_BUDGET") {
-        let specField;
-        if (action.budget_change_type === "INCREASE") {
-          specField = "budget_increase_spec";
-        } else if (action.budget_change_type === "DECREASE") {
-          specField = "budget_decrease_spec";
-        } else { // "SET"
-          specField = "budget_set_spec";
+      if (exec_type === 'CHANGE_BUDGET') {
+        if (current_entity_type === 'CAMPAIGN') {
+          updatedExecSpec.execution_type = 'CHANGE_CAMPAIGN_BUDGET';
+
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === 'DECREASE') {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+          
+          const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100);
+          }
+
+          updatedExecSpec.change_spec = {
+            amount: amount,
+            unit: unit
+          };
+
+        } else if (current_entity_type === 'ADSET') {
+          updatedExecSpec.execution_type = 'CHANGE_BUDGET';
+          const unit = action.unit;
+          const amount = parseFloat(action.amount);
+
+          if (action.budget_change_type === 'SET') {
+            const budgetInCents = Math.round(amount * 100);
+            const budgetField = action.target_field || 'daily_budget';
+            updatedExecSpec[budgetField] = budgetInCents;
+          } else { // INCREASE or DECREASE
+            let changeAmount = Math.abs(amount);
+            if (action.budget_change_type === 'DECREASE') {
+              changeAmount = -changeAmount;
+            }
+            
+            if (unit === 'PERCENTAGE') {
+              updatedExecSpec.budget_change_percentage = changeAmount;
+            } else { // CURRENCY
+              updatedExecSpec.budget_change_absolute = Math.round(changeAmount * 100);
+            }
+          }
         }
-
-        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-        let amount = parseFloat(action.amount);
-        amount = Math.abs(amount);
-
-        if (unit === "ACCOUNT_CURRENCY") {
-          amount = Math.round(amount * 100);
-        }
-
-        const specValue = {
-          unit: unit,
-          amount: amount
-        };
-
-        if (action.target_field) {
-          specValue.target_field = action.target_field;
-        }
-
-        updatedExecSpec.execution_options.push({
-          field: specField,
-          operator: "EQUAL",
-          value: specValue
-        });
-
-      } else if (action.type === "CHANGE_BID") {
+      } else {
+        // Handle other action types
+        updatedExecSpec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type;
+      }
+      
+      // This block is now handled above, so it is commented out to avoid duplication
+      /*
+      if (action.type === "CHANGE_BID") {
         updatedExecSpec.execution_options = [
           {
             field: "bid_amount",
@@ -5150,6 +5215,7 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
           },
         ];
       }
+      */
     }
 
     // Update schedule_spec if schedule changed
