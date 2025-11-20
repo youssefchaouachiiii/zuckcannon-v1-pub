@@ -4895,24 +4895,8 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     }
 
     // Build execution_spec for Meta API
-    let exec_type = action.type; // Default to action type
-    if (action.type === 'CHANGE_BUDGET') {
-      if (entity_type === 'ADSET') {
-        exec_type = 'CHANGE_ADSET_BUDGET';
-      } else if (entity_type === 'CAMPAIGN') {
-        exec_type = 'CHANGE_CAMPAIGN_BUDGET';
-      }
-      // If entity_type is AD, there's no specific budget change type, so we leave it as CHANGE_BUDGET, though this may not be a valid action.
-    } else if (action.type === 'PAUSE') {
-      exec_type = 'PAUSE';
-    } else if (action.type === 'UNPAUSE') {
-      exec_type = 'UNPAUSE';
-    } else if (action.type === 'SEND_NOTIFICATION') {
-      exec_type = 'NOTIFICATION';
-    }
-
     const execution_spec = {
-      execution_type: exec_type,
+      execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type === "SEND_NOTIFICATION" ? "NOTIFICATION" : action.type,
     };
 
     // Initialize execution_options array
@@ -4929,25 +4913,43 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
 
     // Add action-specific params with value conversion
     if (action.type === "CHANGE_BUDGET") {
-      let amount = parseFloat(action.amount);
-      if (action.budget_change_type === "DECREASE") {
-        amount = -Math.abs(amount);
-      } else { // Handles "INCREASE"
-        amount = Math.abs(amount);
+      // Determine the correct field based on the change type
+      let specField;
+      if (action.budget_change_type === "INCREASE") {
+        specField = "budget_increase_spec";
+      } else if (action.budget_change_type === "DECREASE") {
+        specField = "budget_decrease_spec";
+      } else { // "SET"
+        specField = "budget_set_spec";
       }
 
       const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      let amount = parseFloat(action.amount);
+
+      // Amount for increase/decrease is always positive in the spec.
+      amount = Math.abs(amount);
 
       // For currency, convert dollars to cents
       if (unit === "ACCOUNT_CURRENCY") {
         amount = Math.round(amount * 100);
       }
 
-      execution_spec.change_spec = {
-        amount: amount,
+      const specValue = {
         unit: unit,
+        amount: amount
       };
 
+      // The target_field (daily vs lifetime) is part of the value object.
+      if (action.target_field) {
+        specValue.target_field = action.target_field;
+      }
+
+      execution_spec.execution_options.push({
+        field: specField,
+        operator: "EQUAL",
+        value: specValue
+      });
+      
     } else if (action.type === "CHANGE_BID") {
       execution_spec.execution_options.push({
         field: "bid_amount",
@@ -5101,44 +5103,44 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
 
     // Update execution_spec if action changed
     if (action) {
-      let exec_type = action.type;
-      const current_entity_type = entity_type || existingRule.entity_type;
-
-      if (action.type === 'CHANGE_BUDGET') {
-        if (current_entity_type === 'ADSET') {
-          exec_type = 'CHANGE_ADSET_BUDGET';
-        } else if (current_entity_type === 'CAMPAIGN') {
-          exec_type = 'CHANGE_CAMPAIGN_BUDGET';
-        }
-      } else if (action.type === 'PAUSE') {
-        exec_type = 'PAUSE';
-      } else if (action.type === 'UNPAUSE') {
-        exec_type = 'UNPAUSE';
-      }
-      
       updatedExecSpec = {
-        execution_type: exec_type,
+        execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type,
       };
+      updatedExecSpec.execution_options = []; // Initialize options
 
       if (action.type === "CHANGE_BUDGET") {
-        let amount = parseFloat(action.amount);
-        if (action.budget_change_type === "DECREASE") {
-            amount = -Math.abs(amount);
-        } else { // Handles "INCREASE"
-            amount = Math.abs(amount);
+        let specField;
+        if (action.budget_change_type === "INCREASE") {
+          specField = "budget_increase_spec";
+        } else if (action.budget_change_type === "DECREASE") {
+          specField = "budget_decrease_spec";
+        } else { // "SET"
+          specField = "budget_set_spec";
         }
 
         const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        let amount = parseFloat(action.amount);
+        amount = Math.abs(amount);
 
-        // For currency, convert dollars to cents
         if (unit === "ACCOUNT_CURRENCY") {
-            amount = Math.round(amount * 100);
+          amount = Math.round(amount * 100);
         }
 
-        updatedExecSpec.change_spec = {
-            amount: amount,
-            unit: unit,
+        const specValue = {
+          unit: unit,
+          amount: amount
         };
+
+        if (action.target_field) {
+          specValue.target_field = action.target_field;
+        }
+
+        updatedExecSpec.execution_options.push({
+          field: specField,
+          operator: "EQUAL",
+          value: specValue
+        });
+
       } else if (action.type === "CHANGE_BID") {
         updatedExecSpec.execution_options = [
           {
