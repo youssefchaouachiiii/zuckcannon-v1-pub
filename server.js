@@ -4913,25 +4913,42 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
 
     // Add action-specific params with value conversion
     if (action.type === "CHANGE_BUDGET") {
-      let amount = parseFloat(action.amount);
-      if (action.budget_change_type === "DECREASE") {
-        amount = -Math.abs(amount);
-      } else { // Handles "INCREASE"
-        amount = Math.abs(amount);
-      }
-
       const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      let amount = parseFloat(action.amount);
 
-      // For currency, convert dollars to cents
-      if (unit === "ACCOUNT_CURRENCY") {
-        amount = Math.round(amount * 100);
+      // For 'SET', the structure is a direct value update
+      if (action.budget_change_type === "SET") {
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+        execution_spec.execution_options.push({
+          field: action.target_field || "daily_budget",
+          operator: "EQUAL",
+          value: amount,
+        });
+
+      } else { // For 'INCREASE' or 'DECREASE', the structure is a change spec
+        if (action.budget_change_type === "DECREASE") {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+
+        // According to some interpretations, the change spec is the value
+        execution_spec.execution_options.push({
+          field: "budget_change_spec",
+          operator: "EQUAL",
+          value: {
+            unit: unit,
+            amount: amount,
+            target_field: action.target_field || "daily_budget"
+          },
+        });
       }
-
-      execution_spec.change_spec = {
-        amount: amount,
-        unit: unit,
-      };
-
     } else if (action.type === "CHANGE_BID") {
       execution_spec.execution_options.push({
         field: "bid_amount",
@@ -5088,27 +5105,40 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       updatedExecSpec = {
         execution_type: action.type === "PAUSE" ? "PAUSE" : action.type === "UNPAUSE" ? "UNPAUSE" : action.type,
       };
+      updatedExecSpec.execution_options = []; // Initialize options
 
       if (action.type === "CHANGE_BUDGET") {
-        let amount = parseFloat(action.amount);
-        if (action.budget_change_type === "DECREASE") {
-          amount = -Math.abs(amount);
-        } else { // Handles "INCREASE"
-          amount = Math.abs(amount);
-        }
-
         const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        let amount = parseFloat(action.amount);
 
-        // For currency, convert dollars to cents
-        if (unit === "ACCOUNT_CURRENCY") {
-          amount = Math.round(amount * 100);
+        if (action.budget_change_type === "SET") {
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100);
+          }
+          updatedExecSpec.execution_options.push({
+            field: action.target_field || "daily_budget",
+            operator: "EQUAL",
+            value: amount,
+          });
+        } else { // INCREASE or DECREASE
+          if (action.budget_change_type === "DECREASE") {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100);
+          }
+          updatedExecSpec.execution_options.push({
+            field: "budget_change_spec",
+            operator: "EQUAL",
+            value: {
+              unit: unit,
+              amount: amount,
+              target_field: action.target_field || "daily_budget"
+            },
+          });
         }
-
-        updatedExecSpec.change_spec = {
-          amount: amount,
-          unit: unit,
-        };
-
       } else if (action.type === "CHANGE_BID") {
         updatedExecSpec.execution_options = [
           {
