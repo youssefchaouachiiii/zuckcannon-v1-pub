@@ -1171,7 +1171,14 @@ export const validateRequest = {
         });
       }
 
-      const validBudgetChangeTypes = ["INCREASE", "DECREASE", "SET"];
+      // API Limitation: 'SET' is not supported for budget changes.
+      if (action.budget_change_type === "SET") {
+        return res.status(400).json({
+          error: "Invalid action: The Meta API does not support setting a budget to a specific amount, only increasing or decreasing it.",
+        });
+      }
+
+      const validBudgetChangeTypes = ["INCREASE", "DECREASE"];
       if (!validBudgetChangeTypes.includes(action.budget_change_type)) {
         return res.status(400).json({
           error: `Invalid action.budget_change_type. Must be one of: ${validBudgetChangeTypes.join(", ")}`,
@@ -1202,6 +1209,19 @@ export const validateRequest = {
         return res.status(400).json({
           error: "action.bid_amount must be a valid number",
         });
+      }
+    }
+
+    // API Limitation: Scheduled rules have operator restrictions.
+    if (rule_type === "SCHEDULE") {
+      const scheduledOperators = ["EQUAL", "IN"];
+      for (const condition of conditions) {
+        if (!scheduledOperators.includes(condition.operator)) {
+          return res.status(400).json({
+            error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
+            details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
+          });
+        }
       }
     }
 
@@ -1343,6 +1363,27 @@ export const validateRequest = {
           error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
         });
       }
+
+      if (action.type === "CHANGE_BUDGET") {
+        if (action.budget_change_type === "SET") {
+          return res.status(400).json({
+            error: "Invalid action: The Meta API does not support setting a budget to a specific amount, only increasing or decreasing it.",
+          });
+        }
+      }
+    }
+
+    // API Limitation: Scheduled rules have operator restrictions.
+    if (rule_type === "SCHEDULE" && conditions) {
+        const scheduledOperators = ["EQUAL", "IN"];
+        for (const condition of conditions) {
+            if (condition.operator && !scheduledOperators.includes(condition.operator)) {
+                return res.status(400).json({
+                    error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
+                    details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
+                });
+            }
+        }
     }
 
     // Validate schedule if provided (same validation as create)
