@@ -4965,8 +4965,30 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
           execution_spec.change_spec = changeSpecData;
         }
       }
+    } else if (exec_type === 'CHANGE_BID') {
+      // Handle CHANGE_BID action
+      execution_spec.execution_type = 'CHANGE_BID';
+
+      // Format bid_amount ke cents jika dalam currency
+      const bidAmount = parseFloat(action.bid_amount);
+
+      // Build change_spec untuk CHANGE_BID
+      const changeSpecData = {
+        amount: Math.round(bidAmount * 100), // Convert to cents
+      };
+
+      // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+      if (isScheduleRule) {
+        execution_spec.execution_options = [{
+          field: "change_spec",
+          operator: "EQUAL",
+          value: changeSpecData
+        }];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
     } else {
-      // Handle other action types
+      // Handle other action types (PAUSE, UNPAUSE, NOTIFICATION)
       execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
     }
 
@@ -4975,23 +4997,13 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     if (!execution_spec.execution_options) {
       execution_spec.execution_options = [];
     }
-    
+
     // Add subscribers for notifications
     if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
       execution_spec.execution_options.push({
         field: "user_ids",
         operator: "EQUAL",
         value: subscribers,
-      });
-    }
-    
-    if (action.type === "CHANGE_BID") {
-      // This part might be wrong too, but we are focusing on CHANGE_BUDGET
-      // For now, let's assume it requires execution_options
-      execution_spec.execution_options.push({
-        field: "bid_amount",
-        operator: "SET", // This is likely incorrect based on other errors
-        value: Math.round(action.amount * 100),
       });
     }
 
@@ -5211,6 +5223,28 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
           } else {
             updatedExecSpec.change_spec = changeSpecData;
           }
+        }
+      } else if (exec_type === 'CHANGE_BID') {
+        // Handle CHANGE_BID action
+        updatedExecSpec.execution_type = 'CHANGE_BID';
+
+        // Format bid_amount ke cents
+        const bidAmount = parseFloat(action.bid_amount);
+
+        // Build change_spec untuk CHANGE_BID
+        const changeSpecData = {
+          amount: Math.round(bidAmount * 100), // Convert to cents
+        };
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          updatedExecSpec.execution_options = [{
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData
+          }];
+        } else {
+          updatedExecSpec.change_spec = changeSpecData;
         }
       } else {
         // Handle other action types
