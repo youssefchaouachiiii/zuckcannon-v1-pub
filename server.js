@@ -4969,13 +4969,24 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       // Handle CHANGE_BID action
       execution_spec.execution_type = 'CHANGE_BID';
 
-      // Format bid_amount ke cents jika dalam currency
-      const bidAmount = parseFloat(action.bid_amount);
+      // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+      let amount = parseFloat(action.amount);
+      if (action.bid_change_type === 'DECREASE') {
+        amount = -Math.abs(amount);
+      } else if (action.bid_change_type === 'INCREASE') {
+        amount = Math.abs(amount);
+      }
+      // Untuk SET, gunakan amount as-is
+
+      const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100); // Convert to cents
+      }
 
       // Build change_spec untuk CHANGE_BID
       const changeSpecData = {
-        amount: Math.round(bidAmount * 100), // Convert to cents
-        unit: "ACCOUNT_CURRENCY"  // Set bid to absolute value
+        amount: amount,
+        unit: unit
       };
 
       // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
@@ -5229,13 +5240,24 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
         // Handle CHANGE_BID action
         updatedExecSpec.execution_type = 'CHANGE_BID';
 
-        // Format bid_amount ke cents
-        const bidAmount = parseFloat(action.bid_amount);
+        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+        let amount = parseFloat(action.amount);
+        if (action.bid_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else if (action.bid_change_type === 'INCREASE') {
+          amount = Math.abs(amount);
+        }
+        // Untuk SET, gunakan amount as-is
+
+        const unit = (action.unit === "PERCENTAGE") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
 
         // Build change_spec untuk CHANGE_BID
         const changeSpecData = {
-          amount: Math.round(bidAmount * 100), // Convert to cents
-          unit: "ACCOUNT_CURRENCY"  // Set bid to absolute value
+          amount: amount,
+          unit: unit
         };
 
         // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
