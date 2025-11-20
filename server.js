@@ -4921,19 +4921,31 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
         };
 
       } else if (entity_type === 'ADSET') {
-        // Adsets use a simple, flat structure for budget changes
+        // Adsets juga menggunakan change_spec (sama seperti CAMPAIGN)
         execution_spec.execution_type = 'CHANGE_BUDGET';
-        execution_spec.budget_change_type = action.budget_change_type; // 'INCREASE' or 'DECREASE'
-        execution_spec.unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-        
-        let amount = Math.abs(parseFloat(action.amount)); // Amount is always positive
-        if (execution_spec.unit === 'ACCOUNT_CURRENCY') {
-            amount = Math.round(amount * 100); // to cents
-        }
-        execution_spec.amount = amount;
 
+        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+        let amount = parseFloat(action.amount);
+        if (action.budget_change_type === 'DECREASE') {
+          amount = -Math.abs(amount);
+        } else {
+          amount = Math.abs(amount);
+        }
+
+        const unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+
+        // Struktur yang BENAR: gunakan change_spec
+        execution_spec.change_spec = {
+          amount: amount,
+          unit: unit
+        };
+
+        // Tambahkan target_field jika ada (opsional)
         if (action.target_field) {
-            execution_spec.target_field = action.target_field;
+          execution_spec.change_spec.target_field = action.target_field;
         }
       }
     } else {
@@ -5138,19 +5150,31 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
           };
 
         } else if (current_entity_type === 'ADSET') {
-          // Adsets use a simple, flat structure for budget changes
+          // Adsets juga menggunakan change_spec (sama seperti CAMPAIGN)
           updatedExecSpec.execution_type = 'CHANGE_BUDGET';
-          updatedExecSpec.budget_change_type = action.budget_change_type; // 'INCREASE' or 'DECREASE'
-          updatedExecSpec.unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-          
-          let amount = Math.abs(parseFloat(action.amount)); // Amount is always positive
-          if (updatedExecSpec.unit === 'ACCOUNT_CURRENCY') {
-              amount = Math.round(amount * 100); // to cents
-          }
-          updatedExecSpec.amount = amount;
 
+          // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === 'DECREASE') {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+
+          const unit = (action.unit === "PERCENTAGE" || action.unit === "PERCENT") ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100); // Convert to cents
+          }
+
+          // Struktur yang BENAR: gunakan change_spec
+          updatedExecSpec.change_spec = {
+            amount: amount,
+            unit: unit
+          };
+
+          // Tambahkan target_field jika ada (opsional)
           if (action.target_field) {
-              updatedExecSpec.target_field = action.target_field;
+            updatedExecSpec.change_spec.target_field = action.target_field;
           }
         }
       } else {
