@@ -4928,17 +4928,6 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
             operator: "EQUAL",
             value: changeSpecData
           }];
-
-          // Tambahkan action_spec untuk specify budget field (untuk CAMPAIGN biasanya daily_budget)
-          if (action.target_field) {
-            execution_spec.execution_options.push({
-              field: "action_spec",
-              operator: "EQUAL",
-              value: {
-                field: action.target_field
-              }
-            });
-          }
         } else {
           execution_spec.change_spec = changeSpecData;
         }
@@ -4965,9 +4954,6 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
           unit: unit
         };
 
-        // NOTE: target_field TIDAK dimasukkan ke change_spec
-        // Tapi perlu ditambahkan sebagai action_spec di execution_options untuk SCHEDULE rules
-
         // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
         if (isScheduleRule) {
           execution_spec.execution_options = [{
@@ -4975,17 +4961,6 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
             operator: "EQUAL",
             value: changeSpecData
           }];
-
-          // Tambahkan action_spec untuk specify budget field (daily_budget vs lifetime_budget)
-          if (action.target_field) {
-            execution_spec.execution_options.push({
-              field: "action_spec",
-              operator: "EQUAL",
-              value: {
-                field: action.target_field  // "daily_budget" atau "lifetime_budget"
-              }
-            });
-          }
         } else {
           execution_spec.change_spec = changeSpecData;
         }
@@ -5200,17 +5175,6 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
               operator: "EQUAL",
               value: changeSpecData
             }];
-
-            // Tambahkan action_spec untuk specify budget field
-            if (action.target_field) {
-              updatedExecSpec.execution_options.push({
-                field: "action_spec",
-                operator: "EQUAL",
-                value: {
-                  field: action.target_field
-                }
-              });
-            }
           } else {
             updatedExecSpec.change_spec = changeSpecData;
           }
@@ -5237,9 +5201,6 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
             unit: unit
           };
 
-          // NOTE: target_field TIDAK dimasukkan ke change_spec
-          // Tapi perlu ditambahkan sebagai action_spec di execution_options untuk SCHEDULE rules
-
           // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
           if (isScheduleRule) {
             updatedExecSpec.execution_options = [{
@@ -5247,17 +5208,6 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
               operator: "EQUAL",
               value: changeSpecData
             }];
-
-            // Tambahkan action_spec untuk specify budget field (daily_budget vs lifetime_budget)
-            if (action.target_field) {
-              updatedExecSpec.execution_options.push({
-                field: "action_spec",
-                operator: "EQUAL",
-                value: {
-                  field: action.target_field  // "daily_budget" atau "lifetime_budget"
-                }
-              });
-            }
           } else {
             updatedExecSpec.change_spec = changeSpecData;
           }
