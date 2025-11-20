@@ -4899,6 +4899,26 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
     const exec_type = action.type;
     const isScheduleRule = (rule_type === 'SCHEDULE');
 
+    // Add budget type filter for CHANGE_BUDGET action on ADSET
+    // This ensures the rule only affects adsets with the correct budget type
+    if (exec_type === 'CHANGE_BUDGET' && entity_type === 'ADSET' && action.target_field) {
+      if (action.target_field === 'lifetime_budget') {
+        // Filter untuk adset yang memiliki lifetime_budget (bukan null)
+        evaluation_spec.filters.push({
+          field: "lifetime_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      } else if (action.target_field === 'daily_budget') {
+        // Filter untuk adset yang memiliki daily_budget (bukan null)
+        evaluation_spec.filters.push({
+          field: "daily_budget",
+          operator: "GREATER_THAN",
+          value: 0
+        });
+      }
+    }
+
     if (exec_type === 'CHANGE_BUDGET') {
       if (entity_type === 'CAMPAIGN') {
         // Campaigns use a different spec and execution type
@@ -5139,6 +5159,23 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
       for (const condition of conditions) {
         const processed = processConditionForMeta(condition);
         updatedEvalSpec.filters.push(processed);
+      }
+
+      // Add budget type filter for CHANGE_BUDGET action on ADSET
+      if (action && action.type === 'CHANGE_BUDGET' && (entity_type || existingRule.entity_type) === 'ADSET' && action.target_field) {
+        if (action.target_field === 'lifetime_budget') {
+          updatedEvalSpec.filters.push({
+            field: "lifetime_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        } else if (action.target_field === 'daily_budget') {
+          updatedEvalSpec.filters.push({
+            field: "daily_budget",
+            operator: "GREATER_THAN",
+            value: 0
+          });
+        }
       }
     }
 
