@@ -5018,12 +5018,9 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
   // Build schedule_spec if schedule provided
   let schedule_spec = null;
   if (schedule && schedule.frequency && isScheduleRule) {
-    // Treat CONTINUOUSLY as hourly checks (Meta-compatible schedule)
-    if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY") {
-      schedule_spec = {
-        schedule_type: "HOURLY",
-      };
-    } else if (schedule.frequency === "SEMI_HOURLY") {
+    // Map CONTINUOUSLY, HOURLY (legacy), and SEMI_HOURLY to SEMI_HOURLY for Meta API
+    // This shows as "Checked at least once every 30 minutes" in Facebook Business Manager
+    if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY" || schedule.frequency === "SEMI_HOURLY") {
       schedule_spec = {
         schedule_type: "SEMI_HOURLY",
       };
@@ -5046,7 +5043,7 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
     } else {
       // Fallback: ensure schedule_spec exists for schedule rules
       schedule_spec = {
-        schedule_type: "HOURLY",
+        schedule_type: "SEMI_HOURLY",
       };
     }
   }
