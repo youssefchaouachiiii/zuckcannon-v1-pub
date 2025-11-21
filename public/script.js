@@ -7583,9 +7583,12 @@ class AutomatedRulesManager {
   getScheduleText(scheduleSpec) {
     if (!scheduleSpec) return "Trigger";
 
-    if (scheduleSpec.schedule_type === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
-    if (scheduleSpec.schedule_type === "DAILY") return "Daily (12:00 PM)";
-    if (scheduleSpec.schedule_type === "CUSTOM") {
+    const scheduleType = scheduleSpec.schedule_type || scheduleSpec.scheduleType;
+
+    if (scheduleType === "HOURLY") return "Continuously (Run every ~60 minutes)";
+    if (scheduleType === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
+    if (scheduleType === "DAILY") return "Daily (12:00 PM)";
+    if (scheduleType === "CUSTOM") {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       // Meta API returns nested schedule array format
       const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
@@ -7594,7 +7597,7 @@ class AutomatedRulesManager {
       return `Custom: ${dayNames}`;
     }
 
-    return "Unknown";
+    return scheduleType || "Unknown";
   }
 
   openModal() {
