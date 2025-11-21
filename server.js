@@ -5017,8 +5017,8 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
 
   // Build schedule_spec if schedule provided
   let schedule_spec = null;
-  if (schedule && schedule.frequency) {
-    // Map "CONTINUOUSLY" to HOURLY schedule so Meta treats it as always running without custom blocks
+  if (schedule && schedule.frequency && isScheduleRule) {
+    // Treat CONTINUOUSLY as hourly checks (Meta-compatible schedule)
     if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY") {
       schedule_spec = {
         schedule_type: "HOURLY",
