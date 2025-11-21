@@ -7587,7 +7587,7 @@ class AutomatedRulesManager {
 
     if (scheduleType === "HOURLY") return "Continuously (Run every ~60 minutes)";
     if (scheduleType === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
-    if (scheduleType === "DAILY") return "Daily (12:00 PM)";
+    if (scheduleType === "DAILY") return "Daily (12:00 AM)";
     if (scheduleType === "CUSTOM") {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       // Meta API returns nested schedule array format
