@@ -8316,8 +8316,19 @@ class AutomatedRulesManager {
   }
 
   openAccountSelector() {
+    console.log("openAccountSelector called");
+
+    if (!this.accountSelectorModal) {
+      console.error("Account selector modal not found!");
+      showError("Multi-account feature is not available. Please refresh the page.");
+      return;
+    }
+
+    console.log("Loading accounts into checklist...");
     // Load accounts into checklist
     this.populateAccountChecklist();
+
+    console.log("Opening account selector modal...");
     this.accountSelectorModal.style.display = "flex";
   }
 
@@ -8328,7 +8339,16 @@ class AutomatedRulesManager {
 
   async populateAccountChecklist() {
     try {
+      console.log("Populating account checklist...");
       const accountsList = document.getElementById("ad-acc-list");
+      console.log("Account list element:", accountsList);
+
+      if (!accountsList) {
+        console.error("ad-acc-list not found!");
+        showError("Ad accounts list not found. Please refresh the page.");
+        return;
+      }
+
       const accounts = Array.from(accountsList.querySelectorAll("li")).map((li) => {
         const accountLink = li.querySelector("a.account");
         return {
@@ -8337,8 +8357,16 @@ class AutomatedRulesManager {
         };
       });
 
+      console.log("Found accounts:", accounts);
+
       // Store for later use
       this.allAdAccounts = accounts.filter((acc) => acc.id);
+      console.log("Filtered accounts with ID:", this.allAdAccounts);
+
+      if (this.allAdAccounts.length === 0) {
+        showError("No ad accounts found. Please add ad accounts first.");
+        return;
+      }
 
       const checklist = this.accountSelectorModal.querySelector(".account-checklist");
       checklist.innerHTML = "";
@@ -8359,6 +8387,7 @@ class AutomatedRulesManager {
         checklist.appendChild(label);
       });
 
+      console.log("Account checklist populated with", this.allAdAccounts.length, "accounts");
       this.updateSelectedAccountsCount();
     } catch (error) {
       console.error("Error populating account checklist:", error);
