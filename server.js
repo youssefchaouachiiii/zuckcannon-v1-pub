@@ -4838,6 +4838,254 @@ app.get("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
   }
 });
 
+// Helper function: Create rule for a single account (reusable for batch operations)
+async function createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig) {
+  const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, time_preset, subscribers } = ruleConfig;
+
+  // Format account ID with act_ prefix
+  const formattedAccountId = formatAccountId(ad_account_id);
+
+  // Build evaluation_spec for Meta API
+  const evaluation_spec = {
+    evaluation_type: rule_type || "SCHEDULE",
+    filters: [],
+  };
+
+  // Add entity filter
+  if (entity_ids && entity_ids.length > 0) {
+    evaluation_spec.filters.push({
+      field: "id",
+      operator: "IN",
+      value: entity_ids,
+    });
+  } else {
+    // Apply to all active entities of type
+    evaluation_spec.filters.push({
+      field: "entity_type",
+      operator: "EQUAL",
+      value: entity_type,
+    });
+
+    // Add effective_status filter for "All active..." entities
+    evaluation_spec.filters.push({
+      field: "effective_status",
+      operator: "IN",
+      value: ["ACTIVE"],
+    });
+  }
+
+  // Add time preset filter (from user selection or default)
+  evaluation_spec.filters.push({
+    field: "time_preset",
+    operator: "EQUAL",
+    value: time_preset || "LAST_7_DAYS",
+  });
+
+  // Add condition filters with proper field and value processing
+  for (const condition of conditions) {
+    const processed = processConditionForMeta(condition);
+    evaluation_spec.filters.push(processed);
+  }
+
+  // Add budget_reset_period filter for CHANGE_BUDGET actions
+  if (action.type === "CHANGE_BUDGET" && action.budget_type) {
+    const fieldPrefix = entity_type.toLowerCase();
+    const budgetPeriodValue = action.budget_type === "daily_budget" ? "DAY" : "LIFETIME";
+
+    evaluation_spec.filters.push({
+      field: `${fieldPrefix}.budget_reset_period`,
+      operator: "IN",
+      value: [budgetPeriodValue],
+    });
+  }
+
+  // Build execution_spec for Meta API
+  const execution_spec = {};
+  const exec_type = action.type;
+  const isScheduleRule = rule_type === "SCHEDULE";
+
+  if (exec_type === "CHANGE_BUDGET") {
+    if (entity_type === "CAMPAIGN") {
+      execution_spec.execution_type = "CHANGE_CAMPAIGN_BUDGET";
+
+      let amount = parseFloat(action.amount);
+      if (action.budget_change_type === "DECREASE") {
+        amount = -Math.abs(amount);
+      } else {
+        amount = Math.abs(amount);
+      }
+
+      const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100);
+      }
+
+      const changeSpecData = {
+        amount: amount,
+        unit: unit,
+      };
+
+      if (isScheduleRule) {
+        execution_spec.execution_options = [
+          {
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData,
+          },
+        ];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
+    } else if (entity_type === "ADSET") {
+      execution_spec.execution_type = "CHANGE_BUDGET";
+
+      let amount = parseFloat(action.amount);
+      if (action.budget_change_type === "DECREASE") {
+        amount = -Math.abs(amount);
+      } else {
+        amount = Math.abs(amount);
+      }
+
+      const unit = action.unit === "PERCENTAGE" || action.unit === "PERCENT" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100);
+      }
+
+      const changeSpecData = {
+        amount: amount,
+        unit: unit,
+      };
+
+      if (isScheduleRule) {
+        execution_spec.execution_options = [
+          {
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData,
+          },
+        ];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
+    }
+  } else if (exec_type === "CHANGE_BID") {
+    execution_spec.execution_type = "CHANGE_BID";
+
+    let amount = parseFloat(action.amount);
+    if (action.bid_change_type === "DECREASE") {
+      amount = -Math.abs(amount);
+    } else if (action.bid_change_type === "INCREASE") {
+      amount = Math.abs(amount);
+    }
+
+    const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+    if (unit === "ACCOUNT_CURRENCY") {
+      amount = Math.round(amount * 100);
+    }
+
+    const changeSpecData = {
+      amount: amount,
+      unit: unit,
+    };
+
+    if (isScheduleRule) {
+      execution_spec.execution_options = [
+        {
+          field: "change_spec",
+          operator: "EQUAL",
+          value: changeSpecData,
+        },
+      ];
+    } else {
+      execution_spec.change_spec = changeSpecData;
+    }
+  } else {
+    execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
+  }
+
+  if (!execution_spec.execution_options) {
+    execution_spec.execution_options = [];
+  }
+
+  if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
+    execution_spec.execution_options.push({
+      field: "user_ids",
+      operator: "EQUAL",
+      value: subscribers,
+    });
+  }
+
+  // Build schedule_spec if schedule provided
+  let schedule_spec = null;
+  if (schedule && schedule.frequency) {
+    if (schedule.frequency === "HOURLY") {
+      schedule_spec = {
+        schedule_type: "HOURLY",
+      };
+    } else if (schedule.frequency === "SEMI_HOURLY") {
+      schedule_spec = {
+        schedule_type: "SEMI_HOURLY",
+      };
+    } else if (schedule.frequency === "DAILY") {
+      schedule_spec = {
+        schedule_type: "DAILY",
+        schedule_time: "12:00",
+      };
+    } else if (schedule.frequency === "CUSTOM") {
+      schedule_spec = {
+        schedule_type: "CUSTOM",
+        schedule: [
+          {
+            days: schedule.days,
+            start_minute: schedule.start_minute,
+            end_minute: schedule.end_minute,
+          },
+        ],
+      };
+    }
+  }
+
+  // Create rule on Meta API
+  const metaPayload = {
+    name,
+    evaluation_spec,
+    execution_spec,
+  };
+
+  if (schedule_spec) {
+    metaPayload.schedule_spec = schedule_spec;
+  }
+
+  const metaResponse = await axios.post(`https://graph.facebook.com/v21.0/${formattedAccountId}/adrules_library`, metaPayload, {
+    params: { access_token: userAccessToken },
+  });
+
+  const metaRuleId = metaResponse.data.id;
+
+  // Save rule to local database
+  const ruleData = {
+    user_id: userId,
+    ad_account_id,
+    meta_rule_id: metaRuleId,
+    name,
+    entity_type,
+    entity_ids,
+    rule_type: rule_type || "SCHEDULE",
+    evaluation_spec,
+    execution_spec,
+    schedule_spec,
+    status: "ACTIVE",
+  };
+
+  const createdRule = RulesDB.createRule(ruleData);
+
+  return {
+    success: true,
+    rule: createdRule,
+    meta_rule_id: metaRuleId,
+  };
+}
+
 // Create a new rule
 app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async (req, res) => {
   try {
@@ -4851,275 +5099,119 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
       });
     }
 
-    const { name, ad_account_id, entity_type, entity_ids, conditions, action, rule_type, schedule, time_preset, subscribers } = req.body;
+    const { ad_account_id, ...ruleConfig } = req.body;
 
-    // Format account ID with act_ prefix
-    const formattedAccountId = formatAccountId(ad_account_id);
-
-    // Build evaluation_spec for Meta API
-    const evaluation_spec = {
-      evaluation_type: rule_type || "SCHEDULE",
-      filters: [], // Both metadata and insights filters
-    };
-
-    // Add entity filter
-    if (entity_ids && entity_ids.length > 0) {
-      evaluation_spec.filters.push({
-        field: "id",
-        operator: "IN",
-        value: entity_ids,
-      });
-    } else {
-      // Apply to all active entities of type
-      evaluation_spec.filters.push({
-        field: "entity_type",
-        operator: "EQUAL",
-        value: entity_type,
-      });
-
-      // Add effective_status filter for "All active..." entities
-      evaluation_spec.filters.push({
-        field: "effective_status",
-        operator: "IN",
-        value: ["ACTIVE"],
-      });
-    }
-
-    // Add time preset filter (from user selection or default)
-    evaluation_spec.filters.push({
-      field: "time_preset",
-      operator: "EQUAL",
-      value: time_preset || "LAST_7_DAYS",
-    });
-
-    // Add condition filters with proper field and value processing
-    for (const condition of conditions) {
-      const processed = processConditionForMeta(condition);
-      evaluation_spec.filters.push(processed);
-    }
-
-    // Add budget_reset_period filter for CHANGE_BUDGET actions
-    // This ensures the rule only applies to entities with matching budget type (daily vs lifetime)
-    // Reference: Meta API Automated Rules - budget_reset_period metadata filter
-    if (action.type === "CHANGE_BUDGET" && action.budget_type) {
-      const fieldPrefix = entity_type.toLowerCase(); // 'campaign' or 'adset'
-      const budgetPeriodValue = action.budget_type === "daily_budget" ? "DAY" : "LIFETIME";
-
-      evaluation_spec.filters.push({
-        field: `${fieldPrefix}.budget_reset_period`,
-        operator: "IN",
-        value: [budgetPeriodValue],
-      });
-    }
-
-    // Build execution_spec for Meta API
-    const execution_spec = {};
-    const exec_type = action.type;
-    const isScheduleRule = rule_type === "SCHEDULE";
-
-    if (exec_type === "CHANGE_BUDGET") {
-      if (entity_type === "CAMPAIGN") {
-        // Campaigns use a different spec and execution type
-        execution_spec.execution_type = "CHANGE_CAMPAIGN_BUDGET";
-
-        let amount = parseFloat(action.amount);
-        if (action.budget_change_type === "DECREASE") {
-          amount = -Math.abs(amount);
-        } else {
-          amount = Math.abs(amount);
-        }
-
-        const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-        if (unit === "ACCOUNT_CURRENCY") {
-          amount = Math.round(amount * 100);
-        }
-
-        const changeSpecData = {
-          amount: amount,
-          unit: unit,
-        };
-
-        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
-        if (isScheduleRule) {
-          execution_spec.execution_options = [
-            {
-              field: "change_spec",
-              operator: "EQUAL",
-              value: changeSpecData,
-            },
-          ];
-        } else {
-          execution_spec.change_spec = changeSpecData;
-        }
-      } else if (entity_type === "ADSET") {
-        // Adsets juga menggunakan change_spec
-        execution_spec.execution_type = "CHANGE_BUDGET";
-
-        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
-        let amount = parseFloat(action.amount);
-        if (action.budget_change_type === "DECREASE") {
-          amount = -Math.abs(amount);
-        } else {
-          amount = Math.abs(amount);
-        }
-
-        const unit = action.unit === "PERCENTAGE" || action.unit === "PERCENT" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-        if (unit === "ACCOUNT_CURRENCY") {
-          amount = Math.round(amount * 100); // Convert to cents
-        }
-
-        const changeSpecData = {
-          amount: amount,
-          unit: unit,
-        };
-
-        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
-        if (isScheduleRule) {
-          execution_spec.execution_options = [
-            {
-              field: "change_spec",
-              operator: "EQUAL",
-              value: changeSpecData,
-            },
-          ];
-        } else {
-          execution_spec.change_spec = changeSpecData;
-        }
-      }
-    } else if (exec_type === "CHANGE_BID") {
-      // Handle CHANGE_BID action
-      execution_spec.execution_type = "CHANGE_BID";
-
-      // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
-      let amount = parseFloat(action.amount);
-      if (action.bid_change_type === "DECREASE") {
-        amount = -Math.abs(amount);
-      } else if (action.bid_change_type === "INCREASE") {
-        amount = Math.abs(amount);
-      }
-      // Untuk SET, gunakan amount as-is
-
-      const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
-      if (unit === "ACCOUNT_CURRENCY") {
-        amount = Math.round(amount * 100); // Convert to cents
-      }
-
-      // Build change_spec untuk CHANGE_BID
-      const changeSpecData = {
-        amount: amount,
-        unit: unit,
-      };
-
-      // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
-      if (isScheduleRule) {
-        execution_spec.execution_options = [
-          {
-            field: "change_spec",
-            operator: "EQUAL",
-            value: changeSpecData,
-          },
-        ];
-      } else {
-        execution_spec.change_spec = changeSpecData;
-      }
-    } else {
-      // Handle other action types (PAUSE, UNPAUSE, NOTIFICATION)
-      execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
-    }
-
-    // Initialize execution_options array for other actions like NOTIFICATION
-    if (!execution_spec.execution_options) {
-      execution_spec.execution_options = [];
-    }
-
-    // Add subscribers for notifications
-    if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
-      execution_spec.execution_options.push({
-        field: "user_ids",
-        operator: "EQUAL",
-        value: subscribers,
-      });
-    }
-
-    // Build schedule_spec if schedule provided
-    let schedule_spec = null;
-    if (schedule && schedule.frequency) {
-      if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY" || schedule.frequency === "SEMI_HOURLY") {
-        // Map CONTINUOUSLY, HOURLY (legacy), and SEMI_HOURLY to SEMI_HOURLY for Meta API
-        schedule_spec = {
-          schedule_type: "SEMI_HOURLY",
-        };
-      } else if (schedule.frequency === "DAILY") {
-        schedule_spec = {
-          schedule_type: "DAILY",
-          schedule_time: "12:00", // Default to noon
-        };
-      } else if (schedule.frequency === "CUSTOM") {
-        schedule_spec = {
-          schedule_type: "CUSTOM",
-          schedule: [
-            {
-              days: schedule.days,
-              start_minute: schedule.start_minute,
-              end_minute: schedule.end_minute,
-            },
-          ],
-        };
-      }
-    }
-
-    // Create rule via Meta API
-    const metaApiUrl = `https://graph.facebook.com/${api_version}/${formattedAccountId}/adrules_library`;
-    const metaPayload = {
-      name,
-      evaluation_spec: JSON.stringify(evaluation_spec),
-      execution_spec: JSON.stringify(execution_spec),
-      status: "ENABLED", // Meta API uses ENABLED/DISABLED
-      access_token: userAccessToken,
-    };
-
-    if (schedule_spec) {
-      metaPayload.schedule_spec = JSON.stringify(schedule_spec);
-    }
-
-    let metaRuleId = null;
-    try {
-      const metaResponse = await axios.post(metaApiUrl, metaPayload);
-      metaRuleId = metaResponse.data.id;
-    } catch (metaError) {
-      console.error("Meta API error creating rule:", metaError.response?.data || metaError.message);
-      return res.status(400).json({
-        error: "Failed to create rule in Meta API",
-        details: metaError.response?.data?.error?.message || metaError.message,
-      });
-    }
-
-    // Save rule to local database
-    const ruleData = {
-      user_id: userId,
-      ad_account_id,
-      meta_rule_id: metaRuleId,
-      name,
-      entity_type,
-      entity_ids,
-      rule_type: rule_type || "SCHEDULE",
-      evaluation_spec,
-      execution_spec,
-      schedule_spec,
-      status: "ACTIVE",
-    };
-
-    const createdRule = RulesDB.createRule(ruleData);
+    // Use helper function to create rule
+    const result = await createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig);
 
     res.json({
       success: true,
       message: "Rule created successfully",
-      rule: createdRule,
-      meta_rule_id: metaRuleId,
+      rule: result.rule,
+      meta_rule_id: result.meta_rule_id,
     });
   } catch (error) {
     console.error("Error creating rule:", error);
     res.status(500).json({ error: "Failed to create rule", details: error.message });
+  }
+});
+
+// Helper function: Create rules on multiple accounts with concurrency control
+async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, ruleConfig, ad_account_ids, concurrency = 2) {
+  const results = [];
+
+  // Process accounts in batches to control concurrency
+  for (let i = 0; i < ad_account_ids.length; i += concurrency) {
+    const batch = ad_account_ids.slice(i, i + concurrency);
+
+    const batchResults = await Promise.all(
+      batch.map(async (accountId) => {
+        try {
+          const result = await createSingleAccountRule(userId, userAccessToken, accountId, ruleConfig);
+          return {
+            ad_account_id: accountId,
+            success: true,
+            local_rule_id: result.rule.id,
+            meta_rule_id: result.meta_rule_id,
+            error: null,
+          };
+        } catch (error) {
+          console.error(`Error creating rule on account ${accountId}:`, error.message);
+          return {
+            ad_account_id: accountId,
+            success: false,
+            local_rule_id: null,
+            meta_rule_id: null,
+            error: error.response?.data?.error?.message || error.message,
+          };
+        }
+      })
+    );
+
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+// Create rules on multiple accounts (batch creation)
+app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatchRule, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    const { ad_account_ids, ...ruleConfig } = req.body;
+
+    if (!ad_account_ids || !Array.isArray(ad_account_ids) || ad_account_ids.length === 0) {
+      return res.status(400).json({
+        error: "ad_account_ids array is required and must contain at least one account",
+      });
+    }
+
+    // Limit max accounts per batch (prevent abuse)
+    if (ad_account_ids.length > 20) {
+      return res.status(400).json({
+        error: "Maximum 20 accounts allowed per batch request",
+      });
+    }
+
+    console.log(`Creating rule "${ruleConfig.name}" on ${ad_account_ids.length} accounts...`);
+
+    // Create rules with concurrency control (2 accounts at a time)
+    const results = await createMultiAccountRulesWithConcurrency(
+      userId,
+      userAccessToken,
+      ruleConfig,
+      ad_account_ids,
+      2 // Concurrency limit to avoid rate limiting
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const failureCount = results.filter((r) => !r.success).length;
+
+    console.log(`Batch creation completed: ${successCount} succeeded, ${failureCount} failed`);
+
+    res.json({
+      success: successCount > 0,
+      message: `Rule created on ${successCount} out of ${ad_account_ids.length} accounts`,
+      total_accounts: ad_account_ids.length,
+      completed: successCount,
+      failed: failureCount,
+      results,
+    });
+  } catch (error) {
+    console.error("Error creating batch rules:", error);
+    res.status(500).json({
+      error: "Failed to create batch rules",
+      details: error.message,
+    });
   }
 });
 
