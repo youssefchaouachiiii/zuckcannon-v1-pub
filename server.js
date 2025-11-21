@@ -4842,12 +4842,16 @@ app.get("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
 async function createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig) {
   const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, time_preset, subscribers } = ruleConfig;
 
+  // Treat "CONTINUOUSLY" (run all the time) as a trigger-style rule with no schedule_spec
+  const isContinuous = schedule?.frequency === "CONTINUOUSLY";
+  const normalizedRuleType = isContinuous ? "TRIGGER" : rule_type || "SCHEDULE";
+
   // Format account ID with act_ prefix
   const formattedAccountId = formatAccountId(ad_account_id);
 
   // Build evaluation_spec for Meta API
   const evaluation_spec = {
-    evaluation_type: rule_type || "SCHEDULE",
+    evaluation_type: normalizedRuleType,
     filters: [],
   };
 
@@ -4902,7 +4906,7 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
   // Build execution_spec for Meta API
   const execution_spec = {};
   const exec_type = action.type;
-  const isScheduleRule = rule_type === "SCHEDULE";
+  const isScheduleRule = normalizedRuleType === "SCHEDULE";
 
   if (exec_type === "CHANGE_BUDGET") {
     if (entity_type === "CAMPAIGN") {
@@ -5017,9 +5021,9 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
 
   // Build schedule_spec if schedule provided
   let schedule_spec = null;
-  if (schedule && schedule.frequency) {
+  if (!isContinuous && schedule && schedule.frequency) {
     // Map frontend "CONTINUOUSLY" selection to Meta's HOURLY schedule (run every ~30-60 mins)
-    if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY") {
+    if (schedule.frequency === "HOURLY") {
       schedule_spec = {
         schedule_type: "HOURLY",
       };
@@ -5076,7 +5080,7 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
     name,
     entity_type,
     entity_ids,
-    rule_type: rule_type || "SCHEDULE",
+    rule_type: normalizedRuleType,
     evaluation_spec,
     execution_spec,
     schedule_spec,
