@@ -1114,11 +1114,30 @@ export const validateRequest = {
       }
 
       // Validate operator
-      const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL"];
+      const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL", "IN_RANGE", "NOT_IN_RANGE"];
       if (!validOperators.includes(condition.operator)) {
         return res.status(400).json({
           error: `Condition at index ${i} has invalid operator. Must be one of: ${validOperators.join(", ")}`,
         });
+      }
+
+      // Validate array values for range operators
+      if (condition.operator === "IN_RANGE" || condition.operator === "NOT_IN_RANGE") {
+        if (!Array.isArray(condition.value) || condition.value.length !== 2) {
+          return res.status(400).json({
+            error: `Condition at index ${i} with operator ${condition.operator} must have a value array with exactly 2 elements [min, max]`,
+          });
+        }
+        if (typeof condition.value[0] !== "number" || typeof condition.value[1] !== "number") {
+          return res.status(400).json({
+            error: `Condition at index ${i} with operator ${condition.operator} must have numeric values in the array`,
+          });
+        }
+        if (condition.value[0] >= condition.value[1]) {
+          return res.status(400).json({
+            error: `Condition at index ${i} with operator ${condition.operator} must have min value less than max value`,
+          });
+        }
       }
 
       // Validate common metric fields
@@ -1242,17 +1261,17 @@ export const validateRequest = {
     }
 
     // API Limitation: Scheduled rules have operator restrictions.
-    if (rule_type === "SCHEDULE") {
-      const scheduledOperators = ["EQUAL", "IN"];
-      for (const condition of conditions) {
-        if (!scheduledOperators.includes(condition.operator)) {
-          return res.status(400).json({
-            error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
-            details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
-          });
-        }
-      }
-    }
+    // if (rule_type === "SCHEDULE") {
+    //   const scheduledOperators = ["EQUAL", "IN"];
+    //   for (const condition of conditions) {
+    //     if (!scheduledOperators.includes(condition.operator)) {
+    //       return res.status(400).json({
+    //         error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
+    //         details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
+    //       });
+    //     }
+    //   }
+    // }
 
     // Validate schedule if provided
     if (schedule) {
@@ -1260,7 +1279,7 @@ export const validateRequest = {
         return res.status(400).json({ error: "schedule.frequency is required" });
       }
 
-      const validFrequencies = ["HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
+      const validFrequencies = ["CONTINUOUSLY", "HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
       if (!validFrequencies.includes(schedule.frequency)) {
         return res.status(400).json({
           error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,
@@ -1365,17 +1384,36 @@ export const validateRequest = {
       for (let i = 0; i < conditions.length; i++) {
         const condition = conditions[i];
 
-        if (!condition.field || !condition.operator || (condition.value === undefined || condition.value === null)) {
+        if (!condition.field || !condition.operator || condition.value === undefined || condition.value === null) {
           return res.status(400).json({
             error: `Condition at index ${i} is missing required fields (field, operator, value)`,
           });
         }
 
-        const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL"];
+        const validOperators = ["GREATER_THAN", "LESS_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL", "IN_RANGE", "NOT_IN_RANGE"];
         if (!validOperators.includes(condition.operator)) {
           return res.status(400).json({
             error: `Condition at index ${i} has invalid operator`,
           });
+        }
+
+        // Validate array values for range operators
+        if (condition.operator === "IN_RANGE" || condition.operator === "NOT_IN_RANGE") {
+          if (!Array.isArray(condition.value) || condition.value.length !== 2) {
+            return res.status(400).json({
+              error: `Condition at index ${i} with operator ${condition.operator} must have a value array with exactly 2 elements [min, max]`,
+            });
+          }
+          if (typeof condition.value[0] !== "number" || typeof condition.value[1] !== "number") {
+            return res.status(400).json({
+              error: `Condition at index ${i} with operator ${condition.operator} must have numeric values in the array`,
+            });
+          }
+          if (condition.value[0] >= condition.value[1]) {
+            return res.status(400).json({
+              error: `Condition at index ${i} with operator ${condition.operator} must have min value less than max value`,
+            });
+          }
         }
       }
     }
@@ -1403,17 +1441,17 @@ export const validateRequest = {
     }
 
     // API Limitation: Scheduled rules have operator restrictions.
-    if (rule_type === "SCHEDULE" && conditions) {
-        const scheduledOperators = ["EQUAL", "IN"];
-        for (const condition of conditions) {
-            if (condition.operator && !scheduledOperators.includes(condition.operator)) {
-                return res.status(400).json({
-                    error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
-                    details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
-                });
-            }
-        }
-    }
+    // if (rule_type === "SCHEDULE" && conditions) {
+    //     const scheduledOperators = ["EQUAL", "IN"];
+    //     for (const condition of conditions) {
+    //         if (condition.operator && !scheduledOperators.includes(condition.operator)) {
+    //             return res.status(400).json({
+    //                 error: `Invalid operator for scheduled rule. Operator must be EQUAL or IN.`,
+    //                 details: `You provided the operator '${condition.operator}' for the field '${condition.field}'.`
+    //             });
+    //         }
+    //     }
+    // }
 
     // Validate schedule if provided (same validation as create)
     if (schedule) {
@@ -1421,7 +1459,7 @@ export const validateRequest = {
         return res.status(400).json({ error: "schedule.frequency is required" });
       }
 
-      const validFrequencies = ["HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
+      const validFrequencies = ["CONTINUOUSLY", "HOURLY", "SEMI_HOURLY", "DAILY", "CUSTOM"];
       if (!validFrequencies.includes(schedule.frequency)) {
         return res.status(400).json({
           error: `Invalid schedule.frequency. Must be one of: ${validFrequencies.join(", ")}`,
