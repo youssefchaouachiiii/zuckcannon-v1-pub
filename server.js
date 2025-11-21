@@ -5018,7 +5018,8 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
   // Build schedule_spec if schedule provided
   let schedule_spec = null;
   if (schedule && schedule.frequency) {
-    if (schedule.frequency === "HOURLY") {
+    // Map frontend "CONTINUOUSLY" selection to Meta's HOURLY schedule (run every ~30-60 mins)
+    if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY") {
       schedule_spec = {
         schedule_type: "HOURLY",
       };
@@ -5041,6 +5042,11 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
             end_minute: schedule.end_minute,
           },
         ],
+      };
+    } else {
+      // Fallback: ensure schedule_spec exists for schedule rules
+      schedule_spec = {
+        schedule_type: "HOURLY",
       };
     }
   }
