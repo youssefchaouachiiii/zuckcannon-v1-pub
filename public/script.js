@@ -7880,9 +7880,8 @@ class AutomatedRulesManager {
       if (endTime) schedule.end_minute = timeToMinutes(endTime);
     }
 
-    return {
+    const formData = {
       name,
-      ad_account_id: this.currentAccountId,
       entity_type: entityType,
       rule_type: ruleType,
       time_preset: timeRange,
@@ -7891,6 +7890,13 @@ class AutomatedRulesManager {
       schedule,
       subscribers,
     };
+
+    // Only add ad_account_id for single account mode
+    if (!this.isMultiAccountMode) {
+      formData.ad_account_id = this.currentAccountId;
+    }
+
+    return formData;
   }
 
   async saveRule() {
