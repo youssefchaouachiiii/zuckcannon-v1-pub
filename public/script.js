@@ -8448,8 +8448,6 @@ class AutomatedRulesManager {
 
   async saveMultiAccountRule(ruleData) {
     try {
-      // Show progress modal
-      this.showBatchProgress();
       this.closeEditor();
 
       const payload = {
@@ -8470,13 +8468,7 @@ class AutomatedRulesManager {
 
       const result = await response.json();
 
-      // Update progress to 100%
-      this.updateBatchProgress(result.completed, result.total_accounts, result.results);
-
-      // Enable close button
-      this.batchProgressModal.querySelector(".close-progress").disabled = false;
-
-      // Show success message
+      // Show simple status (no progress modal)
       if (result.completed === result.total_accounts) {
         showSuccess(`Rule created successfully on all ${result.total_accounts} accounts`);
       } else {
@@ -8489,7 +8481,6 @@ class AutomatedRulesManager {
     } catch (error) {
       console.error("Error creating batch rules:", error);
       showError(error.message);
-      this.closeBatchProgress();
     }
   }
 
