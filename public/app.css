@@ -3110,6 +3110,18 @@ h2 {
   background-color: #f8d7da;
 }
 
+/* Range inputs (for IN_RANGE and NOT_IN_RANGE operators) */
+.condition-range-inputs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.condition-range-inputs input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Days selector */
 .days-selector {
   display: flex;
@@ -3140,6 +3152,11 @@ h2 {
 
 .day-checkbox input[type="checkbox"]:checked + * {
   font-weight: 600;
+}
+
+.condition-value-container {
+  display: flex;
+  gap: 4px;
 }
 
 /* JSON preview */

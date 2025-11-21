@@ -1066,7 +1066,7 @@
                   <select id="budget-change-type" class="form-select">
                     <option value="INCREASE">Increase daily budget by</option>
                     <option value="DECREASE">Decrease daily budget by</option>
-                    <option value="SET">Set daily budget to</option>
+                    <!-- <option value="SET">Set daily budget to</option> -->
                     <option value="INCREASE_LIFETIME">Increase lifetime budget by</option>
                     <option value="DECREASE_LIFETIME">Decrease lifetime budget by</option>
                   </select>
@@ -1145,8 +1145,7 @@
           <div class="form-section schedule-section">
             <h3>Schedule*</h3>
             <select id="rule-schedule-frequency" class="form-select" required>
-              <option value="HOURLY">Hourly</option>
-              <option value="SEMI_HOURLY">Semi-Hourly (Every 30 Minutes)</option>
+              <option value="CONTINUOUSLY">Continuously (Run every 30-60 minutes)</option>
               <option value="DAILY">Daily (Start 12 AM)</option>
               <option value="CUSTOM">Custom</option>
             </select>
