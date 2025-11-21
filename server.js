@@ -26,6 +26,7 @@ import { configurePassport, ensureAuthenticated, ensureAuthenticatedAPI, ensureN
 import { validateRequest, loginRateLimiter, apiRateLimiter } from "./backend/middleware/validation.js";
 import { getPaths } from "./backend/utils/paths.js";
 import MetaBatch from "./backend/utils/meta-batch.js";
+import { RulesDB } from "./backend/utils/rules-db.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -2651,20 +2652,10 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
 
-      const resp = await axios.post(
-        `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-        formData,
-        { headers: formData.getHeaders(), timeout: 30000 }
-      );
+      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
       const data = resp.data;
-      return (
-        data?.id ||
-        data?.async_batch_request_id ||
-        data?.handle ||
-        (Array.isArray(data) && data[0]?.id) ||
-        (typeof data === "string" ? data : null)
-      );
+      return data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || (typeof data === "string" ? data : null);
     };
 
     // STEP 3 First async batch: duplicate adsets
@@ -2687,11 +2678,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       formData.append("access_token", userAccessToken);
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
-      const resp = await axios.post(
-        `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`,
-        formData,
-        { headers: formData.getHeaders(), timeout: 30000 }
-      );
+      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
       const data = resp.data;
 
       // If Meta executed synchronously
@@ -2703,13 +2690,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         } catch (_) {}
       }
 
-      adsetBatchIds.push(
-        data?.id ||
-          data?.async_batch_request_id ||
-          data?.handle ||
-          (Array.isArray(data) && data[0]?.id) ||
-          null
-      );
+      adsetBatchIds.push(data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || null);
     }
 
     // console.log("✅ All adset async batches created:", adsetBatchIds);
@@ -2754,8 +2735,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         ads: totalAdsCount,
         totalChildObjects,
       },
-      message:
-        "Campaign duplicated with two-phase async batch (adsets first, ads second). Check Meta Ads Manager after 1–5 minutes.",
+      message: "Campaign duplicated with two-phase async batch (adsets first, ads second). Check Meta Ads Manager after 1–5 minutes.",
     });
   } catch (err) {
     console.error("❌ Error duplicating campaign:", err.response?.data || err.message);
@@ -4619,6 +4599,1300 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
   } catch (error) {
     console.error("Error in upload-library-creatives:", error);
     res.status(500).json({ error: "Failed to upload library creatives" });
+  }
+});
+
+// ========================================
+// Automated Rules API Endpoints
+// ========================================
+
+// Helper function to format account ID with act_ prefix
+function formatAccountId(accountId) {
+  if (!accountId) return accountId;
+  const cleanId = String(accountId).trim();
+  return cleanId.startsWith("act_") ? cleanId : `act_${cleanId}`;
+}
+
+// Field mapping configuration for Meta API
+// Monetary fields need conversion to cents (multiply by 100)
+const FIELD_CONFIG = {
+  // Monetary fields (convert dollars to cents)
+  // Based on Meta API documentation for Automated Rules
+  monetary: ["spent", "cpc", "cpm", "cpp", "cost_per_unique_click"],
+  // ROAS fields (keep as decimal ratio)
+  roas: ["website_purchase_roas", "mobile_app_purchase_roas"],
+  // Percentage fields (keep as-is, already in percentage format)
+  percentage: ["ctr", "result_rate"],
+  // Count fields (keep as-is)
+  count: ["impressions", "unique_impressions", "reach", "clicks", "unique_clicks", "frequency"],
+};
+
+// Helper function to process condition field and value for Meta API
+function processConditionForMeta(condition) {
+  const { field, operator, value } = condition;
+
+  // Determine if this is a monetary field that needs conversion to cents
+  const needsCentsConversion = FIELD_CONFIG.monetary.includes(field);
+
+  // Handle range operators with array values
+  if ((operator === "IN_RANGE" || operator === "NOT_IN_RANGE") && Array.isArray(value)) {
+    let processedValue = value;
+    if (needsCentsConversion) {
+      // Convert both min and max from dollars to cents
+      processedValue = [Math.round(value[0] * 100), Math.round(value[1] * 100)];
+    }
+    return {
+      field,
+      operator,
+      value: processedValue,
+    };
+  }
+
+  // Convert value if needed for single-value operators
+  let processedValue = value;
+  if (needsCentsConversion && typeof value === "number") {
+    // Convert dollars to cents (e.g., 100.00 -> 10000)
+    processedValue = Math.round(value * 100);
+  }
+
+  return {
+    field,
+    operator,
+    value: processedValue,
+  };
+}
+
+// Helper function to process condition value from Meta API for display
+function processConditionFromMeta(condition) {
+  const { field, operator, value } = condition;
+
+  // Determine if this is a monetary field that needs conversion from cents
+  const needsCentsConversion = FIELD_CONFIG.monetary.includes(field);
+
+  // Handle range operators with array values
+  if ((operator === "IN_RANGE" || operator === "NOT_IN_RANGE") && Array.isArray(value)) {
+    let processedValue = value;
+    if (needsCentsConversion) {
+      // Convert both min and max from cents to dollars
+      processedValue = [value[0] / 100, value[1] / 100];
+    }
+    return {
+      field,
+      operator,
+      value: processedValue,
+    };
+  }
+
+  // Convert value if needed for single-value operators
+  let processedValue = value;
+  if (needsCentsConversion && typeof value === "number") {
+    // Convert cents to dollars (e.g., 10000 -> 100.00)
+    processedValue = value / 100;
+  }
+
+  return {
+    field,
+    operator,
+    value: processedValue,
+  };
+}
+
+// Get all rules for a user/account
+app.get("/api/rules", ensureAuthenticatedAPI, async (req, res) => {
+  console.log("restarted");
+  try {
+    const userId = req.user.id;
+    const { account_id } = req.query;
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    if (!account_id) {
+      return res.status(400).json({ error: "account_id is required" });
+    }
+
+    // Format account ID with act_ prefix
+    const formattedAccountId = formatAccountId(account_id);
+
+    // Fetch rules from Meta API
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${formattedAccountId}/adrules_library`;
+
+    try {
+      const response = await axios.get(metaApiUrl, {
+        params: {
+          fields: "id,name,evaluation_spec,execution_spec,schedule_spec,status",
+          access_token: userAccessToken,
+        },
+      });
+
+      const metaRules = response.data.data || [];
+
+      // DEBUGGING: Log raw data from Meta API
+      console.log("================== RAW META API RULES DATA ==================");
+      console.log(JSON.stringify(metaRules, null, 2));
+      console.log("===========================================================");
+
+      // Sync with local database and return combined data
+      const localRules = RulesDB.getRules(userId, account_id);
+
+      // Merge Meta rules with local data and convert values from cents to dollars
+      const mergedRules = metaRules.map((metaRule) => {
+        const localRule = localRules.find((lr) => lr.meta_rule_id === metaRule.id);
+
+        // Extract entity_type from evaluation_spec filters
+        let entityType = "CAMPAIGN"; // default
+        if (metaRule.evaluation_spec && metaRule.evaluation_spec.filters) {
+          const entityFilter = metaRule.evaluation_spec.filters.find((f) => f.field === "entity_type");
+          if (entityFilter && entityFilter.value) {
+            entityType = entityFilter.value;
+          }
+        }
+
+        // Process evaluation_spec to convert monetary values from cents to dollars
+        let processedEvalSpec = metaRule.evaluation_spec;
+        if (processedEvalSpec && processedEvalSpec.filters) {
+          processedEvalSpec = {
+            ...processedEvalSpec,
+            filters: processedEvalSpec.filters.map((filter) => {
+              // Skip non-condition filters
+              if (["id", "entity_type", "time_preset", "effective_status"].includes(filter.field)) {
+                return filter;
+              }
+              return processConditionFromMeta(filter);
+            }),
+          };
+        }
+
+        // Process execution_spec to convert budget/bid values from cents to dollars
+        let processedExecSpec = metaRule.execution_spec;
+        if (processedExecSpec && processedExecSpec.execution_options) {
+          processedExecSpec = {
+            ...processedExecSpec,
+            execution_options: processedExecSpec.execution_options.map((option) => ({
+              ...option,
+              value:
+                option.field === "daily_budget" || option.field === "bid_amount"
+                  ? option.value / 100 // Convert cents to dollars
+                  : option.value,
+            })),
+          };
+        }
+
+        return {
+          id: localRule?.id || null,
+          meta_rule_id: metaRule.id,
+          name: metaRule.name,
+          entity_type: entityType,
+          rule_type: localRule?.rule_type || "SCHEDULE", // <-- ADDED THIS LINE
+          status: metaRule.status === "ENABLED" ? "ACTIVE" : metaRule.status === "DISABLED" ? "PAUSED" : metaRule.status,
+          evaluation_spec: processedEvalSpec,
+          execution_spec: processedExecSpec,
+          schedule_spec: metaRule.schedule_spec,
+          created_at: localRule?.created_at,
+          updated_at: localRule?.updated_at,
+        };
+      });
+
+      res.json({
+        success: true,
+        rules: mergedRules,
+        count: mergedRules.length,
+      });
+    } catch (metaError) {
+      console.error("Meta API error fetching rules:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to fetch rules from Meta API",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching rules:", error);
+    res.status(500).json({ error: "Failed to fetch rules" });
+  }
+});
+
+// Get a single rule by ID
+app.get("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ruleId = parseInt(req.params.id);
+
+    const rule = RulesDB.getRuleById(ruleId, userId);
+
+    if (!rule) {
+      return res.status(404).json({ error: "Rule not found" });
+    }
+
+    res.json({
+      success: true,
+      rule,
+    });
+  } catch (error) {
+    console.error("Error fetching rule:", error);
+    res.status(500).json({ error: "Failed to fetch rule" });
+  }
+});
+
+// Helper function: Create rule for a single account (reusable for batch operations)
+async function createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig) {
+  const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, time_preset, subscribers } = ruleConfig;
+
+  // Format account ID with act_ prefix
+  const formattedAccountId = formatAccountId(ad_account_id);
+
+  // Build evaluation_spec for Meta API
+  const evaluation_spec = {
+    evaluation_type: rule_type || "SCHEDULE",
+    filters: [],
+  };
+
+  // Add entity filter
+  if (entity_ids && entity_ids.length > 0) {
+    evaluation_spec.filters.push({
+      field: "id",
+      operator: "IN",
+      value: entity_ids,
+    });
+  } else {
+    // Apply to all active entities of type
+    evaluation_spec.filters.push({
+      field: "entity_type",
+      operator: "EQUAL",
+      value: entity_type,
+    });
+
+    // Add effective_status filter for "All active..." entities
+    evaluation_spec.filters.push({
+      field: "effective_status",
+      operator: "IN",
+      value: ["ACTIVE"],
+    });
+  }
+
+  // Add time preset filter (from user selection or default)
+  evaluation_spec.filters.push({
+    field: "time_preset",
+    operator: "EQUAL",
+    value: time_preset || "LAST_7_DAYS",
+  });
+
+  // Add condition filters with proper field and value processing
+  for (const condition of conditions) {
+    const processed = processConditionForMeta(condition);
+    evaluation_spec.filters.push(processed);
+  }
+
+  // Add budget_reset_period filter for CHANGE_BUDGET actions
+  if (action.type === "CHANGE_BUDGET" && action.budget_type) {
+    const fieldPrefix = entity_type.toLowerCase();
+    const budgetPeriodValue = action.budget_type === "daily_budget" ? "DAY" : "LIFETIME";
+
+    evaluation_spec.filters.push({
+      field: `${fieldPrefix}.budget_reset_period`,
+      operator: "IN",
+      value: [budgetPeriodValue],
+    });
+  }
+
+  // Build execution_spec for Meta API
+  const execution_spec = {};
+  const exec_type = action.type;
+  const isScheduleRule = (rule_type || "SCHEDULE") === "SCHEDULE";
+
+  if (exec_type === "CHANGE_BUDGET") {
+    if (entity_type === "CAMPAIGN") {
+      execution_spec.execution_type = "CHANGE_CAMPAIGN_BUDGET";
+
+      let amount = parseFloat(action.amount);
+      if (action.budget_change_type === "DECREASE") {
+        amount = -Math.abs(amount);
+      } else {
+        amount = Math.abs(amount);
+      }
+
+      const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100);
+      }
+
+      const changeSpecData = {
+        amount: amount,
+        unit: unit,
+      };
+
+      if (isScheduleRule) {
+        execution_spec.execution_options = [
+          {
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData,
+          },
+        ];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
+    } else if (entity_type === "ADSET") {
+      execution_spec.execution_type = "CHANGE_BUDGET";
+
+      let amount = parseFloat(action.amount);
+      if (action.budget_change_type === "DECREASE") {
+        amount = -Math.abs(amount);
+      } else {
+        amount = Math.abs(amount);
+      }
+
+      const unit = action.unit === "PERCENTAGE" || action.unit === "PERCENT" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+      if (unit === "ACCOUNT_CURRENCY") {
+        amount = Math.round(amount * 100);
+      }
+
+      const changeSpecData = {
+        amount: amount,
+        unit: unit,
+      };
+
+      if (isScheduleRule) {
+        execution_spec.execution_options = [
+          {
+            field: "change_spec",
+            operator: "EQUAL",
+            value: changeSpecData,
+          },
+        ];
+      } else {
+        execution_spec.change_spec = changeSpecData;
+      }
+    }
+  } else if (exec_type === "CHANGE_BID") {
+    execution_spec.execution_type = "CHANGE_BID";
+
+    let amount = parseFloat(action.amount);
+    if (action.bid_change_type === "DECREASE") {
+      amount = -Math.abs(amount);
+    } else if (action.bid_change_type === "INCREASE") {
+      amount = Math.abs(amount);
+    }
+
+    const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+    if (unit === "ACCOUNT_CURRENCY") {
+      amount = Math.round(amount * 100);
+    }
+
+    const changeSpecData = {
+      amount: amount,
+      unit: unit,
+    };
+
+    if (isScheduleRule) {
+      execution_spec.execution_options = [
+        {
+          field: "change_spec",
+          operator: "EQUAL",
+          value: changeSpecData,
+        },
+      ];
+    } else {
+      execution_spec.change_spec = changeSpecData;
+    }
+  } else {
+    execution_spec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type === "SEND_NOTIFICATION" ? "NOTIFICATION" : exec_type;
+  }
+
+  if (!execution_spec.execution_options) {
+    execution_spec.execution_options = [];
+  }
+
+  if (action.type === "SEND_NOTIFICATION" && subscribers && subscribers.length > 0) {
+    execution_spec.execution_options.push({
+      field: "user_ids",
+      operator: "EQUAL",
+      value: subscribers,
+    });
+  }
+
+  // Build schedule_spec if schedule provided
+  let schedule_spec = null;
+  if (schedule && schedule.frequency && isScheduleRule) {
+    // Map CONTINUOUSLY, HOURLY (legacy), and SEMI_HOURLY to SEMI_HOURLY for Meta API
+    // This shows as "Checked at least once every 30 minutes" in Facebook Business Manager
+    if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY" || schedule.frequency === "SEMI_HOURLY") {
+      schedule_spec = {
+        schedule_type: "SEMI_HOURLY",
+      };
+    } else if (schedule.frequency === "DAILY") {
+      schedule_spec = {
+        schedule_type: "DAILY",
+        schedule_time: "12:00",
+      };
+    } else if (schedule.frequency === "CUSTOM") {
+      schedule_spec = {
+        schedule_type: "CUSTOM",
+        schedule: [
+          {
+            days: schedule.days,
+            start_minute: schedule.start_minute,
+            end_minute: schedule.end_minute,
+          },
+        ],
+      };
+    } else {
+      // Fallback: ensure schedule_spec exists for schedule rules
+      schedule_spec = {
+        schedule_type: "SEMI_HOURLY",
+      };
+    }
+  }
+
+  // Create rule on Meta API
+  const metaPayload = {
+    name,
+    evaluation_spec,
+    execution_spec,
+  };
+
+  if (schedule_spec) {
+    metaPayload.schedule_spec = schedule_spec;
+  }
+
+  const metaResponse = await axios.post(`https://graph.facebook.com/v21.0/${formattedAccountId}/adrules_library`, metaPayload, {
+    params: { access_token: userAccessToken },
+  });
+
+  const metaRuleId = metaResponse.data.id;
+
+  // Save rule to local database
+  const ruleData = {
+    user_id: userId,
+    ad_account_id,
+    meta_rule_id: metaRuleId,
+    name,
+    entity_type,
+    entity_ids,
+    rule_type: rule_type || "SCHEDULE",
+    evaluation_spec,
+    execution_spec,
+    schedule_spec,
+    status: "ACTIVE",
+  };
+
+  const createdRule = RulesDB.createRule(ruleData);
+
+  return {
+    success: true,
+    rule: createdRule,
+    meta_rule_id: metaRuleId,
+  };
+}
+
+// Create a new rule
+app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    const { ad_account_id, ...ruleConfig } = req.body;
+
+    // Use helper function to create rule
+    const result = await createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig);
+
+    res.json({
+      success: true,
+      message: "Rule created successfully",
+      rule: result.rule,
+      meta_rule_id: result.meta_rule_id,
+    });
+  } catch (error) {
+    console.error("Error creating rule:", error);
+    res.status(500).json({ error: "Failed to create rule", details: error.message });
+  }
+});
+
+// Helper function: Create rules on multiple accounts with concurrency control
+async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, ruleConfig, ad_account_ids, concurrency = 2) {
+  const results = [];
+
+  // Process accounts in batches to control concurrency
+  for (let i = 0; i < ad_account_ids.length; i += concurrency) {
+    const batch = ad_account_ids.slice(i, i + concurrency);
+
+    const batchResults = await Promise.all(
+      batch.map(async (accountId) => {
+        try {
+          const result = await createSingleAccountRule(userId, userAccessToken, accountId, ruleConfig);
+          return {
+            ad_account_id: accountId,
+            success: true,
+            local_rule_id: result.rule.id,
+            meta_rule_id: result.meta_rule_id,
+            error: null,
+          };
+        } catch (error) {
+          console.error(`Error creating rule on account ${accountId}:`, error.message);
+          return {
+            ad_account_id: accountId,
+            success: false,
+            local_rule_id: null,
+            meta_rule_id: null,
+            error: error.response?.data?.error?.message || error.message,
+          };
+        }
+      })
+    );
+
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+// Create rules on multiple accounts (batch creation)
+app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatchRule, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    const { ad_account_ids, ...ruleConfig } = req.body;
+
+    if (!ad_account_ids || !Array.isArray(ad_account_ids) || ad_account_ids.length === 0) {
+      return res.status(400).json({
+        error: "ad_account_ids array is required and must contain at least one account",
+      });
+    }
+
+    // Limit max accounts per batch (prevent abuse)
+    if (ad_account_ids.length > 20) {
+      return res.status(400).json({
+        error: "Maximum 20 accounts allowed per batch request",
+      });
+    }
+
+    console.log(`Creating rule "${ruleConfig.name}" on ${ad_account_ids.length} accounts...`);
+
+    // Create rules with concurrency control (2 accounts at a time)
+    const results = await createMultiAccountRulesWithConcurrency(
+      userId,
+      userAccessToken,
+      ruleConfig,
+      ad_account_ids,
+      2 // Concurrency limit to avoid rate limiting
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const failureCount = results.filter((r) => !r.success).length;
+
+    console.log(`Batch creation completed: ${successCount} succeeded, ${failureCount} failed`);
+
+    res.json({
+      success: successCount > 0,
+      message: `Rule created on ${successCount} out of ${ad_account_ids.length} accounts`,
+      total_accounts: ad_account_ids.length,
+      completed: successCount,
+      failed: failureCount,
+      results,
+    });
+  } catch (error) {
+    console.error("Error creating batch rules:", error);
+    res.status(500).json({
+      error: "Failed to create batch rules",
+      details: error.message,
+    });
+  }
+});
+
+// Update a rule
+app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ruleId = parseInt(req.params.id);
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Get existing rule
+    const existingRule = RulesDB.getRuleById(ruleId, userId);
+    if (!existingRule) {
+      return res.status(404).json({ error: "Rule not found" });
+    }
+
+    const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, status } = req.body;
+
+    // Build updated specs
+    let updatedEvalSpec = existingRule.evaluation_spec;
+    let updatedExecSpec = existingRule.execution_spec;
+    let updatedScheduleSpec = existingRule.schedule_spec;
+
+    // Update evaluation_spec if conditions changed
+    if (conditions) {
+      updatedEvalSpec = {
+        evaluation_type: rule_type || existingRule.rule_type,
+        filters: [], // Both metadata and insights filters
+      };
+
+      if (entity_ids && entity_ids.length > 0) {
+        updatedEvalSpec.filters.push({
+          field: "id",
+          operator: "IN",
+          value: entity_ids,
+        });
+      } else {
+        updatedEvalSpec.filters.push({
+          field: "entity_type",
+          operator: "EQUAL",
+          value: entity_type || existingRule.entity_type,
+        });
+      }
+
+      updatedEvalSpec.filters.push({
+        field: "time_preset",
+        operator: "EQUAL",
+        value: "LAST_7_DAYS",
+      });
+
+      for (const condition of conditions) {
+        const processed = processConditionForMeta(condition);
+        updatedEvalSpec.filters.push(processed);
+      }
+
+      // Add budget_reset_period filter for CHANGE_BUDGET actions
+      // This ensures the rule only applies to entities with matching budget type (daily vs lifetime)
+      // Reference: Meta API Automated Rules - budget_reset_period metadata filter
+      if (action && action.type === "CHANGE_BUDGET" && action.budget_type) {
+        const current_entity_type = entity_type || existingRule.entity_type;
+        const fieldPrefix = current_entity_type.toLowerCase(); // 'campaign' or 'adset'
+        const budgetPeriodValue = action.budget_type === "daily_budget" ? "DAY" : "LIFETIME";
+
+        updatedEvalSpec.filters.push({
+          field: `${fieldPrefix}.budget_reset_period`,
+          operator: "IN",
+          value: [budgetPeriodValue],
+        });
+      }
+    }
+
+    // Update execution_spec if action changed
+    if (action) {
+      updatedExecSpec = {}; // Initialize as empty object
+      const exec_type = action.type;
+      const current_entity_type = entity_type || existingRule.entity_type;
+      const current_rule_type = rule_type || existingRule.rule_type;
+      const isScheduleRule = current_rule_type === "SCHEDULE";
+
+      if (exec_type === "CHANGE_BUDGET") {
+        if (current_entity_type === "CAMPAIGN") {
+          // Campaigns use a different spec and execution type
+          updatedExecSpec.execution_type = "CHANGE_CAMPAIGN_BUDGET";
+
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === "DECREASE") {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+
+          const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100);
+          }
+
+          const changeSpecData = {
+            amount: amount,
+            unit: unit,
+          };
+
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [
+              {
+                field: "change_spec",
+                operator: "EQUAL",
+                value: changeSpecData,
+              },
+            ];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
+          }
+        } else if (current_entity_type === "ADSET") {
+          // Adsets juga menggunakan change_spec
+          updatedExecSpec.execution_type = "CHANGE_BUDGET";
+
+          // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+          let amount = parseFloat(action.amount);
+          if (action.budget_change_type === "DECREASE") {
+            amount = -Math.abs(amount);
+          } else {
+            amount = Math.abs(amount);
+          }
+
+          const unit = action.unit === "PERCENTAGE" || action.unit === "PERCENT" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+          if (unit === "ACCOUNT_CURRENCY") {
+            amount = Math.round(amount * 100); // Convert to cents
+          }
+
+          const changeSpecData = {
+            amount: amount,
+            unit: unit,
+          };
+
+          // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+          if (isScheduleRule) {
+            updatedExecSpec.execution_options = [
+              {
+                field: "change_spec",
+                operator: "EQUAL",
+                value: changeSpecData,
+              },
+            ];
+          } else {
+            updatedExecSpec.change_spec = changeSpecData;
+          }
+        }
+      } else if (exec_type === "CHANGE_BID") {
+        // Handle CHANGE_BID action
+        updatedExecSpec.execution_type = "CHANGE_BID";
+
+        // Hitung amount dengan tanda (positif untuk INCREASE, negatif untuk DECREASE)
+        let amount = parseFloat(action.amount);
+        if (action.bid_change_type === "DECREASE") {
+          amount = -Math.abs(amount);
+        } else if (action.bid_change_type === "INCREASE") {
+          amount = Math.abs(amount);
+        }
+        // Untuk SET, gunakan amount as-is
+
+        const unit = action.unit === "PERCENTAGE" ? "PERCENTAGE" : "ACCOUNT_CURRENCY";
+        if (unit === "ACCOUNT_CURRENCY") {
+          amount = Math.round(amount * 100); // Convert to cents
+        }
+
+        // Build change_spec untuk CHANGE_BID
+        const changeSpecData = {
+          amount: amount,
+          unit: unit,
+        };
+
+        // SCHEDULE rules use execution_options, TRIGGER rules use direct change_spec
+        if (isScheduleRule) {
+          updatedExecSpec.execution_options = [
+            {
+              field: "change_spec",
+              operator: "EQUAL",
+              value: changeSpecData,
+            },
+          ];
+        } else {
+          updatedExecSpec.change_spec = changeSpecData;
+        }
+      } else {
+        // Handle other action types
+        updatedExecSpec.execution_type = exec_type === "PAUSE" ? "PAUSE" : exec_type === "UNPAUSE" ? "UNPAUSE" : exec_type;
+      }
+    }
+
+    // Update schedule_spec if schedule changed
+    if (schedule) {
+      if (schedule.frequency === "CONTINUOUSLY" || schedule.frequency === "HOURLY" || schedule.frequency === "SEMI_HOURLY") {
+        // Map CONTINUOUSLY, HOURLY (legacy), and SEMI_HOURLY to SEMI_HOURLY for Meta API
+        updatedScheduleSpec = {
+          schedule_type: "SEMI_HOURLY",
+        };
+      } else if (schedule.frequency === "DAILY") {
+        updatedScheduleSpec = {
+          schedule_type: "DAILY",
+          schedule_time: "12:00",
+        };
+      } else if (schedule.frequency === "CUSTOM") {
+        updatedScheduleSpec = {
+          schedule_type: "CUSTOM",
+          schedule: [
+            {
+              days: schedule.days,
+              start_minute: schedule.start_minute,
+              end_minute: schedule.end_minute,
+            },
+          ],
+        };
+      }
+    }
+
+    // Update rule via Meta API
+    if (existingRule.meta_rule_id) {
+      const metaApiUrl = `https://graph.facebook.com/${api_version}/${existingRule.meta_rule_id}`;
+      const metaPayload = {
+        access_token: userAccessToken,
+      };
+
+      if (name) metaPayload.name = name;
+      if (conditions) metaPayload.evaluation_spec = JSON.stringify(updatedEvalSpec);
+      if (action) metaPayload.execution_spec = JSON.stringify(updatedExecSpec);
+      if (schedule) metaPayload.schedule_spec = JSON.stringify(updatedScheduleSpec);
+
+      try {
+        await axios.post(metaApiUrl, metaPayload);
+      } catch (metaError) {
+        console.error("Meta API error updating rule:", metaError.response?.data || metaError.message);
+        return res.status(400).json({
+          error: "Failed to update rule in Meta API",
+          details: metaError.response?.data?.error?.message || metaError.message,
+        });
+      }
+    }
+
+    // Update local database
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (entity_type) updateData.entity_type = entity_type;
+    if (entity_ids) updateData.entity_ids = entity_ids;
+    if (rule_type) updateData.rule_type = rule_type;
+    if (conditions) updateData.evaluation_spec = updatedEvalSpec;
+    if (action) updateData.execution_spec = updatedExecSpec;
+    if (schedule) updateData.schedule_spec = updatedScheduleSpec;
+    if (status) updateData.status = status;
+
+    const updatedRule = RulesDB.updateRule(ruleId, userId, updateData);
+
+    res.json({
+      success: true,
+      message: "Rule updated successfully",
+      rule: updatedRule,
+    });
+  } catch (error) {
+    console.error("Error updating rule:", error);
+    res.status(500).json({ error: "Failed to update rule", details: error.message });
+  }
+});
+
+// Toggle rule status (Enable/Disable)
+app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
+    const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
+    const userAccessToken = req.user?.facebook_access_token;
+
+    console.log("Toggle status request:", { metaRuleId, status, local_rule_id, userId });
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Try to get local rule if local_rule_id is provided and not null
+    let rule = null;
+    if (local_rule_id && local_rule_id !== "null") {
+      rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
+      console.log("Local rule found:", rule ? "yes" : "no");
+    }
+
+    // Update in Meta API with ENABLED/DISABLED format
+    // Use metaRuleId from URL params (works for both local and non-local rules)
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
+
+    try {
+      // STEP 1: Fetch the current Rule Specs from Meta
+      // Meta requires ALL fields to be provided when updating, not just status
+      const currentRuleResponse = await axios.get(metaApiUrl, {
+        params: {
+          access_token: userAccessToken,
+          fields: "name,evaluation_spec,execution_spec,schedule_spec",
+        },
+      });
+
+      const currentData = currentRuleResponse.data;
+
+      // STEP 2: Prepare the Update Payload
+      // Send back existing specs + NEW status
+      // Meta API expects specs to be JSON strings in POST body
+      const updatePayload = {
+        access_token: userAccessToken,
+        status: status, // 'ENABLED' or 'DISABLED'
+        name: currentData.name,
+        evaluation_spec: JSON.stringify(currentData.evaluation_spec),
+        execution_spec: JSON.stringify(currentData.execution_spec),
+      };
+
+      // Only include schedule_spec if it exists (null for trigger-based rules)
+      if (currentData.schedule_spec) {
+        updatePayload.schedule_spec = JSON.stringify(currentData.schedule_spec);
+      }
+
+      // STEP 3: Send the Update (data in body, not params)
+      await axios.post(metaApiUrl, updatePayload);
+      console.log("Meta API update successful");
+    } catch (metaError) {
+      console.error("Meta API error updating rule status:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to update rule status in Meta API",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+
+    // Update local DB if rule exists locally
+    if (rule) {
+      console.log("Updating local DB for rule:", local_rule_id);
+      const frontendStatus = status === "ENABLED" ? "ACTIVE" : status === "DISABLED" ? "PAUSED" : status;
+      RulesDB.updateRule(parseInt(local_rule_id), userId, { status: frontendStatus });
+      console.log("Local DB updated");
+    }
+
+    // Convert to frontend format for response
+    const frontendStatus = status === "ENABLED" ? "ACTIVE" : status === "DISABLED" ? "PAUSED" : status;
+    console.log("Sending response:", { success: true, status: frontendStatus });
+    res.json({ success: true, status: frontendStatus });
+  } catch (error) {
+    console.error("Error updating rule status:", error);
+    res.status(500).json({ error: "Failed to update rule status", details: error.message });
+  }
+});
+
+// Delete a rule
+app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
+    const { local_rule_id } = req.body; // Optional local_rule_id
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Delete from Meta API using metaRuleId
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
+
+    try {
+      await axios.delete(metaApiUrl, {
+        params: {
+          access_token: userAccessToken,
+        },
+      });
+    } catch (metaError) {
+      console.error("Meta API error deleting rule:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to delete rule from Meta API",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+
+    // Delete from local database if local_rule_id exists
+    if (local_rule_id && local_rule_id !== "null") {
+      RulesDB.deleteRule(parseInt(local_rule_id), userId);
+    }
+
+    res.json({
+      success: true,
+      message: "Rule deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting rule:", error);
+    res.status(500).json({ error: "Failed to delete rule", details: error.message });
+  }
+});
+
+// Preview a rule (see which entities would be affected)
+app.post("/api/rules/:id/preview", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ruleId = parseInt(req.params.id);
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Get existing rule
+    const rule = RulesDB.getRuleById(ruleId, userId);
+    if (!rule) {
+      return res.status(404).json({ error: "Rule not found" });
+    }
+
+    // Call Meta API preview endpoint
+    if (!rule.meta_rule_id) {
+      return res.status(400).json({ error: "Rule does not have a Meta rule ID" });
+    }
+
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${rule.meta_rule_id}/preview`;
+
+    try {
+      const previewResponse = await axios.post(metaApiUrl, {
+        access_token: userAccessToken,
+      });
+
+      res.json({
+        success: true,
+        affected_entities: previewResponse.data.data || [],
+        count: previewResponse.data.data?.length || 0,
+      });
+    } catch (metaError) {
+      console.error("Meta API error previewing rule:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to preview rule",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error previewing rule:", error);
+    res.status(500).json({ error: "Failed to preview rule", details: error.message });
+  }
+});
+
+// Manually execute a rule
+app.post("/api/rules/:id/execute", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ruleId = parseInt(req.params.id);
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Get existing rule
+    const rule = RulesDB.getRuleById(ruleId, userId);
+    if (!rule) {
+      return res.status(404).json({ error: "Rule not found" });
+    }
+
+    // Call Meta API execute endpoint
+    if (!rule.meta_rule_id) {
+      return res.status(400).json({ error: "Rule does not have a Meta rule ID" });
+    }
+
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${rule.meta_rule_id}/execute`;
+
+    try {
+      const executeResponse = await axios.post(metaApiUrl, {
+        access_token: userAccessToken,
+      });
+
+      // Record execution in database
+      RulesDB.recordExecution({
+        rule_id: ruleId,
+        execution_time: new Date().toISOString(),
+        entities_affected: 0, // Will be updated once we fetch history
+        actions_taken: 0,
+        status: "SUCCESS",
+        result_data: executeResponse.data,
+      });
+
+      res.json({
+        success: true,
+        message: "Rule executed successfully. Check history for results.",
+        execution_id: executeResponse.data.id,
+      });
+    } catch (metaError) {
+      console.error("Meta API error executing rule:", metaError.response?.data || metaError.message);
+
+      // Record failed execution
+      RulesDB.recordExecution({
+        rule_id: ruleId,
+        execution_time: new Date().toISOString(),
+        entities_affected: 0,
+        actions_taken: 0,
+        status: "FAILED",
+        error_message: metaError.response?.data?.error?.message || metaError.message,
+      });
+
+      return res.status(400).json({
+        error: "Failed to execute rule",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error executing rule:", error);
+    res.status(500).json({ error: "Failed to execute rule", details: error.message });
+  }
+});
+
+// Get rule execution history
+app.get("/api/rules/:id/history", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const ruleId = parseInt(req.params.id);
+    const userAccessToken = req.user?.facebook_access_token;
+    const limit = parseInt(req.query.limit) || 50;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Get rule to verify ownership
+    const rule = RulesDB.getRuleById(ruleId, userId);
+    if (!rule) {
+      return res.status(404).json({ error: "Rule not found" });
+    }
+
+    // Get local execution history
+    const localHistory = RulesDB.getExecutionHistory(ruleId, userId, limit);
+
+    // Get Meta API history if rule has Meta ID
+    let metaHistory = [];
+    if (rule.meta_rule_id) {
+      try {
+        const metaApiUrl = `https://graph.facebook.com/${api_version}/${rule.meta_rule_id}/history`;
+        const metaResponse = await axios.get(metaApiUrl, {
+          params: {
+            access_token: userAccessToken,
+            limit: limit,
+          },
+        });
+        metaHistory = metaResponse.data.data || [];
+      } catch (metaError) {
+        console.error("Meta API error fetching history:", metaError.response?.data || metaError.message);
+        // Continue with local history only
+      }
+    }
+
+    res.json({
+      success: true,
+      local_history: localHistory,
+      meta_history: metaHistory,
+      count: localHistory.length,
+    });
+  } catch (error) {
+    console.error("Error fetching rule history:", error);
+    res.status(500).json({ error: "Failed to fetch rule history", details: error.message });
+  }
+});
+
+// Get account-level rule execution history
+app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const accountId = req.params.account_id;
+    const userAccessToken = req.user?.facebook_access_token;
+    const limit = parseInt(req.query.limit) || 100;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Get Meta API account-level history
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${accountId}/adrules_history`;
+
+    try {
+      const metaResponse = await axios.get(metaApiUrl, {
+        params: {
+          access_token: userAccessToken,
+          limit: limit,
+        },
+      });
+
+      res.json({
+        success: true,
+        history: metaResponse.data.data || [],
+        count: metaResponse.data.data?.length || 0,
+      });
+    } catch (metaError) {
+      console.error("Meta API error fetching account history:", metaError.response?.data || metaError.message);
+      return res.status(400).json({
+        error: "Failed to fetch account history",
+        details: metaError.response?.data?.error?.message || metaError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching account history:", error);
+    res.status(500).json({ error: "Failed to fetch account history", details: error.message });
+  }
+});
+
+// Get ad account users for subscriber dropdown
+// Skip subscriber pick for now, cause it's not essential for schedule rules
+app.get("/api/account/:account_id/users", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const accountId = req.params.account_id;
+    const userAccessToken = req.user?.facebook_access_token;
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    // Format account ID with act_ prefix
+    const formattedAccountId = formatAccountId(accountId);
+
+    // Fetch users from Meta API using assigned_users edge
+    const metaApiUrl = `https://graph.facebook.com/${api_version}/${formattedAccountId}/assigned_users`;
+
+    try {
+      const response = await axios.get(metaApiUrl, {
+        params: {
+          fields: "id,name,email,role",
+          access_token: userAccessToken,
+        },
+      });
+
+      const assignedUsers = response.data.data || [];
+
+      // Map assigned users - they have a 'user' field with the actual user data
+      const users = assignedUsers.map((assignedUser) => ({
+        id: assignedUser.id || assignedUser.user?.id,
+        name: assignedUser.name || assignedUser.user?.name || "Unknown User",
+        email: assignedUser.email || assignedUser.user?.email,
+        role: assignedUser.role,
+      }));
+
+      res.json({
+        success: true,
+        users: users,
+      });
+    } catch (metaError) {
+      console.error("Meta API error fetching account users:", metaError.response?.data || metaError.message);
+      // DEBUGGING: Log actual Meta API error for users endpoint
+      console.error("================== RAW META API USERS ERROR DATA ==================");
+      console.error(JSON.stringify(metaError.response?.data || { message: metaError.message }, null, 2));
+      console.error("===================================================================");
+
+      // Return empty array instead of error to allow rule creation without subscribers
+      res.json({
+        success: true,
+        users: [],
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching account users:", error);
+    res.json({ success: true, users: [] }); // Return empty array on error
   }
 });
 

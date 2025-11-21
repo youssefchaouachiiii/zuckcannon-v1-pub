@@ -14,38 +14,38 @@ let campaignSelectGroup = null; // Store the SingleSelectGroup instance for camp
 function getOptimizationGoalFromObjective(objective) {
   const objectiveMapping = {
     // Awareness objectives
-    'OUTCOME_AWARENESS': 'REACH',
-    'BRAND_AWARENESS': 'REACH',
-    'REACH': 'REACH',
+    OUTCOME_AWARENESS: "REACH",
+    BRAND_AWARENESS: "REACH",
+    REACH: "REACH",
 
     // Traffic objectives
-    'OUTCOME_TRAFFIC': 'LINK_CLICKS',
-    'LINK_CLICKS': 'LINK_CLICKS',
+    OUTCOME_TRAFFIC: "LINK_CLICKS",
+    LINK_CLICKS: "LINK_CLICKS",
 
     // Engagement objectives
-    'OUTCOME_ENGAGEMENT': 'POST_ENGAGEMENT',
-    'POST_ENGAGEMENT': 'POST_ENGAGEMENT',
-    'VIDEO_VIEWS': 'VIDEO_VIEWS',
+    OUTCOME_ENGAGEMENT: "POST_ENGAGEMENT",
+    POST_ENGAGEMENT: "POST_ENGAGEMENT",
+    VIDEO_VIEWS: "VIDEO_VIEWS",
 
     // Leads objectives
-    'OUTCOME_LEADS': 'LEAD_GENERATION',
-    'LEAD_GENERATION': 'LEAD_GENERATION',
+    OUTCOME_LEADS: "LEAD_GENERATION",
+    LEAD_GENERATION: "LEAD_GENERATION",
 
     // Sales/Conversion objectives
-    'OUTCOME_SALES': 'OFFSITE_CONVERSIONS',
-    'CONVERSIONS': 'OFFSITE_CONVERSIONS',
+    OUTCOME_SALES: "OFFSITE_CONVERSIONS",
+    CONVERSIONS: "OFFSITE_CONVERSIONS",
 
     // App promotion objectives
-    'OUTCOME_APP_PROMOTION': 'APP_INSTALLS',
-    'APP_INSTALLS': 'APP_INSTALLS',
-    'MOBILE_APP_ENGAGEMENT': 'APP_INSTALLS',
+    OUTCOME_APP_PROMOTION: "APP_INSTALLS",
+    APP_INSTALLS: "APP_INSTALLS",
+    MOBILE_APP_ENGAGEMENT: "APP_INSTALLS",
 
     // Store traffic
-    'STORE_VISITS': 'VISIT_INSTAGRAM_PROFILE'
+    STORE_VISITS: "VISIT_INSTAGRAM_PROFILE",
   };
 
   // Return mapped optimization goal or default to LINK_CLICKS as a safe fallback
-  return objectiveMapping[objective] || 'LINK_CLICKS';
+  return objectiveMapping[objective] || "LINK_CLICKS";
 }
 
 /**
@@ -54,29 +54,29 @@ function getOptimizationGoalFromObjective(objective) {
  */
 function updateConversionFieldsVisibility(optimizationGoal) {
   const pixelDropdownContainer = document.querySelector('.dropdown-container .custom-dropdown .dropdown-selected[data-dropdown="pixel"]');
-  const eventTypeContainer = document.querySelector('.event-type-container');
-  const pixelDisplay = pixelDropdownContainer ? pixelDropdownContainer.querySelector('.dropdown-display') : null;
-  const eventTypeInput = document.querySelector('.config-event-type');
+  const eventTypeContainer = document.querySelector(".event-type-container");
+  const pixelDisplay = pixelDropdownContainer ? pixelDropdownContainer.querySelector(".dropdown-display") : null;
+  const eventTypeInput = document.querySelector(".config-event-type");
 
-  const requiresPixelAndEvent = optimizationGoal === 'OFFSITE_CONVERSIONS';
+  const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
 
   // Update placeholder text to indicate if required
   if (pixelDisplay) {
-    pixelDisplay.textContent = requiresPixelAndEvent ? 'Pixel*' : 'Pixel';
+    pixelDisplay.textContent = requiresPixelAndEvent ? "Pixel*" : "Pixel";
   }
 
   if (eventTypeInput) {
-    eventTypeInput.placeholder = requiresPixelAndEvent ? 'Custom Event Type*' : 'Custom Event Type';
+    eventTypeInput.placeholder = requiresPixelAndEvent ? "Custom Event Type*" : "Custom Event Type";
   }
 
   // Show/hide conversion fields based on requirement
   // For now, always show them but mark as optional unless required
   if (pixelDropdownContainer) {
-    pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? '1' : '1';
+    pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? "1" : "1";
   }
 
   if (eventTypeContainer) {
-    eventTypeContainer.style.opacity = requiresPixelAndEvent ? '1' : '1';
+    eventTypeContainer.style.opacity = requiresPixelAndEvent ? "1" : "1";
   }
 
   // console.log(`Conversion fields ${requiresPixelAndEvent ? 'required' : 'optional'} for optimization goal: ${optimizationGoal}`);
@@ -331,9 +331,9 @@ function populateCampaigns(campaigns) {
 
     if (campaign.insights) {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ''}" data-lifetime-budget="${campaign.lifetime_budget || ''}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${campaign.id}" data-objective="${campaign.objective || ''}" data-special-ad-categories='${JSON.stringify(
-        campaign.special_ad_categories
-      )}'>
+          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${
+        campaign.id
+      }" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
           <h3>${campaign.name}</h3>
           <ul>
             <li>${campaign.status}</li>
@@ -343,9 +343,9 @@ function populateCampaigns(campaigns) {
         </div>`;
     } else {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ''}" data-lifetime-budget="${campaign.lifetime_budget || ''}" data-bid-strategy="${campaign.bid_strategy}" data-objective="${campaign.objective || ''}" data-special-ad-categories='${JSON.stringify(
-        campaign.special_ad_categories
-      )}'>
+        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${
+        campaign.bid_strategy
+      }" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
         <h3>${campaign.name}</h3>
         <ul>
           <li>${campaign.status}</li>
@@ -387,7 +387,7 @@ function populatePixels(pixels) {
 
       for (const data of pixelData.data) {
         // Skip invalid pixels (e.g., account IDs mistakenly included)
-        if (!data || !data.id || !data.name || data.id.startsWith('act_')) {
+        if (!data || !data.id || !data.name || data.id.startsWith("act_")) {
           continue;
         }
 
@@ -409,18 +409,18 @@ function populatePixels(pixels) {
         }
 
         // Determine status class and tooltip (no emoji icons)
-        let statusClass = '';
-        let tooltipText = '';
+        let statusClass = "";
+        let tooltipText = "";
 
         if (isUnavailable) {
-          statusClass = 'pixel-unavailable';
-          tooltipText = 'Pixel unavailable';
+          statusClass = "pixel-unavailable";
+          tooltipText = "Pixel unavailable";
         } else if (hasRecentActivity) {
-          statusClass = 'pixel-active';
+          statusClass = "pixel-active";
           tooltipText = `Active - Last fired: ${lastFiredDate.toLocaleDateString()}`;
         } else {
-          statusClass = 'pixel-inactive';
-          tooltipText = 'No recent activity';
+          statusClass = "pixel-inactive";
+          tooltipText = "No recent activity";
         }
 
         pixelDropdownOptions.innerHTML += `
@@ -683,11 +683,7 @@ class SingleSelectGroup {
               }
             }
 
-            this.adjustConfigSettings(
-              appState.getState().campaignBidStrategy,
-              appState.getState().campaignDailyBudget,
-              appState.getState().campaignLifetimeBudget
-            );
+            this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget, appState.getState().campaignLifetimeBudget);
 
             // Show/hide age and geo fields based on special_ad_categories
             const specialAdCategories = JSON.parse(clickedItem.dataset.specialAdCategories || "[]");
@@ -821,7 +817,7 @@ class SingleSelectGroup {
     // Log for debugging (budget now at ad set level)
     console.log("Bid strategy config:", {
       bidStrategy,
-      note: "Budget handling moved to ad set level"
+      note: "Budget handling moved to ad set level",
     });
 
     // Trigger validation check after adjusting settings
@@ -1542,7 +1538,7 @@ class UploadForm {
           } else {
             console.log("Create Ad Set button clicked but not active. Check validation.");
             // Call checkRequiredFields to log current validation state
-            if (typeof checkRequiredFields === 'function') {
+            if (typeof checkRequiredFields === "function") {
               checkRequiredFields();
             }
           }
@@ -5465,7 +5461,7 @@ function setupAdSetFormValidation() {
       if (currentButton) {
         const hadActiveClass = currentButton.classList.contains("active");
         currentButton.classList.add("active");
-        console.log(`✓ Button activated - active class ${hadActiveClass ? 'already present' : 'ADDED'}`);
+        console.log(`✓ Button activated - active class ${hadActiveClass ? "already present" : "ADDED"}`);
         console.log("  Button classes after activation:", currentButton.classList.toString());
       } else {
         console.error("createButton not found!");
@@ -5478,7 +5474,7 @@ function setupAdSetFormValidation() {
           hasEventType,
           hasValidAge,
           hasValidGeo,
-          hasValidBudget
+          hasValidBudget,
         });
       }
     }
@@ -7023,50 +7019,50 @@ function showBulkResults(results) {
 
 function setupBudgetTypeDropdown() {
   // Set default start datetime to now
-  const startDateInput = document.querySelector('.config-start-datetime');
+  const startDateInput = document.querySelector(".config-start-datetime");
   if (startDateInput) {
     const now = new Date();
     // Format to YYYY-MM-DDTHH:MM for datetime-local input
     const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
     startDateInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
   }
 
-  const budgetTypeOptions = document.querySelectorAll('.dropdown-options.adset-budget-type li');
+  const budgetTypeOptions = document.querySelectorAll(".dropdown-options.adset-budget-type li");
 
-  budgetTypeOptions.forEach(option => {
-    option.addEventListener('click', () => {
+  budgetTypeOptions.forEach((option) => {
+    option.addEventListener("click", () => {
       const budgetType = option.dataset.value;
-      const budgetWrapper = document.querySelector('.budget-schedule-section .budget-input-wrapper');
-      const budgetInput = document.querySelector('.config-adset-budget');
-      const budgetSuffix = document.querySelector('.budget-type-suffix');
-      const endDateLabel = document.querySelector('.end-date-required-indicator');
-      const endDateOptional = document.querySelector('.end-date-optional-indicator');
-      const endDateInput = document.querySelector('.config-end-datetime');
+      const budgetWrapper = document.querySelector(".budget-schedule-section .budget-input-wrapper");
+      const budgetInput = document.querySelector(".config-adset-budget");
+      const budgetSuffix = document.querySelector(".budget-type-suffix");
+      const endDateLabel = document.querySelector(".end-date-required-indicator");
+      const endDateOptional = document.querySelector(".end-date-optional-indicator");
+      const endDateInput = document.querySelector(".config-end-datetime");
 
       if (budgetWrapper && budgetInput && budgetSuffix) {
         // Show budget input
-        budgetWrapper.style.display = 'flex';
+        budgetWrapper.style.display = "flex";
 
         // Update placeholder and suffix based on budget type
-        if (budgetType === 'daily') {
-          budgetInput.placeholder = 'Enter daily budget (e.g., 50 for $50/day)';
-          budgetSuffix.textContent = '/day';
+        if (budgetType === "daily") {
+          budgetInput.placeholder = "Enter daily budget (e.g., 50 for $50/day)";
+          budgetSuffix.textContent = "/day";
 
           // End date is optional for daily budget
-          if (endDateLabel) endDateLabel.style.display = 'none';
-          if (endDateOptional) endDateOptional.style.display = 'inline';
+          if (endDateLabel) endDateLabel.style.display = "none";
+          if (endDateOptional) endDateOptional.style.display = "inline";
           if (endDateInput) endDateInput.required = false;
-        } else if (budgetType === 'lifetime') {
-          budgetInput.placeholder = 'Enter lifetime budget (e.g., 1000 for $1000)';
-          budgetSuffix.textContent = ' total';
+        } else if (budgetType === "lifetime") {
+          budgetInput.placeholder = "Enter lifetime budget (e.g., 1000 for $1000)";
+          budgetSuffix.textContent = " total";
 
           // End date is required for lifetime budget
-          if (endDateLabel) endDateLabel.style.display = 'inline';
-          if (endDateOptional) endDateOptional.style.display = 'none';
+          if (endDateLabel) endDateLabel.style.display = "inline";
+          if (endDateOptional) endDateOptional.style.display = "none";
           if (endDateInput) endDateInput.required = true;
         }
       }
@@ -7089,18 +7085,18 @@ document.addEventListener("DOMContentLoaded", () => {
 let scheduleCounter = 0;
 
 function setupAdScheduling() {
-  const enableSchedulingCheckbox = document.querySelector('.enable-scheduling-checkbox');
-  const schedulingControls = document.querySelector('.scheduling-controls');
-  const addScheduleBtn = document.querySelector('.add-schedule-btn');
+  const enableSchedulingCheckbox = document.querySelector(".enable-scheduling-checkbox");
+  const schedulingControls = document.querySelector(".scheduling-controls");
+  const addScheduleBtn = document.querySelector(".add-schedule-btn");
 
   // Toggle scheduling controls
   if (enableSchedulingCheckbox) {
-    enableSchedulingCheckbox.addEventListener('change', (e) => {
+    enableSchedulingCheckbox.addEventListener("change", (e) => {
       if (schedulingControls) {
-        schedulingControls.style.display = e.target.checked ? 'block' : 'none';
+        schedulingControls.style.display = e.target.checked ? "block" : "none";
 
         // If enabling and no schedules exist, add one
-        if (e.target.checked && document.querySelectorAll('.schedule-list .schedule-item').length === 0) {
+        if (e.target.checked && document.querySelectorAll(".schedule-list .schedule-item").length === 0) {
           addScheduleItem();
         }
       }
@@ -7109,7 +7105,7 @@ function setupAdScheduling() {
 
   // Add schedule button
   if (addScheduleBtn) {
-    addScheduleBtn.addEventListener('click', () => {
+    addScheduleBtn.addEventListener("click", () => {
       addScheduleItem();
     });
   }
@@ -7117,24 +7113,24 @@ function setupAdScheduling() {
 
 function addScheduleItem() {
   scheduleCounter++;
-  const scheduleList = document.querySelector('.schedule-list');
-  const template = document.querySelector('.schedule-form-template');
+  const scheduleList = document.querySelector(".schedule-list");
+  const template = document.querySelector(".schedule-form-template");
 
   if (!scheduleList || !template) return;
 
   // Clone the template
-  const scheduleItem = template.querySelector('.schedule-item').cloneNode(true);
+  const scheduleItem = template.querySelector(".schedule-item").cloneNode(true);
 
   // Update schedule number
-  const scheduleNumber = scheduleItem.querySelector('.schedule-number');
+  const scheduleNumber = scheduleItem.querySelector(".schedule-number");
   if (scheduleNumber) {
     scheduleNumber.textContent = scheduleCounter;
   }
 
   // Set up remove button
-  const removeBtn = scheduleItem.querySelector('.remove-schedule-btn');
+  const removeBtn = scheduleItem.querySelector(".remove-schedule-btn");
   if (removeBtn) {
-    removeBtn.addEventListener('click', () => {
+    removeBtn.addEventListener("click", () => {
       scheduleItem.remove();
     });
   }
@@ -7144,14 +7140,14 @@ function addScheduleItem() {
 }
 
 function getAdScheduleData() {
-  const enableSchedulingCheckbox = document.querySelector('.enable-scheduling-checkbox');
+  const enableSchedulingCheckbox = document.querySelector(".enable-scheduling-checkbox");
 
   // Return null if scheduling is not enabled
   if (!enableSchedulingCheckbox || !enableSchedulingCheckbox.checked) {
     return null;
   }
 
-  const scheduleItems = document.querySelectorAll('.schedule-list .schedule-item');
+  const scheduleItems = document.querySelectorAll(".schedule-list .schedule-item");
 
   if (scheduleItems.length === 0) {
     return null;
@@ -7160,13 +7156,13 @@ function getAdScheduleData() {
   const schedules = [];
 
   scheduleItems.forEach((item) => {
-    const startTime = item.querySelector('.schedule-start-time').value;
-    const endTime = item.querySelector('.schedule-end-time').value;
-    const timezoneType = item.querySelector('.schedule-timezone-type').value;
+    const startTime = item.querySelector(".schedule-start-time").value;
+    const endTime = item.querySelector(".schedule-end-time").value;
+    const timezoneType = item.querySelector(".schedule-timezone-type").value;
 
     // Get selected days
     const dayCheckboxes = item.querySelectorAll('.days-selector input[type="checkbox"]:checked');
-    const days = Array.from(dayCheckboxes).map(cb => parseInt(cb.value));
+    const days = Array.from(dayCheckboxes).map((cb) => parseInt(cb.value));
 
     // Validate time inputs
     if (!startTime || !endTime) {
@@ -7182,11 +7178,11 @@ function getAdScheduleData() {
       const schedule = {
         start_minute: startMinute,
         end_minute: endMinute,
-        days: days
+        days: days,
       };
 
       // Add timezone_type if not default
-      if (timezoneType && timezoneType !== 'USER') {
+      if (timezoneType && timezoneType !== "USER") {
         schedule.timezone_type = timezoneType;
       }
 
@@ -7198,7 +7194,7 @@ function getAdScheduleData() {
 }
 
 function timeToMinutes(timeString) {
-  const [hours, minutes] = timeString.split(':').map(Number);
+  const [hours, minutes] = timeString.split(":").map(Number);
   let totalMinutes = hours * 60 + (minutes || 0);
 
   // Round to nearest hour (multiple of 60) to meet Meta API requirements
@@ -7220,7 +7216,7 @@ function validateAdSchedule(schedules) {
     if (duration < 60) {
       return {
         valid: false,
-        error: `Schedule #${i + 1}: Start and end time must be at least 1 hour apart`
+        error: `Schedule #${i + 1}: Start and end time must be at least 1 hour apart`,
       };
     }
 
@@ -7228,10 +7224,1346 @@ function validateAdSchedule(schedules) {
     if (!schedule.days || schedule.days.length === 0) {
       return {
         valid: false,
-        error: `Schedule #${i + 1}: Please select at least one day`
+        error: `Schedule #${i + 1}: Please select at least one day`,
       };
     }
   }
 
   return { valid: true };
 }
+
+// ========================================
+// Automated Rules Manager
+// ========================================
+
+class AutomatedRulesManager {
+  constructor() {
+    this.rulesModal = document.querySelector(".automated-rules-modal");
+    this.editorModal = document.querySelector(".rule-editor-modal");
+    this.accountSelectorModal = document.querySelector(".account-selector-modal");
+    this.batchProgressModal = document.querySelector(".batch-progress-modal");
+    this.batchResultsModal = document.querySelector(".batch-results-modal");
+    this.currentAccountId = null;
+    this.currentRuleId = null;
+    this.conditions = [];
+    this.selectedAccounts = []; // For multi-account creation
+    this.isMultiAccountMode = false;
+    this.allAdAccounts = []; // Store all available accounts
+
+    // Verify all modals exist
+    if (!this.accountSelectorModal) {
+      console.warn("Account selector modal not found - multi-account feature may not work");
+    }
+    if (!this.batchProgressModal) {
+      console.warn("Batch progress modal not found - multi-account feature may not work");
+    }
+    if (!this.batchResultsModal) {
+      console.warn("Batch results modal not found - multi-account feature may not work");
+    }
+
+    this.init();
+  }
+
+  init() {
+    // Bind modal close buttons
+    this.rulesModal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.closeModal());
+    });
+
+    this.editorModal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.closeEditor());
+    });
+
+    // Click outside to close
+    this.rulesModal.addEventListener("click", (e) => {
+      if (e.target === this.rulesModal) this.closeModal();
+    });
+
+    this.editorModal.addEventListener("click", (e) => {
+      if (e.target === this.editorModal) this.closeEditor();
+    });
+
+    // Create rule button (single account)
+    this.rulesModal.querySelector(".create-rule-btn").addEventListener("click", () => {
+      if (!this.currentAccountId) {
+        showError("Please select an ad account first");
+        return;
+      }
+      this.isMultiAccountMode = false;
+      this.selectedAccounts = [];
+      this.openEditor();
+    });
+
+    // Create multi-account rule button
+    const multiRuleBtn = this.rulesModal.querySelector(".create-multi-rule-btn");
+    if (multiRuleBtn) {
+      multiRuleBtn.addEventListener("click", () => {
+        this.openAccountSelector();
+      });
+    } else {
+      console.error("Multi-account rule button not found");
+    }
+
+    // Account dropdown change
+    this.rulesModal.querySelector(".rules-account-dropdown").addEventListener("change", (e) => {
+      this.currentAccountId = e.target.value;
+      // Don't auto-load, user must click "Load Rules" button
+    });
+
+    // Load Rules button
+    this.rulesModal.querySelector(".load-rules-btn").addEventListener("click", () => {
+      if (!this.currentAccountId) {
+        showError("Please select an ad account first");
+        return;
+      }
+      this.loadRules(this.currentAccountId);
+    });
+
+    // Editor form controls
+    this.setupEditorControls();
+
+    // Account Selector Modal controls
+    this.setupAccountSelectorControls();
+
+    // Load ad accounts
+    this.loadAdAccounts();
+  }
+
+  setupEditorControls() {
+    // Add condition button
+    this.editorModal.querySelector(".add-condition-btn").addEventListener("click", () => {
+      this.addCondition();
+    });
+
+    // Entity type change - update available actions
+    const entityTypeSelect = this.editorModal.querySelector("#rule-entity-type");
+    entityTypeSelect.addEventListener("change", (e) => {
+      this.updateAvailableActions(e.target.value);
+    });
+
+    // Action type change
+    const actionSelect = this.editorModal.querySelector("#rule-action-type");
+    actionSelect.addEventListener("change", (e) => {
+      const budgetOptions = this.editorModal.querySelector(".budget-change-options");
+      const bidOptions = this.editorModal.querySelector(".bid-change-options");
+      budgetOptions.style.display = e.target.value === "CHANGE_BUDGET" ? "block" : "none";
+      bidOptions.style.display = e.target.value === "CHANGE_BID" ? "block" : "none";
+      this.updateJSONPreview();
+    });
+
+    // Schedule frequency change
+    const scheduleSelect = this.editorModal.querySelector("#rule-schedule-frequency");
+    scheduleSelect.addEventListener("change", (e) => {
+      const customOptions = this.editorModal.querySelector(".custom-schedule-options");
+      customOptions.style.display = e.target.value === "CUSTOM" ? "block" : "none";
+      this.updateJSONPreview();
+    });
+
+    // Form field changes update JSON preview
+    const formInputs = this.editorModal.querySelectorAll("input, select");
+    formInputs.forEach((input) => {
+      input.addEventListener("change", () => this.updateJSONPreview());
+      input.addEventListener("input", () => this.updateJSONPreview());
+    });
+
+    // Save button
+    this.editorModal.querySelector(".save-rule-btn").addEventListener("click", () => {
+      this.saveRule();
+    });
+
+    // Cancel button
+    this.editorModal.querySelector(".cancel-rule-btn").addEventListener("click", () => {
+      this.closeEditor();
+    });
+  }
+
+  updateAvailableActions(entityType) {
+    const actionSelect = this.editorModal.querySelector("#rule-action-type");
+    const currentValue = actionSelect.value;
+
+    // Clear and rebuild options based on entity type
+    actionSelect.innerHTML = '<option value="">Select action...</option>';
+
+    // Always available actions
+    actionSelect.innerHTML += '<option value="PAUSE">Turn off (Pause)</option>';
+    actionSelect.innerHTML += '<option value="UNPAUSE">Turn on (Unpause)</option>';
+    actionSelect.innerHTML += '<option value="SEND_NOTIFICATION">Send notification only</option>';
+
+    // Conditional actions based on entity type
+    // Adjust budget: NOT available for Ads
+    if (entityType !== "AD") {
+      actionSelect.innerHTML += '<option value="CHANGE_BUDGET">Adjust budget</option>';
+    }
+
+    // Adjust manual bid: Only available for Ad Sets
+    if (entityType === "ADSET") {
+      actionSelect.innerHTML += '<option value="CHANGE_BID">Adjust manual bid</option>';
+    }
+
+    // Try to restore previous selection if still valid
+    const newOptions = Array.from(actionSelect.options).map((opt) => opt.value);
+    if (newOptions.includes(currentValue)) {
+      actionSelect.value = currentValue;
+    } else {
+      actionSelect.value = "";
+      // Hide option panels if selection was reset
+      this.editorModal.querySelector(".budget-change-options").style.display = "none";
+      this.editorModal.querySelector(".bid-change-options").style.display = "none";
+    }
+
+    this.updateJSONPreview();
+  }
+
+  async loadAdAccounts() {
+    try {
+      const accountsList = document.getElementById("ad-acc-list");
+      const accounts = Array.from(accountsList.querySelectorAll("li")).map((li) => {
+        const accountLink = li.querySelector("a.account");
+        return {
+          id: accountLink?.dataset.campaignId || accountLink?.getAttribute("data-campaign-id"),
+          name: accountLink?.textContent?.trim() || li.textContent.trim(),
+        };
+      });
+
+      const dropdown = this.rulesModal.querySelector(".rules-account-dropdown");
+      dropdown.innerHTML = '<option value="">Select an account...</option>';
+
+      accounts.forEach((account) => {
+        if (account.id) {
+          const option = document.createElement("option");
+          option.value = account.id;
+          option.textContent = account.name;
+          dropdown.appendChild(option);
+        }
+      });
+    } catch (error) {
+      console.error("Error loading ad accounts:", error);
+    }
+  }
+
+  // DOM to load Ad Rule Subscriber
+  // Skip ad rule subscriber for now
+  async loadUsers() {
+    try {
+      const subscriberDropdown = this.editorModal.querySelector("#rule-subscribers");
+
+      // If subscriber dropdown doesn't exist (commented out in HTML), skip loading users
+      if (!subscriberDropdown) {
+        console.info("Subscriber dropdown not found in modal, skipping user load");
+        return;
+      }
+
+      // Reset dropdown
+      subscriberDropdown.innerHTML = '<option value="">Select subscriber (optional)...</option>';
+
+      // First, try to get users from cached ad account data
+      let users = [];
+      if (window.adAccountsData && window.adAccountsData.length > 0) {
+        const account = window.adAccountsData.find((acc) => acc.id === this.currentAccountId || acc.account_id === this.currentAccountId || acc.id === `act_${this.currentAccountId}`);
+
+        if (account && account.users && account.users.length > 0) {
+          users = account.users;
+          console.info("Using cached users from ad account data:", users.length);
+        }
+      }
+
+      // If no cached users, try to fetch from API
+      if (users.length === 0) {
+        try {
+          const response = await fetch(`/api/account/${this.currentAccountId}/users`);
+          if (response.ok) {
+            const data = await response.json();
+            users = data.users || [];
+          }
+        } catch (fetchError) {
+          console.warn("Could not fetch users from API:", fetchError);
+        }
+      }
+
+      // Populate with users
+      if (users.length > 0) {
+        users.forEach((user) => {
+          const option = document.createElement("option");
+          option.value = user.id || user.user_id;
+          option.textContent = user.name + (user.email ? ` (${user.email})` : "");
+          subscriberDropdown.appendChild(option);
+        });
+      } else {
+        // If no users available, show a note but don't prevent rule creation
+        subscriberDropdown.innerHTML = '<option value="">No users found (optional)</option>';
+        console.info("No users found for account:", this.currentAccountId);
+      }
+    } catch (error) {
+      console.error("Error loading subscribers:", error);
+      const subscriberDropdown = this.editorModal.querySelector("#rule-subscribers");
+      if (subscriberDropdown) {
+        subscriberDropdown.innerHTML = '<option value="">Error loading users (optional)</option>';
+      }
+    }
+  }
+
+  async loadRules(accountId) {
+    try {
+      const response = await fetch(`/api/rules?account_id=${accountId}`);
+
+      if (!response.ok) {
+        throw new Error("Failed to load rules");
+      }
+
+      const data = await response.json();
+      this.cachedRules = data.rules; // Cache rules for edit function
+      this.renderRulesList(data.rules);
+    } catch (error) {
+      console.error("Error loading rules:", error);
+      showError("Failed to load automated rules");
+    }
+  }
+
+  renderRulesList(rules) {
+    const tbody = this.rulesModal.querySelector(".rules-list");
+
+    if (!rules || rules.length === 0) {
+      tbody.innerHTML = '<tr class="empty-state"><td colspan="5">No rules found. Create a rule to get started.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rules
+      .map((rule) => {
+        const scheduleText = this.getScheduleText(rule.schedule_spec);
+        const statusBadge = rule.status === "ACTIVE" ? '<span class="status-badge status-active">Active</span>' : '<span class="status-badge status-paused">Paused</span>';
+
+        return `
+        <tr data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
+          <td>${rule.name}</td>
+          <td>${rule.entity_type}</td>
+          <td>${statusBadge}</td>
+          <td>${scheduleText}</td>
+          <td class="rule-actions">
+            <button class="btn-icon toggle-rule-btn" title="${rule.status === "ACTIVE" ? "Disable" : "Enable"}" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}" data-status="${rule.status}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                ${
+                  rule.status === "ACTIVE"
+                    ? '<path d="M18 6L6 18M6 6l12 12"></path>' // X icon for disable
+                    : '<path d="M5 12l5 5 9-9"></path>'
+                }  // Check icon for enable
+              </svg>
+            </button>
+            <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+            <button class="btn-icon delete-rule-btn" title="Delete" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `;
+      })
+      .join("");
+
+    // Bind action buttons
+    tbody.querySelectorAll(".toggle-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.metaRuleId, btn.dataset.status));
+    });
+
+    tbody.querySelectorAll(".edit-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.editRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
+    });
+
+    tbody.querySelectorAll(".delete-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.deleteRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
+    });
+  }
+
+  getScheduleText(scheduleSpec) {
+    if (!scheduleSpec) return "Trigger";
+
+    const scheduleType = scheduleSpec.schedule_type || scheduleSpec.scheduleType;
+
+    if (scheduleType === "HOURLY") return "Continuously (Run every ~60 minutes)";
+    if (scheduleType === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
+    if (scheduleType === "DAILY") return "Daily (12:00 AM)";
+    if (scheduleType === "CUSTOM") {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      // Meta API returns nested schedule array format
+      const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
+      const daysList = schedule.days || [];
+      const dayNames = daysList.map((d) => days[d]).join(", ");
+      return `Custom: ${dayNames}`;
+    }
+
+    return scheduleType || "Unknown";
+  }
+
+  openModal() {
+    this.rulesModal.style.display = "block";
+    this.loadAdAccounts();
+  }
+
+  closeModal() {
+    this.rulesModal.style.display = "none";
+  }
+
+  async openEditor(ruleId = null, metaRuleId = null) {
+    this.currentRuleId = ruleId;
+    this.currentMetaRuleId = metaRuleId;
+    this.conditions = [];
+    this.originalConditions = null; // Reset original conditions
+
+    const title = this.editorModal.querySelector(".rule-editor-title");
+    const saveBtn = this.editorModal.querySelector(".save-rule-btn");
+
+    if (ruleId || metaRuleId) {
+      title.textContent = "Edit Automated Rule";
+      saveBtn.textContent = "Update Rule";
+      await this.loadRuleData(ruleId, metaRuleId);
+    } else {
+      title.textContent = "Create Automated Rule";
+      saveBtn.textContent = "Create Rule";
+      this.resetForm();
+      this.addCondition(); // Add one default condition
+    }
+
+    // Load subscribers for the selected account
+    if (this.currentAccountId) {
+      await this.loadUsers();
+    }
+
+    this.editorModal.style.display = "block";
+    this.updateJSONPreview();
+  }
+
+  closeEditor() {
+    this.editorModal.style.display = "none";
+    this.currentRuleId = null;
+  }
+
+  resetForm() {
+    this.editorModal.querySelector("#rule-name").value = "";
+    this.editorModal.querySelector('input[name="rule-type"][value="SCHEDULE"]').checked = true;
+    this.editorModal.querySelector("#rule-entity-type").value = "";
+    this.editorModal.querySelector("#rule-action-type").value = "";
+    this.editorModal.querySelector("#rule-schedule-frequency").value = "CONTINUOUSLY";
+    this.editorModal.querySelector(".budget-change-options").style.display = "none";
+    this.editorModal.querySelector(".custom-schedule-options").style.display = "none";
+    this.editorModal.querySelector(".conditions-container").innerHTML = "";
+    this.conditions = [];
+  }
+
+  addCondition() {
+    // DEBUG: Log when this function is called
+    console.log("[DEBUG] addCondition called. Current condition count:", this.conditions.length);
+
+    const conditionIndex = this.conditions.length;
+
+    // Note: Fields are automatically mapped to Meta API format by the backend
+    // Monetary values (spent, budgets, costs) are converted to cents
+    // REMOVED Operations: Is not equal to, Is In List, Is Not In List, Contains, Does Not Contain --> Following Meta Rules Layout
+    const conditionHTML = `
+      <div class="condition-row" data-condition-index="${conditionIndex}">
+        <select class="form-select condition-field" data-index="${conditionIndex}">
+          <option value="">Select metric...</option>
+          <optgroup label="Cost & Budget">
+            <option value="spent">Spent ($)</option>
+            <option value="cpc">Cost Per Click ($)</option>
+            <option value="cpm">Cost Per 1,000 Impressions ($)</option>
+            <option value="cpp">Cost Per Purchase ($)</option>
+            <option value="cost_per_unique_click">Cost Per Unique Click ($)</option>
+          </optgroup>
+          <optgroup label="ROAS">
+            <option value="website_purchase_roas">Website Purchase ROAS</option>
+            <option value="mobile_app_purchase_roas">In-App Purchase ROAS</option>
+          </optgroup>
+          <optgroup label="Traffic & Engagement">
+            <option value="impressions">Impressions</option>
+            <option value="unique_impressions">Unique Impressions</option>
+            <option value="reach">Reach</option>
+            <option value="clicks">Clicks</option>
+            <option value="unique_clicks">Unique Clicks</option>
+            <option value="ctr">Click-Through Rate (%)</option>
+            <option value="frequency">Frequency</option>
+          </optgroup>
+          <optgroup label="Conversions & Results">
+            <option value="result_rate">Result Rate (%)</option>
+          </optgroup>
+        </select>
+
+        <select class="form-select condition-operator" data-index="${conditionIndex}">
+          <option value="GREATER_THAN">is greater than (>)</option>
+          <option value="LESS_THAN">is less than (<)</option>
+          <option value="EQUAL">is equal to (=)</option>
+          <option value="IN_RANGE">is in range</option>
+          <option value="NOT_IN_RANGE">is not in range</option>
+        </select>
+
+        <div class="condition-value-container" data-index="${conditionIndex}">
+          <input type="number" class="form-input condition-value condition-single-value" placeholder="Value" step="0.01" data-index="${conditionIndex}" />
+          <input type="number" class="form-input condition-value condition-min-value" placeholder="Min" step="0.01" data-index="${conditionIndex}" style="display: none;" />
+          <input type="number" class="form-input condition-value condition-max-value" placeholder="Max" step="0.01" data-index="${conditionIndex}" style="display: none;" />
+        </div>
+
+        <button type="button" class="btn-icon remove-condition-btn" data-index="${conditionIndex}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+
+    const container = this.editorModal.querySelector(".conditions-container");
+    container.insertAdjacentHTML("beforeend", conditionHTML);
+
+    this.conditions.push({ field: "", operator: "GREATER_THAN", value: 0 });
+
+    // Bind remove button
+    const removeBtn = container.querySelector(`[data-condition-index="${conditionIndex}"] .remove-condition-btn`);
+    removeBtn.addEventListener("click", () => this.removeCondition(conditionIndex));
+
+    // Bind change events
+    const field = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-field`);
+    const operator = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-operator`);
+    const singleValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-single-value`);
+    const minValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-min-value`);
+    const maxValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-max-value`);
+
+    field.addEventListener("change", (e) => {
+      this.conditions[conditionIndex].field = e.target.value;
+      this.updateJSONPreview();
+    });
+
+    operator.addEventListener("change", (e) => {
+      this.conditions[conditionIndex].operator = e.target.value;
+      const isRangeOperator = e.target.value === "IN_RANGE" || e.target.value === "NOT_IN_RANGE";
+
+      // Toggle visibility based on operator
+      if (isRangeOperator) {
+        singleValue.style.display = "none";
+        minValue.style.display = "block";
+        maxValue.style.display = "block";
+        // Initialize array value if needed
+        if (!Array.isArray(this.conditions[conditionIndex].value)) {
+          this.conditions[conditionIndex].value = [0, 0];
+        }
+      } else {
+        singleValue.style.display = "block";
+        minValue.style.display = "none";
+        maxValue.style.display = "none";
+        // Convert back to single value if needed
+        if (Array.isArray(this.conditions[conditionIndex].value)) {
+          this.conditions[conditionIndex].value = 0;
+        }
+      }
+      this.updateJSONPreview();
+    });
+
+    singleValue.addEventListener("input", (e) => {
+      this.conditions[conditionIndex].value = parseFloat(e.target.value) || 0;
+      this.updateJSONPreview();
+    });
+
+    minValue.addEventListener("input", (e) => {
+      const minVal = parseFloat(e.target.value) || 0;
+      if (!Array.isArray(this.conditions[conditionIndex].value)) {
+        this.conditions[conditionIndex].value = [minVal, 0];
+      } else {
+        this.conditions[conditionIndex].value[0] = minVal;
+      }
+      this.updateJSONPreview();
+    });
+
+    maxValue.addEventListener("input", (e) => {
+      const maxVal = parseFloat(e.target.value) || 0;
+      if (!Array.isArray(this.conditions[conditionIndex].value)) {
+        this.conditions[conditionIndex].value = [0, maxVal];
+      } else {
+        this.conditions[conditionIndex].value[1] = maxVal;
+      }
+      this.updateJSONPreview();
+    });
+  }
+
+  removeCondition(index) {
+    const container = this.editorModal.querySelector(".conditions-container");
+    const row = container.querySelector(`[data-condition-index="${index}"]`);
+    if (row) {
+      row.remove();
+      this.conditions[index] = null; // Mark as deleted
+      this.updateJSONPreview();
+    }
+  }
+
+  updateJSONPreview() {
+    // JSON preview is commented out in HTML, so skip this
+    const preview = this.editorModal.querySelector(".json-preview code");
+    if (preview) {
+      const ruleData = this.collectFormData();
+      preview.textContent = JSON.stringify(ruleData, null, 2);
+    }
+  }
+
+  haveConditionsChanged() {
+    // If no original conditions (new rule), conditions have changed
+    if (!this.originalConditions) return true;
+
+    // Filter current conditions (same logic as collectFormData)
+    const currentConditions = this.conditions.filter((c) => {
+      if (c === null || !c.field) return false;
+      if (Array.isArray(c.value)) {
+        return c.value.length === 2 && c.value[0] !== null && c.value[1] !== null;
+      }
+      return c.value !== null && c.value !== undefined && c.value !== "";
+    });
+
+    // Compare with original
+    return JSON.stringify(currentConditions) !== JSON.stringify(this.originalConditions);
+  }
+
+  collectFormData() {
+    const name = this.editorModal.querySelector("#rule-name").value;
+    const ruleType = this.editorModal.querySelector('input[name="rule-type"]:checked').value;
+    const entityType = this.editorModal.querySelector("#rule-entity-type").value;
+    const actionType = this.editorModal.querySelector("#rule-action-type").value;
+    const scheduleFrequency = this.editorModal.querySelector("#rule-schedule-frequency").value;
+    const timeRange = this.editorModal.querySelector("#rule-time-range").value;
+
+    // Collect conditions (filter out null/deleted ones)
+    // Note: c.value can be 0, so check for null/undefined explicitly
+    // For range operators, c.value is an array [min, max]
+    const conditions = this.conditions.filter((c) => {
+      if (c === null || !c.field) return false;
+
+      // Handle array values for range operators
+      if (Array.isArray(c.value)) {
+        return c.value.length === 2 && c.value[0] !== null && c.value[1] !== null;
+      }
+
+      // Handle single values
+      return c.value !== null && c.value !== undefined && c.value !== "";
+    });
+
+    // Build action object
+    const action = { type: actionType };
+    if (actionType === "CHANGE_BUDGET") {
+      const budgetChangeType = this.editorModal.querySelector("#budget-change-type").value;
+      action.budget_change_type = budgetChangeType.replace("_LIFETIME", ""); // INCREASE, DECREASE, SET
+      action.budget_type = budgetChangeType.includes("LIFETIME") ? "lifetime_budget" : "daily_budget";
+      // Map frontend unit to backend format (CURRENCY -> ACCOUNT_CURRENCY)
+      const unitValue = this.editorModal.querySelector("#budget-unit").value;
+      action.unit = unitValue === "CURRENCY" ? "ACCOUNT_CURRENCY" : unitValue;
+      action.amount = parseFloat(this.editorModal.querySelector("#budget-amount").value) || 0;
+    } else if (actionType === "CHANGE_BID") {
+      action.bid_change_type = this.editorModal.querySelector("#bid-change-type").value;
+      // Map frontend unit to backend format (CURRENCY -> ACCOUNT_CURRENCY)
+      const unitValue = this.editorModal.querySelector("#bid-unit").value;
+      action.unit = unitValue === "CURRENCY" ? "ACCOUNT_CURRENCY" : unitValue;
+      action.amount = parseFloat(this.editorModal.querySelector("#bid-amount").value) || 0;
+    }
+
+    // Collect subscriber (now a dropdown, single selection)
+    const subscriberDropdown = this.editorModal.querySelector("#rule-subscribers");
+    const subscriberId = subscriberDropdown ? subscriberDropdown.value : "";
+    const subscribers = subscriberId ? [subscriberId] : [];
+
+    // Build schedule object
+    const schedule = { frequency: scheduleFrequency };
+    if (scheduleFrequency === "CUSTOM") {
+      const dayCheckboxes = this.editorModal.querySelectorAll('.days-selector input[type="checkbox"]:checked');
+      schedule.days = Array.from(dayCheckboxes).map((cb) => parseInt(cb.value));
+
+      const startTime = this.editorModal.querySelector("#schedule-start-time").value;
+      const endTime = this.editorModal.querySelector("#schedule-end-time").value;
+
+      if (startTime) schedule.start_minute = timeToMinutes(startTime);
+      if (endTime) schedule.end_minute = timeToMinutes(endTime);
+    }
+
+    const formData = {
+      name,
+      entity_type: entityType,
+      rule_type: ruleType,
+      time_preset: timeRange,
+      conditions,
+      action,
+      schedule,
+      subscribers,
+    };
+
+    // Only add ad_account_id for single account mode
+    if (!this.isMultiAccountMode) {
+      formData.ad_account_id = this.currentAccountId;
+    }
+
+    return formData;
+  }
+
+  async saveRule() {
+    try {
+      const ruleData = this.collectFormData();
+
+      // Validation
+      if (!ruleData.name) {
+        showError("Please enter a rule name");
+        return;
+      }
+
+      if (!ruleData.entity_type) {
+        showError("Please select entity type");
+        return;
+      }
+
+      if (ruleData.conditions.length === 0) {
+        showError("Please add at least one condition");
+        return;
+      }
+
+      if (!ruleData.action.type) {
+        showError("Please select an action");
+        return;
+      }
+
+      // Debug logging
+      console.log("Save Rule - Multi-Account Mode:", this.isMultiAccountMode);
+      console.log("Save Rule - Selected Accounts:", this.selectedAccounts);
+      console.log("Save Rule - Selected Accounts Length:", this.selectedAccounts.length);
+
+      // Check if multi-account mode
+      if (this.isMultiAccountMode && this.selectedAccounts.length > 0) {
+        console.log("Using multi-account save method");
+        return await this.saveMultiAccountRule(ruleData);
+      }
+
+      // Single account mode validation
+      if (!this.currentAccountId && !this.isMultiAccountMode) {
+        showError("Please select an ad account first");
+        return;
+      }
+
+      console.log("Using single-account save method for account:", this.currentAccountId);
+
+      const url = this.currentRuleId ? `/api/rules/${this.currentRuleId}` : "/api/rules";
+      const method = this.currentRuleId ? "PUT" : "POST";
+
+      // For UPDATE operations, only include conditions if they've changed
+      let requestData = ruleData;
+      if (this.currentRuleId && !this.haveConditionsChanged()) {
+        // Remove conditions from request data if unchanged
+        const { conditions, ...dataWithoutConditions } = ruleData;
+        requestData = dataWithoutConditions;
+        console.log("[UPDATE] Conditions unchanged, not sending to server");
+      } else if (this.currentRuleId) {
+        console.log("[UPDATE] Conditions changed, sending to server");
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || "Failed to save rule");
+      }
+
+      const result = await response.json();
+      showSuccess(this.currentRuleId ? "Rule updated successfully" : "Rule created successfully");
+
+      this.closeEditor();
+      this.loadRules(this.currentAccountId);
+    } catch (error) {
+      console.error("Error saving rule:", error);
+      showError(error.message);
+    }
+  }
+
+  async editRule(ruleId, metaRuleId) {
+    this.openEditor(ruleId, metaRuleId);
+  }
+
+  async loadRuleData(ruleId, metaRuleId) {
+    try {
+      // DEBUG: Log the start of the function
+      console.log(`[DEBUG] loadRuleData called for ruleId: ${ruleId}, metaRuleId: ${metaRuleId}`);
+
+      // Try to get rule from cached rules first (more efficient)
+      let rule = null;
+      if (this.cachedRules) {
+        rule = this.cachedRules.find((r) => (ruleId && r.id && r.id == ruleId) || (metaRuleId && r.meta_rule_id === metaRuleId));
+      }
+
+      // If not in cache, fetch from API (fallback)
+      if (!rule) {
+        // Use metaRuleId for API if available, otherwise use ruleId
+        const apiId = metaRuleId || ruleId;
+        const response = await fetch(`/api/rules/${apiId}`);
+
+        if (!response.ok) {
+          throw new Error("Failed to load rule");
+        }
+
+        const data = await response.json();
+        rule = data.rule;
+      }
+
+      // Populate form
+      this.editorModal.querySelector("#rule-name").value = rule.name;
+      this.editorModal.querySelector(`input[name="rule-type"][value="${rule.rule_type}"]`).checked = true;
+      this.editorModal.querySelector("#rule-entity-type").value = rule.entity_type;
+
+      // Load conditions
+      this.conditions = [];
+      this.editorModal.querySelector(".conditions-container").innerHTML = "";
+
+      const evalSpec = rule.evaluation_spec;
+      if (evalSpec && evalSpec.filters) {
+        // Filter out internal metadata filters:
+        // - id, entity_type, time_preset, effective_status (standard metadata)
+        // - Fields containing "budget_reset_period" (auto-added for CHANGE_BUDGET actions)
+        const conditionFilters = evalSpec.filters.filter((f) => {
+          const isMetadataField = ["id", "entity_type", "time_preset", "effective_status"].includes(f.field);
+          const isBudgetResetPeriod = f.field && f.field.includes("budget_reset_period");
+          return !isMetadataField && !isBudgetResetPeriod;
+        });
+
+        // DEBUG: Log the conditions that were found
+        console.log(`[DEBUG] Found ${conditionFilters.length} user conditions to load (filtered out metadata):`, JSON.stringify(conditionFilters));
+
+        conditionFilters.forEach((filter) => {
+          this.addCondition();
+          const index = this.conditions.length - 1;
+          this.conditions[index] = {
+            field: filter.field,
+            operator: filter.operator,
+            value: filter.value,
+          };
+
+          // Set form values
+          const container = this.editorModal.querySelector(".conditions-container");
+          const row = container.querySelector(`[data-condition-index="${index}"]`);
+          row.querySelector(".condition-field").value = filter.field;
+          row.querySelector(".condition-operator").value = filter.operator;
+
+          // Handle range operators vs single value operators
+          const isRangeOperator = filter.operator === "IN_RANGE" || filter.operator === "NOT_IN_RANGE";
+          const singleValue = row.querySelector(".condition-single-value");
+          const minValue = row.querySelector(".condition-min-value");
+          const maxValue = row.querySelector(".condition-max-value");
+
+          if (isRangeOperator && Array.isArray(filter.value)) {
+            singleValue.style.display = "none";
+            minValue.style.display = "block";
+            maxValue.style.display = "block";
+            minValue.value = filter.value[0] || 0;
+            maxValue.value = filter.value[1] || 0;
+          } else {
+            singleValue.style.display = "block";
+            minValue.style.display = "none";
+            maxValue.style.display = "none";
+            singleValue.value = filter.value;
+          }
+        });
+      }
+
+      // Store original conditions for change detection (deep copy)
+      this.originalConditions = JSON.parse(JSON.stringify(this.conditions));
+
+      // Load action
+      const execSpec = rule.execution_spec;
+      if (execSpec) {
+        // Map execution_type to dropdown values
+        const actionTypeMap = {
+          CHANGE_CAMPAIGN_BUDGET: "CHANGE_BUDGET",
+          CHANGE_BUDGET: "CHANGE_BUDGET",
+          CHANGE_BID: "CHANGE_BID",
+          PAUSE: "PAUSE",
+          UNPAUSE: "UNPAUSE",
+          SEND_NOTIFICATION: "SEND_NOTIFICATION",
+        };
+        const mappedActionType = actionTypeMap[execSpec.execution_type] || execSpec.execution_type;
+        this.editorModal.querySelector("#rule-action-type").value = mappedActionType;
+
+        // Handle CHANGE_BUDGET or CHANGE_CAMPAIGN_BUDGET
+        if (execSpec.execution_type === "CHANGE_BUDGET" || execSpec.execution_type === "CHANGE_CAMPAIGN_BUDGET") {
+          this.editorModal.querySelector(".budget-change-options").style.display = "block";
+
+          let changeSpec = null;
+          // Check execution_options first (SCHEDULE rules), then change_spec (TRIGGER rules)
+          if (execSpec.execution_options && execSpec.execution_options.length > 0) {
+            changeSpec = execSpec.execution_options[0].value;
+          } else if (execSpec.change_spec) {
+            changeSpec = execSpec.change_spec;
+          }
+
+          if (changeSpec) {
+            // Determine change type from amount sign
+            const changeType = changeSpec.amount < 0 ? "DECREASE" : "INCREASE";
+            this.editorModal.querySelector("#budget-change-type").value = changeType;
+            // Map backend unit to frontend dropdown value
+            const unitMap = { ACCOUNT_CURRENCY: "CURRENCY", PERCENTAGE: "PERCENTAGE" };
+            this.editorModal.querySelector("#budget-unit").value = unitMap[changeSpec.unit] || "CURRENCY";
+            // Convert amount to absolute value and handle currency conversion
+            const absoluteAmount = Math.abs(changeSpec.amount);
+            const displayAmount = changeSpec.unit === "ACCOUNT_CURRENCY" ? absoluteAmount / 100 : absoluteAmount;
+            this.editorModal.querySelector("#budget-amount").value = displayAmount;
+          }
+        }
+
+        // Handle CHANGE_BID
+        if (execSpec.execution_type === "CHANGE_BID") {
+          this.editorModal.querySelector(".bid-change-options").style.display = "block";
+
+          let changeSpec = null;
+          if (execSpec.execution_options && execSpec.execution_options.length > 0) {
+            changeSpec = execSpec.execution_options[0].value;
+          } else if (execSpec.change_spec) {
+            changeSpec = execSpec.change_spec;
+          }
+
+          if (changeSpec) {
+            const changeType = changeSpec.amount < 0 ? "DECREASE" : "INCREASE";
+            this.editorModal.querySelector("#bid-change-type").value = changeType;
+            // Map backend unit to frontend dropdown value
+            const unitMap = { ACCOUNT_CURRENCY: "CURRENCY", PERCENTAGE: "PERCENTAGE" };
+            this.editorModal.querySelector("#bid-unit").value = unitMap[changeSpec.unit] || "CURRENCY";
+            const absoluteAmount = Math.abs(changeSpec.amount);
+            const displayAmount = changeSpec.unit === "ACCOUNT_CURRENCY" ? absoluteAmount / 100 : absoluteAmount;
+            this.editorModal.querySelector("#bid-amount").value = displayAmount;
+          }
+        }
+      }
+
+      // Load schedule
+      const scheduleSpec = rule.schedule_spec;
+      if (scheduleSpec) {
+        const freq = scheduleSpec.schedule_type === "SEMI_HOURLY" ? "CONTINUOUSLY" : scheduleSpec.schedule_type === "DAILY" ? "DAILY" : "CUSTOM";
+        this.editorModal.querySelector("#rule-schedule-frequency").value = freq;
+
+        if (freq === "CUSTOM") {
+          this.editorModal.querySelector(".custom-schedule-options").style.display = "block";
+
+          // Meta API returns nested schedule array format
+          const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
+
+          // Set days
+          if (schedule.days) {
+            schedule.days.forEach((day) => {
+              const checkbox = this.editorModal.querySelector(`.days-selector input[value="${day}"]`);
+              if (checkbox) checkbox.checked = true;
+            });
+          }
+
+          // Set times
+          if (schedule.start_minute !== undefined) {
+            const hours = Math.floor(schedule.start_minute / 60);
+            const minutes = schedule.start_minute % 60;
+            this.editorModal.querySelector("#schedule-start-time").value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+          }
+
+          if (schedule.end_minute !== undefined) {
+            const hours = Math.floor(schedule.end_minute / 60);
+            const minutes = schedule.end_minute % 60;
+            this.editorModal.querySelector("#schedule-end-time").value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+          }
+        }
+      }
+
+      // Load subscriber - wait for dropdown to be populated first
+      if (rule.subscriber_id) {
+        // Wait a bit for loadUsers to complete
+        setTimeout(() => {
+          const subscriberDropdown = this.editorModal.querySelector("#rule-subscribers");
+          if (subscriberDropdown) {
+            subscriberDropdown.value = rule.subscriber_id;
+          }
+        }, 500);
+      }
+
+      this.updateJSONPreview();
+    } catch (error) {
+      console.error("Error loading rule data:", error);
+      showError("Failed to load rule data");
+    }
+  }
+
+  async toggleRuleStatus(ruleId, metaRuleId, currentStatus) {
+    const newStatus = currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    const frontendStatus = newStatus;
+
+    console.log("Toggle status clicked:", { ruleId, metaRuleId, currentStatus });
+
+    // Convert to Meta API format for the backend
+    const metaStatus = newStatus === "ACTIVE" ? "ENABLED" : "DISABLED";
+    const action = metaStatus === "ENABLED" ? "enable" : "disable";
+
+    try {
+      console.log("Sending request to:", `/api/rules/${metaRuleId}/status`, { status: metaStatus, local_rule_id: ruleId });
+
+      const response = await fetch(`/api/rules/${metaRuleId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: metaStatus, local_rule_id: ruleId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to ${action} rule`);
+      }
+
+      const data = await response.json();
+      console.log("Toggle response:", data);
+
+      showSuccess(`Rule ${frontendStatus === "ACTIVE" ? "enabled" : "disabled"} successfully`);
+
+      // Reload rules to refresh UI
+      // We'll optimistically update the UI for now, but a full reload is safer
+      // To avoid race conditions, let's wait a bit before reloading
+      setTimeout(async () => {
+        if (this.currentAccountId) {
+          console.log("Reloading rules for account:", this.currentAccountId);
+          await this.loadRules(this.currentAccountId);
+          console.log("Rules reloaded");
+        } else {
+          console.warn("No account ID available to reload rules");
+        }
+      }, 500);
+    } catch (error) {
+      console.error("Error toggling rule status:", error);
+      showError(error.message || "Failed to toggle rule status");
+    }
+  }
+
+  async deleteRule(ruleId, metaRuleId) {
+    if (!confirm("Are you sure you want to delete this rule?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rules/${metaRuleId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ local_rule_id: ruleId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete rule");
+      }
+
+      showSuccess("Rule deleted successfully");
+
+      // Get account ID from dropdown if currentAccountId not set
+      if (!this.currentAccountId) {
+        this.currentAccountId = this.rulesModal.querySelector(".rules-account-dropdown").value;
+      }
+
+      if (this.currentAccountId) {
+        await this.loadRules(this.currentAccountId);
+      }
+    } catch (error) {
+      console.error("Error deleting rule:", error);
+      showError("Failed to delete rule");
+    }
+  }
+
+  // ===== Multi-Account Rule Creation Methods =====
+
+  setupAccountSelectorControls() {
+    // Skip setup if modals don't exist
+    if (!this.accountSelectorModal || !this.batchProgressModal || !this.batchResultsModal) {
+      console.warn("Skipping account selector controls setup - modals not found");
+      return;
+    }
+
+    // Close button
+    this.accountSelectorModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
+      this.closeAccountSelector();
+    });
+
+    // Cancel button
+    this.accountSelectorModal.querySelector(".cancel-account-selector")?.addEventListener("click", () => {
+      this.closeAccountSelector();
+    });
+
+    // Next button - proceed to rule editor
+    this.accountSelectorModal.querySelector(".next-to-rule-editor")?.addEventListener("click", () => {
+      // Update selected accounts array before validation
+      this.updateSelectedAccountsCount();
+
+      console.log("Next button clicked - Selected accounts:", this.selectedAccounts);
+
+      if (this.selectedAccounts.length < 2) {
+        showError("Please select at least 2 accounts for multi-account rule creation");
+        return;
+      }
+      this.closeAccountSelector(false);
+      this.isMultiAccountMode = true;
+      console.log("Multi-account mode set to:", this.isMultiAccountMode);
+      console.log("Selected accounts array:", this.selectedAccounts);
+      this.openEditor();
+    });
+
+    // Select All / Deselect All
+    this.accountSelectorModal.querySelector(".select-all-accounts")?.addEventListener("click", () => {
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = true;
+      });
+      this.updateSelectedAccountsCount();
+    });
+
+    this.accountSelectorModal.querySelector(".deselect-all-accounts")?.addEventListener("click", () => {
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      this.updateSelectedAccountsCount();
+    });
+
+    // Close batch progress modal
+    this.batchProgressModal.querySelector(".close-progress")?.addEventListener("click", () => {
+      this.closeBatchProgress();
+    });
+
+    // Close batch results modal
+    this.batchResultsModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
+      this.closeBatchResults();
+    });
+
+    this.batchResultsModal.querySelector(".close-results")?.addEventListener("click", () => {
+      this.closeBatchResults();
+    });
+  }
+
+  openAccountSelector() {
+    console.log("openAccountSelector called");
+
+    if (!this.accountSelectorModal) {
+      console.error("Account selector modal not found!");
+      showError("Multi-account feature is not available. Please refresh the page.");
+      return;
+    }
+
+    console.log("Loading accounts into checklist...");
+    // Load accounts into checklist
+    this.populateAccountChecklist();
+
+    console.log("Opening account selector modal...");
+    this.accountSelectorModal.style.display = "flex";
+    this.accountSelectorModal.style.position = "fixed";
+    this.accountSelectorModal.style.top = "0";
+    this.accountSelectorModal.style.left = "0";
+    this.accountSelectorModal.style.width = "100%";
+    this.accountSelectorModal.style.height = "100%";
+    this.accountSelectorModal.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+    this.accountSelectorModal.style.zIndex = "10000";
+    this.accountSelectorModal.style.justifyContent = "center";
+    this.accountSelectorModal.style.alignItems = "center";
+    console.log("Modal should be visible now. Check if you can see it!");
+  }
+
+  closeAccountSelector(resetSelection = true) {
+    this.accountSelectorModal.style.display = "none";
+    if (resetSelection) {
+      this.selectedAccounts = [];
+      this.isMultiAccountMode = false;
+
+      // Clear any existing selections from the checklist
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+
+      const selectedCount = this.accountSelectorModal.querySelector(".selected-count");
+      if (selectedCount) {
+        selectedCount.textContent = "0";
+      }
+    }
+  }
+
+  async populateAccountChecklist() {
+    try {
+      console.log("Populating account checklist...");
+      const accountsList = document.getElementById("ad-acc-list");
+      console.log("Account list element:", accountsList);
+
+      if (!accountsList) {
+        console.error("ad-acc-list not found!");
+        showError("Ad accounts list not found. Please refresh the page.");
+        return;
+      }
+
+      const accounts = Array.from(accountsList.querySelectorAll("li")).map((li) => {
+        const accountLink = li.querySelector("a.account");
+        return {
+          id: accountLink?.dataset.campaignId || accountLink?.getAttribute("data-campaign-id"),
+          name: accountLink?.textContent?.trim() || li.textContent.trim(),
+        };
+      });
+
+      console.log("Found accounts:", accounts);
+
+      // Store for later use
+      this.allAdAccounts = accounts.filter((acc) => acc.id);
+      console.log("Filtered accounts with ID:", this.allAdAccounts);
+
+      if (this.allAdAccounts.length === 0) {
+        showError("No ad accounts found. Please add ad accounts first.");
+        return;
+      }
+
+      const checklist = this.accountSelectorModal.querySelector(".account-checklist");
+      checklist.innerHTML = "";
+
+      this.allAdAccounts.forEach((account) => {
+        const label = document.createElement("label");
+        label.className = "account-checkbox-label";
+        label.innerHTML = `
+          <input type="checkbox" value="${account.id}" class="account-checkbox" />
+          <span>${account.name}</span>
+        `;
+
+        const checkbox = label.querySelector("input");
+        checkbox.addEventListener("change", () => {
+          this.updateSelectedAccountsCount();
+        });
+
+        checklist.appendChild(label);
+      });
+
+      console.log("Account checklist populated with", this.allAdAccounts.length, "accounts");
+      this.updateSelectedAccountsCount();
+    } catch (error) {
+      console.error("Error populating account checklist:", error);
+      showError("Failed to load ad accounts");
+    }
+  }
+
+  updateSelectedAccountsCount() {
+    const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']:checked");
+    this.selectedAccounts = Array.from(checkboxes).map((cb) => cb.value);
+    this.accountSelectorModal.querySelector(".selected-count").textContent = this.selectedAccounts.length;
+  }
+
+  async saveMultiAccountRule(ruleData) {
+    try {
+      this.closeEditor();
+
+      const payload = {
+        ad_account_ids: this.selectedAccounts,
+        ...ruleData,
+      };
+
+      const response = await fetch("/api/rules/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || "Failed to create batch rules");
+      }
+
+      const result = await response.json();
+
+      // Show simple status (no progress modal)
+      if (result.completed === result.total_accounts) {
+        showSuccess(`Rule created successfully on all ${result.total_accounts} accounts`);
+      } else {
+        showWarning(`Rule created on ${result.completed} out of ${result.total_accounts} accounts`);
+      }
+
+      // Reset multi-account mode
+      this.isMultiAccountMode = false;
+      this.selectedAccounts = [];
+    } catch (error) {
+      console.error("Error creating batch rules:", error);
+      showError(error.message);
+    }
+  }
+
+  showBatchProgress() {
+    this.batchProgressModal.style.display = "flex";
+    this.batchProgressModal.querySelector(".progress-fill").style.width = "0%";
+    this.batchProgressModal.querySelector(".completed-count").textContent = "0";
+    this.batchProgressModal.querySelector(".total-count").textContent = this.selectedAccounts.length;
+    this.batchProgressModal.querySelector(".batch-results-list").innerHTML = "";
+    this.batchProgressModal.querySelector(".close-progress").disabled = true;
+
+    // Add initial placeholders for each account
+    this.selectedAccounts.forEach((accountId) => {
+      const accountName = this.allAdAccounts.find((acc) => acc.id === accountId)?.name || accountId;
+      const resultItem = document.createElement("div");
+      resultItem.className = "batch-result-item pending";
+      resultItem.innerHTML = `
+        <span class="result-icon">⏳</span>
+        <span class="result-text">${accountName}</span>
+      `;
+      resultItem.dataset.accountId = accountId;
+      this.batchProgressModal.querySelector(".batch-results-list").appendChild(resultItem);
+    });
+  }
+
+  updateBatchProgress(completed, total, results) {
+    const percentage = (completed / total) * 100;
+    this.batchProgressModal.querySelector(".progress-fill").style.width = `${percentage}%`;
+    this.batchProgressModal.querySelector(".completed-count").textContent = completed;
+
+    // Update each result item
+    results.forEach((result) => {
+      const item = this.batchProgressModal.querySelector(`.batch-result-item[data-account-id="${result.ad_account_id}"]`);
+      if (item) {
+        if (result.success) {
+          item.className = "batch-result-item success";
+          item.querySelector(".result-icon").textContent = "✓";
+        } else {
+          item.className = "batch-result-item failed";
+          item.querySelector(".result-icon").textContent = "✗";
+          item.querySelector(".result-text").innerHTML += `<br><small class="error-text">${result.error}</small>`;
+        }
+      }
+    });
+  }
+
+  closeBatchProgress() {
+    this.batchProgressModal.style.display = "none";
+  }
+
+  showBatchResults(results, successCount, failedCount) {
+    this.batchResultsModal.style.display = "flex";
+    this.batchResultsModal.querySelector(".success-count").textContent = successCount;
+    this.batchResultsModal.querySelector(".failed-count").textContent = failedCount;
+
+    const resultsList = this.batchResultsModal.querySelector(".results-list");
+    resultsList.innerHTML = "";
+
+    results.forEach((result) => {
+      const accountName = this.allAdAccounts.find((acc) => acc.id === result.ad_account_id)?.name || result.ad_account_id;
+      const resultItem = document.createElement("div");
+      resultItem.className = `result-item ${result.success ? "success" : "failed"}`;
+      resultItem.innerHTML = `
+        <span class="result-icon">${result.success ? "✓" : "✗"}</span>
+        <span class="result-account">${accountName}</span>
+        ${result.error ? `<span class="result-error">${result.error}</span>` : ""}
+      `;
+      resultsList.appendChild(resultItem);
+    });
+  }
+
+  closeBatchResults() {
+    this.batchResultsModal.style.display = "none";
+  }
+}
+
+// Initialize Automated Rules Manager
+const automatedRulesManager = new AutomatedRulesManager();
+
+// Bind rules button click
+document.querySelector(".rules-btn").addEventListener("click", () => {
+  automatedRulesManager.openModal();
+});
