@@ -8330,6 +8330,16 @@ class AutomatedRulesManager {
 
     console.log("Opening account selector modal...");
     this.accountSelectorModal.style.display = "flex";
+    this.accountSelectorModal.style.position = "fixed";
+    this.accountSelectorModal.style.top = "0";
+    this.accountSelectorModal.style.left = "0";
+    this.accountSelectorModal.style.width = "100%";
+    this.accountSelectorModal.style.height = "100%";
+    this.accountSelectorModal.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+    this.accountSelectorModal.style.zIndex = "10000";
+    this.accountSelectorModal.style.justifyContent = "center";
+    this.accountSelectorModal.style.alignItems = "center";
+    console.log("Modal should be visible now. Check if you can see it!");
   }
 
   closeAccountSelector() {
