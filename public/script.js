@@ -8297,7 +8297,7 @@ class AutomatedRulesManager {
         showError("Please select at least 2 accounts for multi-account rule creation");
         return;
       }
-      this.closeAccountSelector();
+      this.closeAccountSelector(false);
       this.isMultiAccountMode = true;
       console.log("Multi-account mode set to:", this.isMultiAccountMode);
       console.log("Selected accounts array:", this.selectedAccounts);
@@ -8363,9 +8363,23 @@ class AutomatedRulesManager {
     console.log("Modal should be visible now. Check if you can see it!");
   }
 
-  closeAccountSelector() {
+  closeAccountSelector(resetSelection = true) {
     this.accountSelectorModal.style.display = "none";
-    this.selectedAccounts = [];
+    if (resetSelection) {
+      this.selectedAccounts = [];
+      this.isMultiAccountMode = false;
+
+      // Clear any existing selections from the checklist
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+
+      const selectedCount = this.accountSelectorModal.querySelector(".selected-count");
+      if (selectedCount) {
+        selectedCount.textContent = "0";
+      }
+    }
   }
 
   async populateAccountChecklist() {
