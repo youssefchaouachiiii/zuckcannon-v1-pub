@@ -7240,9 +7240,26 @@ class AutomatedRulesManager {
   constructor() {
     this.rulesModal = document.querySelector(".automated-rules-modal");
     this.editorModal = document.querySelector(".rule-editor-modal");
+    this.accountSelectorModal = document.querySelector(".account-selector-modal");
+    this.batchProgressModal = document.querySelector(".batch-progress-modal");
+    this.batchResultsModal = document.querySelector(".batch-results-modal");
     this.currentAccountId = null;
     this.currentRuleId = null;
     this.conditions = [];
+    this.selectedAccounts = []; // For multi-account creation
+    this.isMultiAccountMode = false;
+    this.allAdAccounts = []; // Store all available accounts
+
+    // Verify all modals exist
+    if (!this.accountSelectorModal) {
+      console.warn("Account selector modal not found - multi-account feature may not work");
+    }
+    if (!this.batchProgressModal) {
+      console.warn("Batch progress modal not found - multi-account feature may not work");
+    }
+    if (!this.batchResultsModal) {
+      console.warn("Batch results modal not found - multi-account feature may not work");
+    }
 
     this.init();
   }
@@ -7266,14 +7283,26 @@ class AutomatedRulesManager {
       if (e.target === this.editorModal) this.closeEditor();
     });
 
-    // Create rule button
+    // Create rule button (single account)
     this.rulesModal.querySelector(".create-rule-btn").addEventListener("click", () => {
       if (!this.currentAccountId) {
         showError("Please select an ad account first");
         return;
       }
+      this.isMultiAccountMode = false;
+      this.selectedAccounts = [];
       this.openEditor();
     });
+
+    // Create multi-account rule button
+    const multiRuleBtn = this.rulesModal.querySelector(".create-multi-rule-btn");
+    if (multiRuleBtn) {
+      multiRuleBtn.addEventListener("click", () => {
+        this.openAccountSelector();
+      });
+    } else {
+      console.error("Multi-account rule button not found");
+    }
 
     // Account dropdown change
     this.rulesModal.querySelector(".rules-account-dropdown").addEventListener("change", (e) => {
@@ -7292,6 +7321,9 @@ class AutomatedRulesManager {
 
     // Editor form controls
     this.setupEditorControls();
+
+    // Account Selector Modal controls
+    this.setupAccountSelectorControls();
 
     // Load ad accounts
     this.loadAdAccounts();
@@ -7551,9 +7583,12 @@ class AutomatedRulesManager {
   getScheduleText(scheduleSpec) {
     if (!scheduleSpec) return "Trigger";
 
-    if (scheduleSpec.schedule_type === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
-    if (scheduleSpec.schedule_type === "DAILY") return "Daily (12:00 PM)";
-    if (scheduleSpec.schedule_type === "CUSTOM") {
+    const scheduleType = scheduleSpec.schedule_type || scheduleSpec.scheduleType;
+
+    if (scheduleType === "HOURLY") return "Continuously (Run every ~60 minutes)";
+    if (scheduleType === "SEMI_HOURLY") return "Continuously (Run every 30-60 minutes)";
+    if (scheduleType === "DAILY") return "Daily (12:00 PM)";
+    if (scheduleType === "CUSTOM") {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       // Meta API returns nested schedule array format
       const schedule = scheduleSpec.schedule?.[0] || scheduleSpec;
@@ -7562,7 +7597,7 @@ class AutomatedRulesManager {
       return `Custom: ${dayNames}`;
     }
 
-    return "Unknown";
+    return scheduleType || "Unknown";
   }
 
   openModal() {
@@ -7848,9 +7883,8 @@ class AutomatedRulesManager {
       if (endTime) schedule.end_minute = timeToMinutes(endTime);
     }
 
-    return {
+    const formData = {
       name,
-      ad_account_id: this.currentAccountId,
       entity_type: entityType,
       rule_type: ruleType,
       time_preset: timeRange,
@@ -7859,6 +7893,13 @@ class AutomatedRulesManager {
       schedule,
       subscribers,
     };
+
+    // Only add ad_account_id for single account mode
+    if (!this.isMultiAccountMode) {
+      formData.ad_account_id = this.currentAccountId;
+    }
+
+    return formData;
   }
 
   async saveRule() {
@@ -7868,11 +7909,6 @@ class AutomatedRulesManager {
       // Validation
       if (!ruleData.name) {
         showError("Please enter a rule name");
-        return;
-      }
-
-      if (!this.currentAccountId) {
-        showError("Please select an ad account first");
         return;
       }
 
@@ -7890,6 +7926,25 @@ class AutomatedRulesManager {
         showError("Please select an action");
         return;
       }
+
+      // Debug logging
+      console.log("Save Rule - Multi-Account Mode:", this.isMultiAccountMode);
+      console.log("Save Rule - Selected Accounts:", this.selectedAccounts);
+      console.log("Save Rule - Selected Accounts Length:", this.selectedAccounts.length);
+
+      // Check if multi-account mode
+      if (this.isMultiAccountMode && this.selectedAccounts.length > 0) {
+        console.log("Using multi-account save method");
+        return await this.saveMultiAccountRule(ruleData);
+      }
+
+      // Single account mode validation
+      if (!this.currentAccountId && !this.isMultiAccountMode) {
+        showError("Please select an ad account first");
+        return;
+      }
+
+      console.log("Using single-account save method for account:", this.currentAccountId);
 
       const url = this.currentRuleId ? `/api/rules/${this.currentRuleId}` : "/api/rules";
       const method = this.currentRuleId ? "PUT" : "POST";
@@ -8213,6 +8268,295 @@ class AutomatedRulesManager {
       console.error("Error deleting rule:", error);
       showError("Failed to delete rule");
     }
+  }
+
+  // ===== Multi-Account Rule Creation Methods =====
+
+  setupAccountSelectorControls() {
+    // Skip setup if modals don't exist
+    if (!this.accountSelectorModal || !this.batchProgressModal || !this.batchResultsModal) {
+      console.warn("Skipping account selector controls setup - modals not found");
+      return;
+    }
+
+    // Close button
+    this.accountSelectorModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
+      this.closeAccountSelector();
+    });
+
+    // Cancel button
+    this.accountSelectorModal.querySelector(".cancel-account-selector")?.addEventListener("click", () => {
+      this.closeAccountSelector();
+    });
+
+    // Next button - proceed to rule editor
+    this.accountSelectorModal.querySelector(".next-to-rule-editor")?.addEventListener("click", () => {
+      // Update selected accounts array before validation
+      this.updateSelectedAccountsCount();
+
+      console.log("Next button clicked - Selected accounts:", this.selectedAccounts);
+
+      if (this.selectedAccounts.length < 2) {
+        showError("Please select at least 2 accounts for multi-account rule creation");
+        return;
+      }
+      this.closeAccountSelector(false);
+      this.isMultiAccountMode = true;
+      console.log("Multi-account mode set to:", this.isMultiAccountMode);
+      console.log("Selected accounts array:", this.selectedAccounts);
+      this.openEditor();
+    });
+
+    // Select All / Deselect All
+    this.accountSelectorModal.querySelector(".select-all-accounts")?.addEventListener("click", () => {
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = true;
+      });
+      this.updateSelectedAccountsCount();
+    });
+
+    this.accountSelectorModal.querySelector(".deselect-all-accounts")?.addEventListener("click", () => {
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      this.updateSelectedAccountsCount();
+    });
+
+    // Close batch progress modal
+    this.batchProgressModal.querySelector(".close-progress")?.addEventListener("click", () => {
+      this.closeBatchProgress();
+    });
+
+    // Close batch results modal
+    this.batchResultsModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
+      this.closeBatchResults();
+    });
+
+    this.batchResultsModal.querySelector(".close-results")?.addEventListener("click", () => {
+      this.closeBatchResults();
+    });
+  }
+
+  openAccountSelector() {
+    console.log("openAccountSelector called");
+
+    if (!this.accountSelectorModal) {
+      console.error("Account selector modal not found!");
+      showError("Multi-account feature is not available. Please refresh the page.");
+      return;
+    }
+
+    console.log("Loading accounts into checklist...");
+    // Load accounts into checklist
+    this.populateAccountChecklist();
+
+    console.log("Opening account selector modal...");
+    this.accountSelectorModal.style.display = "flex";
+    this.accountSelectorModal.style.position = "fixed";
+    this.accountSelectorModal.style.top = "0";
+    this.accountSelectorModal.style.left = "0";
+    this.accountSelectorModal.style.width = "100%";
+    this.accountSelectorModal.style.height = "100%";
+    this.accountSelectorModal.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+    this.accountSelectorModal.style.zIndex = "10000";
+    this.accountSelectorModal.style.justifyContent = "center";
+    this.accountSelectorModal.style.alignItems = "center";
+    console.log("Modal should be visible now. Check if you can see it!");
+  }
+
+  closeAccountSelector(resetSelection = true) {
+    this.accountSelectorModal.style.display = "none";
+    if (resetSelection) {
+      this.selectedAccounts = [];
+      this.isMultiAccountMode = false;
+
+      // Clear any existing selections from the checklist
+      const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+
+      const selectedCount = this.accountSelectorModal.querySelector(".selected-count");
+      if (selectedCount) {
+        selectedCount.textContent = "0";
+      }
+    }
+  }
+
+  async populateAccountChecklist() {
+    try {
+      console.log("Populating account checklist...");
+      const accountsList = document.getElementById("ad-acc-list");
+      console.log("Account list element:", accountsList);
+
+      if (!accountsList) {
+        console.error("ad-acc-list not found!");
+        showError("Ad accounts list not found. Please refresh the page.");
+        return;
+      }
+
+      const accounts = Array.from(accountsList.querySelectorAll("li")).map((li) => {
+        const accountLink = li.querySelector("a.account");
+        return {
+          id: accountLink?.dataset.campaignId || accountLink?.getAttribute("data-campaign-id"),
+          name: accountLink?.textContent?.trim() || li.textContent.trim(),
+        };
+      });
+
+      console.log("Found accounts:", accounts);
+
+      // Store for later use
+      this.allAdAccounts = accounts.filter((acc) => acc.id);
+      console.log("Filtered accounts with ID:", this.allAdAccounts);
+
+      if (this.allAdAccounts.length === 0) {
+        showError("No ad accounts found. Please add ad accounts first.");
+        return;
+      }
+
+      const checklist = this.accountSelectorModal.querySelector(".account-checklist");
+      checklist.innerHTML = "";
+
+      this.allAdAccounts.forEach((account) => {
+        const label = document.createElement("label");
+        label.className = "account-checkbox-label";
+        label.innerHTML = `
+          <input type="checkbox" value="${account.id}" class="account-checkbox" />
+          <span>${account.name}</span>
+        `;
+
+        const checkbox = label.querySelector("input");
+        checkbox.addEventListener("change", () => {
+          this.updateSelectedAccountsCount();
+        });
+
+        checklist.appendChild(label);
+      });
+
+      console.log("Account checklist populated with", this.allAdAccounts.length, "accounts");
+      this.updateSelectedAccountsCount();
+    } catch (error) {
+      console.error("Error populating account checklist:", error);
+      showError("Failed to load ad accounts");
+    }
+  }
+
+  updateSelectedAccountsCount() {
+    const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']:checked");
+    this.selectedAccounts = Array.from(checkboxes).map((cb) => cb.value);
+    this.accountSelectorModal.querySelector(".selected-count").textContent = this.selectedAccounts.length;
+  }
+
+  async saveMultiAccountRule(ruleData) {
+    try {
+      this.closeEditor();
+
+      const payload = {
+        ad_account_ids: this.selectedAccounts,
+        ...ruleData,
+      };
+
+      const response = await fetch("/api/rules/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || "Failed to create batch rules");
+      }
+
+      const result = await response.json();
+
+      // Show simple status (no progress modal)
+      if (result.completed === result.total_accounts) {
+        showSuccess(`Rule created successfully on all ${result.total_accounts} accounts`);
+      } else {
+        showWarning(`Rule created on ${result.completed} out of ${result.total_accounts} accounts`);
+      }
+
+      // Reset multi-account mode
+      this.isMultiAccountMode = false;
+      this.selectedAccounts = [];
+    } catch (error) {
+      console.error("Error creating batch rules:", error);
+      showError(error.message);
+    }
+  }
+
+  showBatchProgress() {
+    this.batchProgressModal.style.display = "flex";
+    this.batchProgressModal.querySelector(".progress-fill").style.width = "0%";
+    this.batchProgressModal.querySelector(".completed-count").textContent = "0";
+    this.batchProgressModal.querySelector(".total-count").textContent = this.selectedAccounts.length;
+    this.batchProgressModal.querySelector(".batch-results-list").innerHTML = "";
+    this.batchProgressModal.querySelector(".close-progress").disabled = true;
+
+    // Add initial placeholders for each account
+    this.selectedAccounts.forEach((accountId) => {
+      const accountName = this.allAdAccounts.find((acc) => acc.id === accountId)?.name || accountId;
+      const resultItem = document.createElement("div");
+      resultItem.className = "batch-result-item pending";
+      resultItem.innerHTML = `
+        <span class="result-icon">⏳</span>
+        <span class="result-text">${accountName}</span>
+      `;
+      resultItem.dataset.accountId = accountId;
+      this.batchProgressModal.querySelector(".batch-results-list").appendChild(resultItem);
+    });
+  }
+
+  updateBatchProgress(completed, total, results) {
+    const percentage = (completed / total) * 100;
+    this.batchProgressModal.querySelector(".progress-fill").style.width = `${percentage}%`;
+    this.batchProgressModal.querySelector(".completed-count").textContent = completed;
+
+    // Update each result item
+    results.forEach((result) => {
+      const item = this.batchProgressModal.querySelector(`.batch-result-item[data-account-id="${result.ad_account_id}"]`);
+      if (item) {
+        if (result.success) {
+          item.className = "batch-result-item success";
+          item.querySelector(".result-icon").textContent = "✓";
+        } else {
+          item.className = "batch-result-item failed";
+          item.querySelector(".result-icon").textContent = "✗";
+          item.querySelector(".result-text").innerHTML += `<br><small class="error-text">${result.error}</small>`;
+        }
+      }
+    });
+  }
+
+  closeBatchProgress() {
+    this.batchProgressModal.style.display = "none";
+  }
+
+  showBatchResults(results, successCount, failedCount) {
+    this.batchResultsModal.style.display = "flex";
+    this.batchResultsModal.querySelector(".success-count").textContent = successCount;
+    this.batchResultsModal.querySelector(".failed-count").textContent = failedCount;
+
+    const resultsList = this.batchResultsModal.querySelector(".results-list");
+    resultsList.innerHTML = "";
+
+    results.forEach((result) => {
+      const accountName = this.allAdAccounts.find((acc) => acc.id === result.ad_account_id)?.name || result.ad_account_id;
+      const resultItem = document.createElement("div");
+      resultItem.className = `result-item ${result.success ? "success" : "failed"}`;
+      resultItem.innerHTML = `
+        <span class="result-icon">${result.success ? "✓" : "✗"}</span>
+        <span class="result-account">${accountName}</span>
+        ${result.error ? `<span class="result-error">${result.error}</span>` : ""}
+      `;
+      resultsList.appendChild(resultItem);
+    });
+  }
+
+  closeBatchResults() {
+    this.batchResultsModal.style.display = "none";
   }
 }
 
