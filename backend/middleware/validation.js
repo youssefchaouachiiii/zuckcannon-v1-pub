@@ -1477,6 +1477,167 @@ export const validateRequest = {
 
     next();
   },
+
+  // Validate batch rule creation (multi-account)
+  createBatchRule: (req, res, next) => {
+    const { ad_account_ids, name, entity_type, conditions, action, rule_type } = req.body;
+
+    // Validate ad_account_ids array
+    if (!ad_account_ids || !Array.isArray(ad_account_ids) || ad_account_ids.length === 0) {
+      return res.status(400).json({
+        error: "ad_account_ids array is required and must contain at least one account",
+      });
+    }
+
+    // Minimum 2 accounts for batch (otherwise use single endpoint)
+    if (ad_account_ids.length < 2) {
+      return res.status(400).json({
+        error: "Batch creation requires at least 2 accounts. For single account, use POST /api/rules instead",
+      });
+    }
+
+    // Maximum 20 accounts per batch
+    if (ad_account_ids.length > 20) {
+      return res.status(400).json({
+        error: "Maximum 20 accounts allowed per batch request",
+      });
+    }
+
+    // Validate each account ID format
+    for (const accountId of ad_account_ids) {
+      if (!accountId || typeof accountId !== "string") {
+        return res.status(400).json({
+          error: "All ad_account_ids must be non-empty strings",
+        });
+      }
+    }
+
+    // All other validations are same as createRule
+    // Required fields
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    if (!entity_type) {
+      return res.status(400).json({ error: "entity_type is required" });
+    }
+
+    if (!conditions || !Array.isArray(conditions) || conditions.length === 0) {
+      return res.status(400).json({
+        error: "conditions array is required and must contain at least one condition",
+      });
+    }
+
+    if (!action || !action.type) {
+      return res.status(400).json({ error: "action.type is required" });
+    }
+
+    if (!rule_type) {
+      return res.status(400).json({ error: "rule_type is required" });
+    }
+
+    // Validate entity_type
+    const validEntityTypes = ["CAMPAIGN", "ADSET", "AD"];
+    if (!validEntityTypes.includes(entity_type)) {
+      return res.status(400).json({
+        error: `Invalid entity_type. Must be one of: ${validEntityTypes.join(", ")}`,
+      });
+    }
+
+    // Validate rule_type
+    const validRuleTypes = ["TRIGGER", "SCHEDULE"];
+    if (!validRuleTypes.includes(rule_type)) {
+      return res.status(400).json({
+        error: `Invalid rule_type. Must be one of: ${validRuleTypes.join(", ")}`,
+      });
+    }
+
+    // Validate action type
+    const validActionTypes = ["PAUSE", "UNPAUSE", "SEND_NOTIFICATION", "CHANGE_BUDGET", "CHANGE_BID"];
+    if (!validActionTypes.includes(action.type)) {
+      return res.status(400).json({
+        error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
+      });
+    }
+
+    // Validate action-specific fields (same as createRule)
+    if (action.type === "CHANGE_BUDGET") {
+      if (!action.budget_change_type) {
+        return res.status(400).json({
+          error: "action.budget_change_type is required for CHANGE_BUDGET action",
+        });
+      }
+
+      if (action.budget_change_type === "SET") {
+        return res.status(400).json({
+          error: "Invalid action: The Meta API does not support setting a budget to a specific amount, only increasing or decreasing it.",
+        });
+      }
+
+      const validBudgetChangeTypes = ["INCREASE", "DECREASE"];
+      if (!validBudgetChangeTypes.includes(action.budget_change_type)) {
+        return res.status(400).json({
+          error: `Invalid action.budget_change_type. Must be one of: ${validBudgetChangeTypes.join(", ")}`,
+        });
+      }
+
+      if (action.amount === undefined || action.amount === null) {
+        return res.status(400).json({
+          error: "action.amount is required for CHANGE_BUDGET action",
+        });
+      }
+
+      if (isNaN(parseFloat(action.amount))) {
+        return res.status(400).json({
+          error: "action.amount must be a valid number",
+        });
+      }
+
+      if (entity_type === "ADSET") {
+        if (!action.budget_type) {
+          return res.status(400).json({
+            error: "action.budget_type is required for CHANGE_BUDGET action on ADSET",
+          });
+        }
+
+        const validBudgetTypes = ["daily_budget", "lifetime_budget"];
+        if (!validBudgetTypes.includes(action.budget_type)) {
+          return res.status(400).json({
+            error: `Invalid action.budget_type. Must be one of: ${validBudgetTypes.join(", ")}`,
+          });
+        }
+      }
+    }
+
+    if (action.type === "CHANGE_BID") {
+      if (!action.bid_change_type) {
+        return res.status(400).json({
+          error: "action.bid_change_type is required for CHANGE_BID action",
+        });
+      }
+
+      const validBidChangeTypes = ["INCREASE", "DECREASE", "SET"];
+      if (!validBidChangeTypes.includes(action.bid_change_type)) {
+        return res.status(400).json({
+          error: `Invalid action.bid_change_type. Must be one of: ${validBidChangeTypes.join(", ")}`,
+        });
+      }
+
+      if (action.amount === undefined || action.amount === null) {
+        return res.status(400).json({
+          error: "action.amount is required for CHANGE_BID action",
+        });
+      }
+
+      if (isNaN(parseFloat(action.amount))) {
+        return res.status(400).json({
+          error: "action.amount must be a valid number",
+        });
+      }
+    }
+
+    next();
+  },
 };
 
 // Rate limiting middleware factory

@@ -967,6 +967,7 @@
         <h2>Automated Rules</h2>
         <div class="modal-header-buttons">
           <button class="btn-primary create-rule-btn">+ Create Rule</button>
+          <button class="btn-secondary create-multi-rule-btn" style="margin-right: 10px;">+ Multi-Account Rule</button>
           <button class="modal-close-btn">&times;</button>
         </div>
       </div>
@@ -1199,6 +1200,112 @@
       <div class="modal-footer">
         <button type="button" class="btn-secondary cancel-rule-btn">Cancel</button>
         <button type="button" class="btn-primary save-rule-btn">Create Rule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Selector Modal (for multi-account rule creation) -->
+  <div class="account-selector-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Select Ad Accounts</h2>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-description">Choose which accounts to create this rule on:</p>
+
+        <!-- Select All / Deselect All -->
+        <div class="account-selector-controls">
+          <button type="button" class="btn-link select-all-accounts">Select All</button>
+          <button type="button" class="btn-link deselect-all-accounts">Deselect All</button>
+        </div>
+
+        <!-- Account Checklist -->
+        <div class="account-checklist">
+          <!-- Dynamically populated with checkboxes -->
+        </div>
+
+        <p class="form-help-text" style="margin-top: 15px;">
+          Selected: <strong class="selected-count">0</strong> accounts
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary cancel-account-selector">Cancel</button>
+        <button type="button" class="btn-primary next-to-rule-editor">Next: Configure Rule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Progress Modal -->
+  <div class="batch-progress-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Creating Rules...</h2>
+      </div>
+
+      <div class="modal-body">
+        <p class="progress-description">Creating rule on multiple accounts. Please wait...</p>
+
+        <!-- Progress Bar -->
+        <div class="progress-bar-container">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+          </div>
+          <p class="progress-text"><strong class="completed-count">0</strong> of <strong class="total-count">0</strong> accounts completed</p>
+        </div>
+
+        <!-- Detailed Results Per Account -->
+        <div class="batch-results-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary close-progress" disabled>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Results Summary Modal -->
+  <div class="batch-results-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Rule Creation Summary</h2>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="results-summary">
+          <div class="result-stat success-stat">
+            <div class="stat-icon">✓</div>
+            <div class="stat-content">
+              <div class="stat-number success-count">0</div>
+              <div class="stat-label">Succeeded</div>
+            </div>
+          </div>
+
+          <div class="result-stat failed-stat">
+            <div class="stat-icon">✗</div>
+            <div class="stat-content">
+              <div class="stat-number failed-count">0</div>
+              <div class="stat-label">Failed</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Results List -->
+        <div class="detailed-results">
+          <h4>Detailed Results:</h4>
+          <div class="results-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-primary close-results">Done</button>
       </div>
     </div>
   </div>
