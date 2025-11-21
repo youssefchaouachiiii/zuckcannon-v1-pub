@@ -7924,8 +7924,14 @@ class AutomatedRulesManager {
         return;
       }
 
+      // Debug logging
+      console.log("Save Rule - Multi-Account Mode:", this.isMultiAccountMode);
+      console.log("Save Rule - Selected Accounts:", this.selectedAccounts);
+      console.log("Save Rule - Selected Accounts Length:", this.selectedAccounts.length);
+
       // Check if multi-account mode
-      if (this.isMultiAccountMode && this.selectedAccounts.length > 1) {
+      if (this.isMultiAccountMode && this.selectedAccounts.length > 0) {
+        console.log("Using multi-account save method");
         return await this.saveMultiAccountRule(ruleData);
       }
 
@@ -7934,6 +7940,8 @@ class AutomatedRulesManager {
         showError("Please select an ad account first");
         return;
       }
+
+      console.log("Using single-account save method for account:", this.currentAccountId);
 
       const url = this.currentRuleId ? `/api/rules/${this.currentRuleId}` : "/api/rules";
       const method = this.currentRuleId ? "PUT" : "POST";
@@ -8280,12 +8288,19 @@ class AutomatedRulesManager {
 
     // Next button - proceed to rule editor
     this.accountSelectorModal.querySelector(".next-to-rule-editor")?.addEventListener("click", () => {
+      // Update selected accounts array before validation
+      this.updateSelectedAccountsCount();
+
+      console.log("Next button clicked - Selected accounts:", this.selectedAccounts);
+
       if (this.selectedAccounts.length < 2) {
         showError("Please select at least 2 accounts for multi-account rule creation");
         return;
       }
       this.closeAccountSelector();
       this.isMultiAccountMode = true;
+      console.log("Multi-account mode set to:", this.isMultiAccountMode);
+      console.log("Selected accounts array:", this.selectedAccounts);
       this.openEditor();
     });
 
