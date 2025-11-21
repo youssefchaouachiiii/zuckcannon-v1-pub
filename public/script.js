@@ -7250,6 +7250,17 @@ class AutomatedRulesManager {
     this.isMultiAccountMode = false;
     this.allAdAccounts = []; // Store all available accounts
 
+    // Verify all modals exist
+    if (!this.accountSelectorModal) {
+      console.warn("Account selector modal not found - multi-account feature may not work");
+    }
+    if (!this.batchProgressModal) {
+      console.warn("Batch progress modal not found - multi-account feature may not work");
+    }
+    if (!this.batchResultsModal) {
+      console.warn("Batch results modal not found - multi-account feature may not work");
+    }
+
     this.init();
   }
 
@@ -7284,9 +7295,14 @@ class AutomatedRulesManager {
     });
 
     // Create multi-account rule button
-    this.rulesModal.querySelector(".create-multi-rule-btn").addEventListener("click", () => {
-      this.openAccountSelector();
-    });
+    const multiRuleBtn = this.rulesModal.querySelector(".create-multi-rule-btn");
+    if (multiRuleBtn) {
+      multiRuleBtn.addEventListener("click", () => {
+        this.openAccountSelector();
+      });
+    } else {
+      console.error("Multi-account rule button not found");
+    }
 
     // Account dropdown change
     this.rulesModal.querySelector(".rules-account-dropdown").addEventListener("change", (e) => {
@@ -8240,18 +8256,24 @@ class AutomatedRulesManager {
   // ===== Multi-Account Rule Creation Methods =====
 
   setupAccountSelectorControls() {
+    // Skip setup if modals don't exist
+    if (!this.accountSelectorModal || !this.batchProgressModal || !this.batchResultsModal) {
+      console.warn("Skipping account selector controls setup - modals not found");
+      return;
+    }
+
     // Close button
-    this.accountSelectorModal.querySelector(".modal-close-btn").addEventListener("click", () => {
+    this.accountSelectorModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
       this.closeAccountSelector();
     });
 
     // Cancel button
-    this.accountSelectorModal.querySelector(".cancel-account-selector").addEventListener("click", () => {
+    this.accountSelectorModal.querySelector(".cancel-account-selector")?.addEventListener("click", () => {
       this.closeAccountSelector();
     });
 
     // Next button - proceed to rule editor
-    this.accountSelectorModal.querySelector(".next-to-rule-editor").addEventListener("click", () => {
+    this.accountSelectorModal.querySelector(".next-to-rule-editor")?.addEventListener("click", () => {
       if (this.selectedAccounts.length < 2) {
         showError("Please select at least 2 accounts for multi-account rule creation");
         return;
@@ -8262,7 +8284,7 @@ class AutomatedRulesManager {
     });
 
     // Select All / Deselect All
-    this.accountSelectorModal.querySelector(".select-all-accounts").addEventListener("click", () => {
+    this.accountSelectorModal.querySelector(".select-all-accounts")?.addEventListener("click", () => {
       const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
       checkboxes.forEach((checkbox) => {
         checkbox.checked = true;
@@ -8270,7 +8292,7 @@ class AutomatedRulesManager {
       this.updateSelectedAccountsCount();
     });
 
-    this.accountSelectorModal.querySelector(".deselect-all-accounts").addEventListener("click", () => {
+    this.accountSelectorModal.querySelector(".deselect-all-accounts")?.addEventListener("click", () => {
       const checkboxes = this.accountSelectorModal.querySelectorAll(".account-checklist input[type='checkbox']");
       checkboxes.forEach((checkbox) => {
         checkbox.checked = false;
@@ -8279,16 +8301,16 @@ class AutomatedRulesManager {
     });
 
     // Close batch progress modal
-    this.batchProgressModal.querySelector(".close-progress").addEventListener("click", () => {
+    this.batchProgressModal.querySelector(".close-progress")?.addEventListener("click", () => {
       this.closeBatchProgress();
     });
 
     // Close batch results modal
-    this.batchResultsModal.querySelector(".modal-close-btn").addEventListener("click", () => {
+    this.batchResultsModal.querySelector(".modal-close-btn")?.addEventListener("click", () => {
       this.closeBatchResults();
     });
 
-    this.batchResultsModal.querySelector(".close-results").addEventListener("click", () => {
+    this.batchResultsModal.querySelector(".close-results")?.addEventListener("click", () => {
       this.closeBatchResults();
     });
   }
