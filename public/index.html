@@ -203,10 +203,13 @@
         <h2>Ad Set Configuration</h2>
         <div class="adset-form-container">
           <input type="text" value="Campaign Id" class="preselect config-campaign-id" readonly />
-          <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly />
+          <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly
+            style="display: none;" />
           <input type="text" value="OFFSITE_CONVERSIONS" class="preselect config-optimization-goal" readonly />
-          <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly />
-          <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly />
+          <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly
+            style="display: none;" />
+          <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly
+            style="display: none;" />
           <input type="text" placeholder="Ad Set Name*" data-container="adset-form-container" class="config-adset-name"
             required />
 
@@ -301,8 +304,8 @@
             </div>
           </div>
 
-          <!-- Bid Strategy Section -->
-          <div class="bid-strategy-section" style="margin-top: 15px;">
+          <!-- Bid Strategy Section - HIDDEN (not used in ad set creation, campaign-level only) -->
+          <div class="bid-strategy-section" style="display: none; margin-top: 15px;">
             <div class="dropdown-container">
               <div class="custom-dropdown">
                 <div class="dropdown-selected" data-dropdown="adset-bid-strategy">
@@ -1253,7 +1256,8 @@
           <div class="progress-bar">
             <div class="progress-fill" style="width: 0%"></div>
           </div>
-          <p class="progress-text"><strong class="completed-count">0</strong> of <strong class="total-count">0</strong> accounts completed</p>
+          <p class="progress-text"><strong class="completed-count">0</strong> of <strong class="total-count">0</strong>
+            accounts completed</p>
         </div>
 
         <!-- Detailed Results Per Account -->

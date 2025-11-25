@@ -331,9 +331,9 @@ function populateCampaigns(campaigns) {
 
     if (campaign.insights) {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${campaign.bid_strategy}" data-campaign-id="${
-        campaign.id
-      }" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
+          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${
+        campaign.bid_strategy || "LOWEST_COST_WITHOUT_CAP"
+      }" data-campaign-id="${campaign.id}" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
           <h3>${campaign.name}</h3>
           <ul>
             <li>${campaign.status}</li>
@@ -344,7 +344,7 @@ function populateCampaigns(campaigns) {
     } else {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
         data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${
-        campaign.bid_strategy
+        campaign.bid_strategy || "LOWEST_COST_WITHOUT_CAP"
       }" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
         <h3>${campaign.name}</h3>
         <ul>
@@ -659,7 +659,7 @@ class SingleSelectGroup {
             }
 
             appState.updateState("selectedCampaign", clickedItem.dataset.campaignId);
-            appState.updateState("campaignBidStrategy", clickedItem.dataset.bidStrategy);
+            appState.updateState("campaignBidStrategy", clickedItem.dataset.bidStrategy || "LOWEST_COST_WITHOUT_CAP");
             appState.updateState("campaignDailyBudget", clickedItem.dataset.dailyBudget);
             appState.updateState("campaignLifetimeBudget", clickedItem.dataset.lifetimeBudget);
 
@@ -791,33 +791,13 @@ class SingleSelectGroup {
   }
 
   adjustConfigSettings(bidStrategy, campaignDailyBudget, campaignLifetimeBudget) {
-    // Budget is now set at ad set level via budget type dropdown
-    // This function now only handles bid strategy and cost per result
-    const configBidStrategy = document.querySelector(".config-bid-strategy");
-    const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
-    const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
+    // Budget and bid strategy are now set at ad set level
+    // This function is kept for compatibility but no longer modifies UI
+    // Bid strategy fields are hidden since they're campaign-level read-only values
 
-    // Since budgets moved to ad set level, we don't need CBO logic anymore
-    // Just handle bid strategy and cost per result settings
-
-    if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
-      // Cost cap or bid cap strategy - show cost per result
-      if (configBidStrategy) configBidStrategy.value = bidStrategy;
-
-      if (costPerResultWrapper) costPerResultWrapper.style.display = "flex";
-      if (costPerResultGoal) costPerResultGoal.setAttribute("required", "");
-    } else {
-      // Default strategy - hide cost per result
-      if (configBidStrategy) configBidStrategy.value = bidStrategy || "LOWEST_COST_WITHOUT_CAP";
-
-      if (costPerResultWrapper) costPerResultWrapper.style.display = "none";
-      if (costPerResultGoal) costPerResultGoal.removeAttribute("required");
-    }
-
-    // Log for debugging (budget now at ad set level)
-    console.log("Bid strategy config:", {
-      bidStrategy,
-      note: "Budget handling moved to ad set level",
+    console.log("Campaign settings (informational only):", {
+      bidStrategy: bidStrategy || "LOWEST_COST_WITHOUT_CAP",
+      note: "Budget and bid strategy handled at ad set level",
     });
 
     // Trigger validation check after adjusting settings
@@ -1316,20 +1296,6 @@ class SingleSelectGroup {
   }
 }
 
-// Shows/hides the bid amount input based on the selected bid strategy
-function handleBidStrategyChange(bidStrategy) {
-  const costPerResultGoal = document.querySelector(".config-cost-per-result-goal");
-  const costPerResultWrapper = document.querySelector(".budget-input-wrapper.cost-per-result");
-
-  if (bidStrategy === "COST_CAP" || bidStrategy === "LOWEST_COST_WITH_BID_CAP") {
-    if (costPerResultWrapper) costPerResultWrapper.style.display = "flex";
-    if (costPerResultGoal) costPerResultGoal.required = true;
-  } else {
-    if (costPerResultWrapper) costPerResultWrapper.style.display = "none";
-    if (costPerResultGoal) costPerResultGoal.required = false;
-  }
-}
-
 // This function will be called to attach listeners to dropdown options
 function attachDropdownOptionListeners(dropdown) {
   const selected = dropdown.querySelector(".dropdown-selected");
@@ -1380,11 +1346,7 @@ function attachDropdownOptionListeners(dropdown) {
       currentDisplay.parentElement.classList.remove("empty-input");
       console.log(`Selected ${dropdownType}:`, text);
 
-      // Handle bid strategy changes
-      if (dropdownType === "adset-bid-strategy") {
-        const selectedValue = option.dataset.value;
-        handleBidStrategyChange(selectedValue);
-      }
+      // Bid strategy dropdown is hidden, no special handling needed
 
       if (typeof checkRequiredFields === "function") {
         checkRequiredFields();
@@ -5740,7 +5702,7 @@ function addCampaignToUI(campaign) {
   newCampaignElement.setAttribute("data-campaign-id", campaign.id);
   newCampaignElement.setAttribute("data-daily-budget", campaign.daily_budget || "");
   newCampaignElement.setAttribute("data-lifetime-budget", campaign.lifetime_budget || "");
-  newCampaignElement.setAttribute("data-bid-strategy", campaign.bid_strategy || "");
+  newCampaignElement.setAttribute("data-bid-strategy", campaign.bid_strategy || "LOWEST_COST_WITHOUT_CAP");
   newCampaignElement.setAttribute("data-objective", campaign.objective || "");
   newCampaignElement.setAttribute("data-special-ad-categories", JSON.stringify(campaign.special_ad_categories || []));
   newCampaignElement.style.display = ""; // Make it visible if it matches current filter
