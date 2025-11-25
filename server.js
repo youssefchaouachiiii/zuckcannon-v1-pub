@@ -2212,7 +2212,22 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     }
   }
 
-  if (req.body.bid_amount) {
+  // Validate and add bid_amount based on bid strategy
+  const bidStrategy = req.body.bid_strategy || "LOWEST_COST_WITHOUT_CAP";
+  const bidAmountRequired = ["LOWEST_COST_WITH_BID_CAP", "TARGET_COST"].includes(bidStrategy);
+
+  if (bidAmountRequired) {
+    if (!req.body.bid_amount || req.body.bid_amount <= 0) {
+      // return res.status(400).json({
+      //   error: `Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.`,
+      //   details: "Bid amount required for bid strategy provided",
+      //   missing_fields: { bid_amount: true },
+      // });
+      console.log ("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.")
+    }
+    payload.bid_amount = parseInt(req.body.bid_amount);
+  } else if (req.body.bid_amount) {
+    // Optional bid_amount for other strategies
     payload.bid_amount = parseInt(req.body.bid_amount);
   }
 
