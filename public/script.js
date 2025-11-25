@@ -3404,6 +3404,16 @@ class FileUploadHandler {
     const reviewSection = document.querySelector(".create-ads-container");
     reviewSection.style.display = "block";
 
+    // Ensure the create ads button is in a clean state before showing
+    const existingBtn = reviewSection.querySelector(".create-ads-button");
+    if (existingBtn) {
+      animatedEllipsis.stop(existingBtn);
+      existingBtn.textContent = "Create Ads";
+      existingBtn.disabled = false;
+      existingBtn.style.opacity = "1";
+      console.log("[showReviewSection] Button reset to clean state");
+    }
+
     // Update review content
     this.populateReviewData();
 
@@ -3955,8 +3965,27 @@ class FileUploadHandler {
             adCopySection.style.display = "none";
           }
 
+          // Clear and reset review section (create ads container)
+          const reviewSection = document.querySelector(".create-ads-container");
+          if (reviewSection) {
+            reviewSection.style.display = "none";
+
+            // Reset create ads button
+            const createAdsBtn = reviewSection.querySelector(".create-ads-button");
+            if (createAdsBtn) {
+              animatedEllipsis.stop(createAdsBtn);
+              createAdsBtn.textContent = "Create Ads";
+              createAdsBtn.disabled = false;
+              createAdsBtn.style.opacity = "1";
+              console.log("[Reset] Create Ads button reset");
+            }
+          }
+
           // Reset uploaded assets in app state
           appState.updateState("uploadedAssets", []);
+
+          // Reset ad copy data
+          appState.updateState("adCopyData", {});
 
           // Reset progress tracker
           this.progressTracker.reset();
