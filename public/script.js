@@ -2933,7 +2933,7 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.all(uploadPromises);
+      const results = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
       const failedUploads = [];
 
@@ -3181,7 +3181,7 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.all(uploadPromises);
+      const results = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
 
       results.forEach((result) => {
@@ -5259,7 +5259,7 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
       }
 
       // Wait for all uploads to complete
-      const results = await Promise.all(uploadPromises);
+      const results = await Promise.allSettled(uploadPromises);
 
       // Combine results
       const allResults = results.flat();
@@ -7210,6 +7210,7 @@ class AutomatedRulesManager {
     this.selectedAccounts = []; // For multi-account creation
     this.isMultiAccountMode = false;
     this.allAdAccounts = []; // Store all available accounts
+    this.ruleToDuplicate = null;
 
     // Verify all modals exist
     if (!this.accountSelectorModal) {
@@ -7226,6 +7227,28 @@ class AutomatedRulesManager {
   }
 
   init() {
+    // Create the duplicate choice modal dynamically
+    const choiceModal = document.createElement("div");
+    choiceModal.className = "modal duplicate-choice-modal";
+    choiceModal.style.display = "none";
+    choiceModal.innerHTML = `
+      <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Duplicate Rule</h2>
+          <button type="button" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+          <p style="text-align: center; margin-bottom: 24px;">Where would you like to duplicate this rule?</p>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <button class="btn btn-primary duplicate-same-account">In This Ad Account</button>
+            <button class="btn btn-secondary duplicate-other-accounts">To Other Ad Accounts</button>
+          </div>
+        </div>
+      </div>
+    `;
+    this.rulesModal.appendChild(choiceModal);
+    this.choiceModal = choiceModal;
+
     // Bind modal close buttons
     this.rulesModal.querySelectorAll(".modal-close-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.closeModal());
@@ -8289,17 +8312,27 @@ class AutomatedRulesManager {
       // Update selected accounts array before validation
       this.updateSelectedAccountsCount();
 
-      console.log("Next button clicked - Selected accounts:", this.selectedAccounts);
-
-      if (this.selectedAccounts.length < 2) {
+      // For creating a new multi-account rule, must select at least 2 accounts.
+      // For duplicating, must select at least 1.
+      if (!this.ruleToDuplicate && this.selectedAccounts.length < 2) {
         showError("Please select at least 2 accounts for multi-account rule creation");
         return;
       }
+      if (this.ruleToDuplicate && this.selectedAccounts.length < 1) {
+        showError("Please select at least 1 account to duplicate the rule to");
+        return;
+      }
+
       this.closeAccountSelector(false);
       this.isMultiAccountMode = true;
-      console.log("Multi-account mode set to:", this.isMultiAccountMode);
-      console.log("Selected accounts array:", this.selectedAccounts);
-      this.openEditor();
+      
+      if (this.ruleToDuplicate) {
+        // If duplicating, open editor with pre-filled data in duplicate mode
+        this.openEditor(this.ruleToDuplicate.id, this.ruleToDuplicate.meta_rule_id, true);
+      } else {
+        // Otherwise, open a blank editor for a new multi-account rule
+        this.openEditor();
+      }
     });
 
     // Select All / Deselect All
