@@ -456,6 +456,12 @@ function populatePages(pages) {
                 <li data-page-id="${page.id}">${page.name}</li>
         `;
     }
+
+    // Re-attach event listeners to the newly added options
+    const parentDropdown = dropdown.closest('.custom-dropdown');
+    if (parentDropdown) {
+      attachDropdownOptionListeners(parentDropdown);
+    }
   });
 }
 
@@ -1727,49 +1733,49 @@ class UploadForm {
           });
         }
       }
+    } else {
+      console.error("Validation failed. Ad set not created.");
+      if (window.showError) {
+        window.showError("Please fill in all required fields marked with * before creating an ad set.", 4000);
+      }
     }
   }
 
   checkIfInputsAreValid() {
     let isValid = true;
-    const allInputs = document.getElementsByTagName("input");
+    const allInputs = document.querySelectorAll(".adset-form-container input[required]");
     const dropdownInputs = document.querySelectorAll(".adset-form-container .dropdown-display");
 
     // Validate required text inputs
     for (const input of allInputs) {
-      if (input.required && input.dataset.container === this.element.classList.value) {
-        if (input.value === "" || input.value === undefined) {
-          this.emptyInputError(input);
-          isValid = false;
-        } else {
-          input.classList.remove("empty-input");
-          // Also remove error from budget wrapper if exists
-          const wrapper = input.closest(".budget-input-wrapper");
-          if (wrapper) {
-            wrapper.classList.remove("empty-input");
-          }
-        }
+      // Check only for inputs inside the adset form that are currently visible
+      if (input.offsetParent !== null && (input.value === "" || input.value === undefined)) {
+        console.error("Validation failed on text input:", input.name || input.className);
+        this.emptyInputError(input);
+        isValid = false;
       }
     }
 
-    // Validate dropdowns (except pixel dropdown which is conditional)
+    // Validate dropdowns
     const optimizationGoal = document.querySelector(".config-optimization-goal")?.value || "";
     const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
 
     for (const dropdownInput of dropdownInputs) {
-      const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
-
-      // For pixel dropdown, only validate if required for optimization goal
-      if (isPixelDropdown) {
-        if (!requiresPixelAndEvent) {
-          // Remove error styling if present since it's not required
-          dropdownInput.parentElement.classList.remove("empty-input");
-          console.log("Skipping pixel validation - not required for", optimizationGoal);
-          continue;
-        }
+      // NEW CHECK: Only validate visible dropdowns
+      if (dropdownInput.offsetParent === null) {
+        continue;
       }
 
-      if (dropdownInput.classList.contains("placeholder")) {
+      const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
+      const isRequired = !dropdownInput.parentElement.parentElement.classList.contains("optional");
+
+      if (isPixelDropdown && !requiresPixelAndEvent) {
+        dropdownInput.parentElement.classList.remove("empty-input");
+        continue; // Skip validation if not required
+      }
+      
+      if (dropdownInput.classList.contains("placeholder") && isRequired) {
+        console.error("Validation failed on dropdown:", dropdownInput.dataset.dropdown);
         this.emptyDropdownError(dropdownInput);
         isValid = false;
       }
@@ -1779,32 +1785,33 @@ class UploadForm {
     const minAgeInput = document.querySelector(".min-age");
     const maxAgeInput = document.querySelector(".max-age");
     const ageContainer = document.querySelector(".targeting-age");
-
     if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== "none") {
-      isValid = this.validateAgeInputs(minAgeInput, maxAgeInput) && isValid;
+      if (!this.validateAgeInputs(minAgeInput, maxAgeInput)) {
+        isValid = false;
+      }
     }
 
-    const budgetInput = document.querySelector(".config-daily-budget");
+    // Validate budget input
+    const budgetInput = document.querySelector(".config-adset-budget"); // Use the correct budget input selector
     if (budgetInput && budgetInput.required) {
-      isValid = this.validateBudgetInput(budgetInput) && isValid;
+      if (!this.validateBudgetInput(budgetInput)) {
+        isValid = false;
+      }
     }
 
-    // Validate countries selection (only if geo fields are visible)
+
+    // Validate countries selection
     const geoContainers = document.querySelectorAll(".geo-selection-container");
     const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
-
     if (geoFieldsVisible) {
       const selectedCountries = appState.getState().selectedCountries;
-      const countryContainer = document.querySelector(".selected-countries-container");
       if (selectedCountries.length === 0) {
+        console.error("Validation failed on: Geo location (countries)");
+        const countryContainer = document.querySelector(".selected-countries-container");
         if (countryContainer) {
           countryContainer.classList.add("empty-input");
         }
         isValid = false;
-      } else {
-        if (countryContainer) {
-          countryContainer.classList.remove("empty-input");
-        }
       }
     }
 
@@ -1813,37 +1820,35 @@ class UploadForm {
 
   validateAgeInputs(minAge, maxAge) {
     let isValid = true;
-
     const minVal = parseInt(minAge.value);
     const maxVal = parseInt(maxAge.value);
 
-    if (minVal < 18 || minVal > 65 || isNaN(minVal)) {
+    if (minAge.required && (isNaN(minVal) || minVal < 18 || minVal > 65)) {
+      console.error("Validation failed on: Minimum Age (must be between 18-65)");
       this.emptyInputError(minAge);
       isValid = false;
     }
-
-    if (maxVal < 18 || maxVal > 65 || isNaN(maxVal)) {
+    if (maxAge.required && (isNaN(maxVal) || maxVal < 18 || maxVal > 65)) {
+      console.error("Validation failed on: Maximum Age (must be between 18-65)");
       this.emptyInputError(maxAge);
       isValid = false;
     }
-
-    if (minVal >= maxVal) {
+    if (minAge.required && maxAge.required && !isNaN(minVal) && !isNaN(maxVal) && minVal >= maxVal) {
+      console.error("Validation failed on: Age Range (min age must be less than max age)");
       this.emptyInputError(minAge);
       this.emptyInputError(maxAge);
       isValid = false;
     }
-
     return isValid;
   }
 
   validateBudgetInput(budgetInput) {
     const value = parseFloat(budgetInput.value);
-
     if (isNaN(value) || value <= 0) {
+      console.error("Validation failed on: Budget (must be > 0)");
       this.emptyInputError(budgetInput);
       return false;
     }
-
     return true;
   }
 
@@ -2934,66 +2939,64 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.all(uploadPromises);
+      const settledResults = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
       const failedUploads = [];
 
-      // No need to check for sessionId in results since we connected earlier
+      settledResults.forEach((result) => {
+        if (result.status === "rejected") {
+          failedUploads.push({
+            file: "Unknown file",
+            error: result.reason?.message || "Upload failed",
+          });
+          return;
+        }
 
-      results.forEach((result) => {
-        // Handle results that might have sessionId wrapper
-        const items = result && result.results ? result.results : result;
+        // result.status is 'fulfilled', so result.value exists
+        const items = result.value.results || result.value;
 
         if (Array.isArray(items)) {
           items.forEach((item) => {
-            if (item.status === "fulfilled") {
-              // Check if the upload actually succeeded
-              if (item.value.status === "failed") {
+            // This handles nested results from Promise.all inside the monkey-patch
+            if (item.status === 'fulfilled') {
+                const subItem = item.value;
+                 if (subItem.status === "failed") {
+                  failedUploads.push({
+                    file: subItem.file,
+                    error: subItem.error || "Upload failed",
+                  });
+                } else if (subItem.type === "image") {
+                  normalizedAssets.push(subItem);
+                } else if (subItem.type === "video") {
+                  normalizedAssets.push({
+                    type: "video",
+                    file: subItem.file,
+                    data: subItem.data,
+                    status: "success",
+                  });
+                }
+            } else if (item.status === 'rejected') {
                 failedUploads.push({
-                  file: item.value.file,
-                  error: item.value.error || "Upload failed",
+                    file: "Unknown file",
+                    error: item.reason?.message || "Upload failed",
                 });
-              } else if (item.value.type === "image") {
-                normalizedAssets.push(item.value);
-              } else if (item.value.type === "video") {
-                normalizedAssets.push({
-                  type: "video",
-                  file: item.value.file,
-                  data: item.value.data,
-                  status: "success",
-                });
-              }
-            } else if (item.status === "rejected") {
-              failedUploads.push({
-                file: "Unknown file",
-                error: item.reason || "Upload failed",
-              });
-            }
-          });
-        } else if (result) {
-          // Handle single result objects
-          result.forEach((item) => {
-            if (item.status === "fulfilled") {
-              if (item.value.status === "failed") {
-                failedUploads.push({
-                  file: item.value.file,
-                  error: item.value.error || "Upload failed",
-                });
-              } else if (item.value.type === "image") {
-                normalizedAssets.push(item.value);
-              } else if (item.value.type === "video") {
-                normalizedAssets.push({
-                  type: "video",
-                  file: item.value.file,
-                  data: item.value.data,
-                  status: "success",
-                });
-              }
-            } else if (item.status === "rejected") {
-              failedUploads.push({
-                file: "Unknown file",
-                error: item.reason || "Upload failed",
-              });
+            } else {
+                // This handles direct results from the API calls
+                if (item.status === "failed") {
+                  failedUploads.push({
+                    file: item.file,
+                    error: item.error || "Upload failed",
+                  });
+                } else if (item.type === "image") {
+                  normalizedAssets.push(item);
+                } else if (item.type === "video") {
+                  normalizedAssets.push({
+                    type: "video",
+                    file: item.file,
+                    data: item.data,
+                    status: "success",
+                  });
+                }
             }
           });
         }
@@ -3001,51 +3004,44 @@ class FileUploadHandler {
 
       // Check if all uploads failed
       if (normalizedAssets.length === 0 && failedUploads.length > 0) {
-        // All uploads failed
         if (this.progressTracker.eventSource) {
           this.progressTracker.eventSource.close();
         }
-        this.hideLoadingState(true); // Pass true to indicate errors
+        this.hideLoadingState(true); 
 
-        // Show error message
         const errorMsg = failedUploads.map((f) => `${f.file}: ${f.error}`).join("\n");
         alert(`All uploads failed:\n\n${errorMsg}\n\nPlease try again.`);
-
-        // Keep user on upload screen
         return;
       } else if (failedUploads.length > 0) {
-        // Some uploads failed
-        const failedNames = failedUploads
-          .slice(0, 3)
-          .map((f) => f.file)
-          .join(", ");
+        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
         const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
         alert(`Warning: Some uploads failed: ${failedNames}${moreText}\n\nYou can continue with the successful uploads or go back and try again.`);
       }
 
-      // Set up completion handler only if we have successful uploads
       if (normalizedAssets.length > 0) {
-        if (this.progressTracker.eventSource) {
+        if (this.progressTracker.eventSource && (videoFiles.length > 0 || gdriveFiles.length > 0)) {
           this.progressTracker.onComplete = (hasErrors, errors) => {
-            // Even if SSE reports errors, we have some successful uploads
-            this.hideLoadingState(false); // Pass false for success
+            this.hideLoadingState(hasErrors);
             this.showAdCopySection();
           };
         } else {
-          // No SSE connection, complete immediately
-          this.hideLoadingState(false); // Pass false for success
+          this.hideLoadingState(false);
           this.showAdCopySection();
         }
 
-        appState.updateState("uploadedAssets", normalizedAssets);
-      } else {
-        // No successful uploads
-        this.hideLoadingState(true); // Pass true to indicate errors
+        const currentAssets = appState.getState().uploadedAssets || [];
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+        
+      } else if (failedUploads.length === 0) {
+         // No assets normalized but no failures either, could be an issue.
+         this.hideLoadingState(true);
+         alert("Upload complete, but no files were processed. Please check the file types and try again.");
       }
+
     } catch (err) {
       console.log("There was an error uploading files to meta.", err);
-      this.hideLoadingState(true); // Pass true to indicate errors
-      alert("An error occurred during upload. Please try again.");
+      this.hideLoadingState(true);
+      alert("An unexpected error occurred during upload. Please check the console and try again.");
       return err;
     }
   }
@@ -3182,39 +3178,69 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.all(uploadPromises);
+      const settledResults = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
+      const failedUploads = [];
 
-      results.forEach((result) => {
-        result.forEach((item) => {
-          if (item.status === "fulfilled") {
-            if (item.value.type === "image") {
-              normalizedAssets.push(item.value);
-            } else if (item.value.type === "video") {
-              normalizedAssets.push({
-                type: "video",
-                file: item.value.file,
-                data: item.value.data,
-                status: "success",
-              });
+      settledResults.forEach((result) => {
+        if (result.status === "rejected") {
+          failedUploads.push({
+            file: "Unknown file",
+            error: result.reason?.message || "Upload failed",
+          });
+          return;
+        }
+
+        const items = result.value.results || result.value;
+
+        if (Array.isArray(items)) {
+          items.forEach((item) => {
+            if (item.status === 'fulfilled') {
+                const subItem = item.value;
+                 if (subItem.status === "failed") {
+                  failedUploads.push({ file: subItem.file, error: subItem.error || "Upload failed" });
+                } else if (subItem.type === "image") {
+                  normalizedAssets.push(subItem);
+                } else if (subItem.type === "video") {
+                  normalizedAssets.push({ type: "video", file: subItem.file, data: subItem.data, status: "success" });
+                }
+            } else if (item.status === 'rejected') {
+                failedUploads.push({ file: "Unknown file", error: item.reason?.message || "Upload failed" });
+            } else {
+                if (item.status === "failed") {
+                  failedUploads.push({ file: item.file, error: item.error || "Upload failed" });
+                } else if (item.type === "image") {
+                  normalizedAssets.push(item);
+                } else if (item.type === "video") {
+                  normalizedAssets.push({ type: "video", file: item.file, data: item.data, status: "success" });
+                }
             }
-          }
-        });
+          });
+        }
       });
 
-      // Update app state with spread operator
-      const currentAssets = appState.getState().uploadedAssets;
-      appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+      if (failedUploads.length > 0) {
+        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
+        const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
+        alert(`Warning: Some additional uploads failed: ${failedNames}${moreText}`);
+      }
 
-      // Clear additional files array
-      this.additionalFilesToUpload = [];
-
-      this.hideLoadingState();
-
-      // Update ad copy section title
-      this.updateAdCopySectionTitle();
+      if (normalizedAssets.length > 0) {
+        const currentAssets = appState.getState().uploadedAssets;
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+        this.additionalFilesToUpload = [];
+        this.hideLoadingState();
+        this.updateAdCopySectionTitle();
+      } else {
+        this.hideLoadingState(true); // Show error state if no new assets were added
+        if(failedUploads.length > 0) {
+            alert("All additional file uploads failed. Please try again.");
+        }
+      }
     } catch (err) {
       console.log("There was an error uploading additional files to meta.", err);
+      this.hideLoadingState(true);
+      alert("An unexpected error occurred while uploading additional files. Please try again.");
       return err;
     }
   }
@@ -3253,7 +3279,16 @@ class FileUploadHandler {
     // Populate page dropdown if we have pages data
     const dropdowns = adCopySection.querySelectorAll(".custom-dropdown");
     if (dropdowns.length > 0) {
-      new CustomDropdown(".ad-copy-container .custom-dropdown");
+      // Check if dropdowns already have customDropdownInstance to avoid re-initialization
+      const needsInit = Array.from(dropdowns).some(d => !d.customDropdownInstance);
+      if (needsInit) {
+        new CustomDropdown(".ad-copy-container .custom-dropdown");
+      } else {
+        // Re-attach listeners for existing dropdowns
+        dropdowns.forEach(dropdown => {
+          attachDropdownOptionListeners(dropdown);
+        });
+      }
     }
 
     adCopySection.scrollIntoView({
@@ -3369,6 +3404,16 @@ class FileUploadHandler {
     const reviewSection = document.querySelector(".create-ads-container");
     reviewSection.style.display = "block";
 
+    // Ensure the create ads button is in a clean state before showing
+    const existingBtn = reviewSection.querySelector(".create-ads-button");
+    if (existingBtn) {
+      animatedEllipsis.stop(existingBtn);
+      existingBtn.textContent = "Create Ads";
+      existingBtn.disabled = false;
+      existingBtn.style.opacity = "1";
+      console.log("[showReviewSection] Button reset to clean state");
+    }
+
     // Update review content
     this.populateReviewData();
 
@@ -3380,9 +3425,25 @@ class FileUploadHandler {
 
     // Handle final submission
     const createBtn = reviewSection.querySelector(".create-ads-button");
-    createBtn.onclick = () => {
+    console.log("[showReviewSection] Create button found:", !!createBtn);
+
+    if (!createBtn) {
+      console.error("[showReviewSection] Create button not found!");
+      return;
+    }
+
+    // Remove any existing click handlers to prevent duplicates
+    const newBtn = createBtn.cloneNode(true);
+    createBtn.parentNode.replaceChild(newBtn, createBtn);
+    console.log("[showReviewSection] Button cloned and replaced");
+
+    // Add fresh click handler
+    newBtn.onclick = (e) => {
+      console.log("[showReviewSection] Button clicked!");
+      e.preventDefault();
       this.createAds();
     };
+    console.log("[showReviewSection] Click handler attached");
   }
 
   populateReviewData() {
@@ -3511,6 +3572,12 @@ class FileUploadHandler {
     const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
     const pageText = pageDropdownDisplay ? pageDropdownDisplay.textContent : "";
     const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : "";
+
+    // Debug logging
+    console.log("[populateReviewData] CTA Selected:", cta, ctaDisplayText);
+    console.log("[populateReviewData] Page Selected:", pageText, pageId);
+    console.log("[populateReviewData] Primary Text:", primaryText?.substring(0, 50));
+    console.log("[populateReviewData] Headline:", headline);
     const primaryTextEl = document.querySelector(".primary-text-review-container p");
     const headlineEl = document.querySelector(".headline-review-container p");
     const pageEl = document.querySelector(".cta-text-review-container.page p");
@@ -3541,8 +3608,15 @@ class FileUploadHandler {
   }
 
   createAds() {
+    console.log("[createAds] Method called!");
+
     // show loading state
     const button = document.querySelector(".create-ads-button");
+    if (!button) {
+      console.error("[createAds] Button not found!");
+      return;
+    }
+    console.log("[createAds] Button found, starting animation");
     animatedEllipsis.start(button, "Creating Ads");
     button.disabled = true;
     button.style.opacity = "0.6";
@@ -3775,6 +3849,11 @@ class FileUploadHandler {
       return;
     }
 
+    // If this is a fresh upload (not additional) and initial upload was completed, clear old files
+    if (!isAdditional && this.initialUploadComplete) {
+      this.uploadedFiles = [];
+    }
+
     // Show loading state on the fetch button
     const fetchBtn = isAdditional ? document.querySelector(".gdrive-fetch-btn-additional") : document.querySelector(".gdrive-fetch-btn");
     const originalBtnText = fetchBtn.innerHTML;
@@ -3866,6 +3945,55 @@ class FileUploadHandler {
     if (this.uploadedFiles.length > 0) {
       this.displayUploadedFiles();
       this.showStep(3);
+
+      // If this is a new upload after initial upload was complete, reset the button
+      if (this.initialUploadComplete && !isAdditional) {
+        const button = document.querySelector('[data-step="3"] .continue-btn');
+        if (button && button.classList.contains('upload-complete')) {
+          // Reset button to allow new upload
+          button.textContent = "Upload Creatives";
+          button.style.backgroundColor = "";
+          button.style.cursor = "pointer";
+          button.disabled = false;
+          button.style.opacity = "1";
+          button.classList.remove("upload-complete");
+          this.initialUploadComplete = false;
+
+          // Clear ad copy section since we're starting fresh
+          const adCopySection = document.querySelector(".ad-copy-container");
+          if (adCopySection) {
+            adCopySection.style.display = "none";
+          }
+
+          // Clear and reset review section (create ads container)
+          const reviewSection = document.querySelector(".create-ads-container");
+          if (reviewSection) {
+            reviewSection.style.display = "none";
+
+            // Reset create ads button
+            const createAdsBtn = reviewSection.querySelector(".create-ads-button");
+            if (createAdsBtn) {
+              animatedEllipsis.stop(createAdsBtn);
+              createAdsBtn.textContent = "Create Ads";
+              createAdsBtn.disabled = false;
+              createAdsBtn.style.opacity = "1";
+              console.log("[Reset] Create Ads button reset");
+            }
+          }
+
+          // Reset uploaded assets in app state
+          appState.updateState("uploadedAssets", []);
+
+          // Reset ad copy data
+          appState.updateState("adCopyData", {});
+
+          // Reset progress tracker
+          this.progressTracker.reset();
+
+          // Clear additional files to upload array
+          this.additionalFilesToUpload = [];
+        }
+      }
     }
   }
 
@@ -5217,73 +5345,37 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
     this.progressTracker.reset();
 
     try {
-      const uploadPromises = [];
-
-      // Handle library files
-      if (libraryFiles.length > 0) {
-        const libraryPromise = (async () => {
-          try {
-            const creativeIds = libraryFiles.map((file) => file.libraryId);
-            console.log("Processing library files:", creativeIds);
-
-            const response = await fetch("/api/upload-library-creatives", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ creativeIds, account_id }),
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json();
-              console.error("Library upload failed:", errorData);
-              throw new Error(errorData.error || "Failed to upload library creatives");
-            }
-
-            const libraryResults = await response.json();
-            console.log("Library upload response:", libraryResults);
-
-            return libraryResults.results;
-          } catch (error) {
-            console.error("Error uploading library files:", error);
-            throw error;
-          }
-        })();
-
-        uploadPromises.push(libraryPromise);
-      }
-
-      // Handle other files using the original method
-      if (otherFiles.length > 0) {
-        const otherFilesPromise = originalUploadFiles.call(this, otherFiles, account_id);
-        uploadPromises.push(otherFilesPromise);
-      }
-
-      // Wait for all uploads to complete
-      const results = await Promise.all(uploadPromises);
-
+      const settledResults = await Promise.allSettled(uploadPromises);
+      
       // Combine results
-      const allResults = results.flat();
+      const allResults = settledResults.flat();
 
       // Process results similar to original method
       const normalizedAssets = [];
       const failedUploads = [];
 
-      allResults.forEach((item) => {
-        if (item.status === "fulfilled") {
-          if (item.value.status === "failed") {
-            failedUploads.push({
-              file: item.value.file,
-              error: item.value.error || "Upload failed",
-            });
-          } else {
-            normalizedAssets.push(item.value);
-          }
-        } else if (item.status === "rejected") {
+      allResults.forEach((result) => {
+        if (result.status === "rejected") {
           failedUploads.push({
-            file: item.creativeId || "Unknown file",
-            error: item.reason || "Upload failed",
+            file: result.reason?.creativeId || "Unknown file",
+            error: result.reason?.message || result.reason || "Upload failed",
           });
+          return;
+        }
+        
+        // This handles the nested array of results from the library upload call
+        if(Array.isArray(result.value)) {
+            result.value.forEach(item => {
+                if (item.status === 'fulfilled') {
+                    if (item.value.status === "failed") {
+                        failedUploads.push({ file: item.value.file, error: item.value.error || "Upload failed" });
+                    } else {
+                        normalizedAssets.push(item.value);
+                    }
+                } else if (item.status === 'rejected') {
+                    failedUploads.push({ file: item.creativeId || "Unknown file", error: item.reason || "Upload failed" });
+                }
+            });
         }
       });
 
@@ -5296,7 +5388,8 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
       }
 
       if (normalizedAssets.length > 0) {
-        appState.updateState("uploadedAssets", normalizedAssets);
+        const currentAssets = appState.getState().uploadedAssets || [];
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
         this.showAdCopySection();
       }
 
@@ -7211,22 +7304,63 @@ class AutomatedRulesManager {
     this.selectedAccounts = []; // For multi-account creation
     this.isMultiAccountMode = false;
     this.allAdAccounts = []; // Store all available accounts
-
-    // Verify all modals exist
-    if (!this.accountSelectorModal) {
-      console.warn("Account selector modal not found - multi-account feature may not work");
-    }
-    if (!this.batchProgressModal) {
-      console.warn("Batch progress modal not found - multi-account feature may not work");
-    }
-    if (!this.batchResultsModal) {
-      console.warn("Batch results modal not found - multi-account feature may not work");
-    }
+    this.ruleToDuplicate = null;
 
     this.init();
   }
 
   init() {
+    // Create the duplicate choice modal dynamically and append to body
+    const choiceModal = document.createElement("div");
+    choiceModal.className = "modal dialog duplicate-choice-modal"; // Match other dialogs
+    choiceModal.style.display = "none";
+    choiceModal.innerHTML = `
+      <div class="dialog-content" style="max-width: 400px;">
+        <div class="dialog-header">
+          <h2>Duplicate Rule</h2>
+          <button type="button" class="dialog-close-btn">&times;</button>
+        </div>
+        <div class="dialog-body" style="padding: 24px;">
+          <p style="text-align: center; margin-bottom: 24px;">Where would you like to duplicate this rule?</p>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <button class="btn btn-primary duplicate-same-account">In This Ad Account</button>
+            <button class="btn btn-secondary duplicate-other-accounts">To Other Ad Accounts</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(choiceModal);
+    this.choiceModal = choiceModal;
+
+    // --- Duplicate Choice Modal Logic ---
+    const closeChoiceModal = () => {
+      this.choiceModal.style.display = "none";
+      this.ruleToDuplicate = null;
+    };
+
+    this.choiceModal.addEventListener("click", (e) => {
+      if (e.target === this.choiceModal) {
+        closeChoiceModal();
+      }
+    });
+    this.choiceModal.querySelector(".dialog-close-btn").addEventListener("click", closeChoiceModal);
+
+    this.choiceModal.querySelector(".duplicate-same-account").addEventListener("click", () => {
+      if (this.ruleToDuplicate) {
+        this.openEditor(this.ruleToDuplicate.id, this.ruleToDuplicate.meta_rule_id, true);
+      }
+      closeChoiceModal();
+    });
+
+    this.choiceModal.querySelector(".duplicate-other-accounts").addEventListener("click", () => {
+      if (this.ruleToDuplicate) {
+        // Don't call closeChoiceModal() here - it will clear ruleToDuplicate
+        // Just hide the modal but keep ruleToDuplicate for later use
+        this.choiceModal.style.display = "none";
+        this.openAccountSelector();
+      }
+    });
+
     // Bind modal close buttons
     this.rulesModal.querySelectorAll(".modal-close-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.closeModal());
@@ -7253,6 +7387,7 @@ class AutomatedRulesManager {
       }
       this.isMultiAccountMode = false;
       this.selectedAccounts = [];
+      this.ruleToDuplicate = null; // Ensure this is cleared for normal flow
       this.openEditor();
     });
 
@@ -7260,6 +7395,7 @@ class AutomatedRulesManager {
     const multiRuleBtn = this.rulesModal.querySelector(".create-multi-rule-btn");
     if (multiRuleBtn) {
       multiRuleBtn.addEventListener("click", () => {
+        this.ruleToDuplicate = null; // Ensure this is cleared for normal flow
         this.openAccountSelector();
       });
     } else {
@@ -7510,6 +7646,12 @@ class AutomatedRulesManager {
                 }  // Check icon for enable
               </svg>
             </button>
+            <button class="btn-icon duplicate-rule-btn" title="Duplicate" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
             <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -7531,6 +7673,10 @@ class AutomatedRulesManager {
     // Bind action buttons
     tbody.querySelectorAll(".toggle-rule-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.metaRuleId, btn.dataset.status));
+    });
+
+    tbody.querySelectorAll(".duplicate-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.duplicateRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
     });
 
     tbody.querySelectorAll(".edit-rule-btn").forEach((btn) => {
@@ -7571,8 +7717,22 @@ class AutomatedRulesManager {
     this.rulesModal.style.display = "none";
   }
 
-  async openEditor(ruleId = null, metaRuleId = null) {
-    this.currentRuleId = ruleId;
+  async duplicateRule(ruleId, metaRuleId) {
+    const ruleData = this.cachedRules.find((r) => (ruleId && r.id == ruleId) || (metaRuleId && r.meta_rule_id === metaRuleId));
+    if (!ruleData) {
+      showError("Could not find the rule to duplicate.");
+      return;
+    }
+    this.ruleToDuplicate = ruleData;
+    this.choiceModal.style.display = "flex";
+  }
+
+  async editRule(ruleId, metaRuleId) {
+    this.openEditor(ruleId, metaRuleId, false); // Pass false for isDuplicate
+  }
+
+  async openEditor(ruleId = null, metaRuleId = null, isDuplicate = false) {
+    this.currentRuleId = isDuplicate ? null : ruleId; // Clear ID if duplicating
     this.currentMetaRuleId = metaRuleId;
     this.conditions = [];
     this.originalConditions = null; // Reset original conditions
@@ -7581,10 +7741,20 @@ class AutomatedRulesManager {
     const saveBtn = this.editorModal.querySelector(".save-rule-btn");
 
     if (ruleId || metaRuleId) {
-      title.textContent = "Edit Automated Rule";
-      saveBtn.textContent = "Update Rule";
+      // Load data for both edit and duplicate
       await this.loadRuleData(ruleId, metaRuleId);
+
+      if (isDuplicate) {
+        title.textContent = "Duplicate Automated Rule";
+        saveBtn.textContent = "Create Duplicate";
+        const nameInput = this.editorModal.querySelector("#rule-name");
+        nameInput.value = `[Copy] ${nameInput.value}`;
+      } else {
+        title.textContent = "Edit Automated Rule";
+        saveBtn.textContent = "Update Rule";
+      }
     } else {
+      // Standard create flow
       title.textContent = "Create Automated Rule";
       saveBtn.textContent = "Create Rule";
       this.resetForm();
@@ -7618,17 +7788,23 @@ class AutomatedRulesManager {
   }
 
   addCondition() {
+    // This function now only handles adding a NEW, blank condition
+    const newCondition = { field: "", operator: "GREATER_THAN", value: 0 };
+    this.conditions.push(newCondition);
+    this._renderConditionRow(this.conditions.length - 1);
+  }
+
+  _renderConditionRow(index) {
+    // This new private method handles rendering the UI for a condition at a given index
+    const condition = this.conditions[index];
+    if (!condition) return;
+
     // DEBUG: Log when this function is called
-    console.log("[DEBUG] addCondition called. Current condition count:", this.conditions.length);
+    console.log(`[DEBUG] _renderConditionRow called for index: ${index}`);
 
-    const conditionIndex = this.conditions.length;
-
-    // Note: Fields are automatically mapped to Meta API format by the backend
-    // Monetary values (spent, budgets, costs) are converted to cents
-    // REMOVED Operations: Is not equal to, Is In List, Is Not In List, Contains, Does Not Contain --> Following Meta Rules Layout
     const conditionHTML = `
-      <div class="condition-row" data-condition-index="${conditionIndex}">
-        <select class="form-select condition-field" data-index="${conditionIndex}">
+      <div class="condition-row" data-condition-index="${index}">
+        <select class="form-select condition-field" data-index="${index}">
           <option value="">Select metric...</option>
           <optgroup label="Cost & Budget">
             <option value="spent">Spent ($)</option>
@@ -7655,7 +7831,7 @@ class AutomatedRulesManager {
           </optgroup>
         </select>
 
-        <select class="form-select condition-operator" data-index="${conditionIndex}">
+        <select class="form-select condition-operator" data-index="${index}">
           <option value="GREATER_THAN">is greater than (>)</option>
           <option value="LESS_THAN">is less than (<)</option>
           <option value="EQUAL">is equal to (=)</option>
@@ -7663,13 +7839,13 @@ class AutomatedRulesManager {
           <option value="NOT_IN_RANGE">is not in range</option>
         </select>
 
-        <div class="condition-value-container" data-index="${conditionIndex}">
-          <input type="number" class="form-input condition-value condition-single-value" placeholder="Value" step="0.01" data-index="${conditionIndex}" />
-          <input type="number" class="form-input condition-value condition-min-value" placeholder="Min" step="0.01" data-index="${conditionIndex}" style="display: none;" />
-          <input type="number" class="form-input condition-value condition-max-value" placeholder="Max" step="0.01" data-index="${conditionIndex}" style="display: none;" />
+        <div class="condition-value-container" data-index="${index}">
+          <input type="number" class="form-input condition-value condition-single-value" placeholder="Value" step="0.01" data-index="${index}" />
+          <input type="number" class="form-input condition-value condition-min-value" placeholder="Min" step="0.01" data-index="${index}" style="display: none;" />
+          <input type="number" class="form-input condition-value condition-max-value" placeholder="Max" step="0.01" data-index="${index}" style="display: none;" />
         </div>
 
-        <button type="button" class="btn-icon remove-condition-btn" data-index="${conditionIndex}">
+        <button type="button" class="btn-icon remove-condition-btn" data-index="${index}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -7681,70 +7857,84 @@ class AutomatedRulesManager {
     const container = this.editorModal.querySelector(".conditions-container");
     container.insertAdjacentHTML("beforeend", conditionHTML);
 
-    this.conditions.push({ field: "", operator: "GREATER_THAN", value: 0 });
-
     // Bind remove button
-    const removeBtn = container.querySelector(`[data-condition-index="${conditionIndex}"] .remove-condition-btn`);
-    removeBtn.addEventListener("click", () => this.removeCondition(conditionIndex));
+    const row = container.querySelector(`[data-condition-index="${index}"]`);
+    const removeBtn = row.querySelector(".remove-condition-btn");
+    removeBtn.addEventListener("click", () => this.removeCondition(index));
 
     // Bind change events
-    const field = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-field`);
-    const operator = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-operator`);
-    const singleValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-single-value`);
-    const minValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-min-value`);
-    const maxValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-max-value`);
+    const field = row.querySelector(".condition-field");
+    const operator = row.querySelector(".condition-operator");
+    const singleValue = row.querySelector(".condition-single-value");
+    const minValue = row.querySelector(".condition-min-value");
+    const maxValue = row.querySelector(".condition-max-value");
 
+    // Pre-populate values from the condition data
+    field.value = condition.field;
+    operator.value = condition.operator;
+
+    const isRangeOperator = condition.operator === "IN_RANGE" || condition.operator === "NOT_IN_RANGE";
+    if (isRangeOperator && Array.isArray(condition.value)) {
+      singleValue.style.display = "none";
+      minValue.style.display = "block";
+      maxValue.style.display = "block";
+      minValue.value = condition.value[0] || 0;
+      maxValue.value = condition.value[1] || 0;
+    } else {
+      singleValue.style.display = "block";
+      minValue.style.display = "none";
+      maxValue.style.display = "none";
+      singleValue.value = condition.value;
+    }
+
+    // Add event listeners for changes
     field.addEventListener("change", (e) => {
-      this.conditions[conditionIndex].field = e.target.value;
+      this.conditions[index].field = e.target.value;
       this.updateJSONPreview();
     });
 
     operator.addEventListener("change", (e) => {
-      this.conditions[conditionIndex].operator = e.target.value;
-      const isRangeOperator = e.target.value === "IN_RANGE" || e.target.value === "NOT_IN_RANGE";
-
-      // Toggle visibility based on operator
-      if (isRangeOperator) {
+      this.conditions[index].operator = e.target.value;
+      const isRange = e.target.value === "IN_RANGE" || e.target.value === "NOT_IN_RANGE";
+      if (isRange) {
         singleValue.style.display = "none";
         minValue.style.display = "block";
         maxValue.style.display = "block";
-        // Initialize array value if needed
-        if (!Array.isArray(this.conditions[conditionIndex].value)) {
-          this.conditions[conditionIndex].value = [0, 0];
+        if (!Array.isArray(this.conditions[index].value)) {
+          this.conditions[index].value = [0, 0];
         }
       } else {
         singleValue.style.display = "block";
         minValue.style.display = "none";
         maxValue.style.display = "none";
-        // Convert back to single value if needed
-        if (Array.isArray(this.conditions[conditionIndex].value)) {
-          this.conditions[conditionIndex].value = 0;
+        if (Array.isArray(this.conditions[index].value)) {
+          this.conditions[index].value = 0;
         }
       }
       this.updateJSONPreview();
     });
 
     singleValue.addEventListener("input", (e) => {
-      this.conditions[conditionIndex].value = parseFloat(e.target.value) || 0;
+      this.conditions[index].value = parseFloat(e.target.value) || 0;
       this.updateJSONPreview();
     });
 
     minValue.addEventListener("input", (e) => {
       const minVal = parseFloat(e.target.value) || 0;
-      if (!Array.isArray(this.conditions[conditionIndex].value)) {
-        this.conditions[conditionIndex].value = [minVal, 0];
+      if (!Array.isArray(this.conditions[index].value)) {
+        this.conditions[index].value = [minVal, 0];
       } else {
-        this.conditions[conditionIndex].value[0] = minVal;
+        this.conditions[index].value[0] = minVal;
       }
       this.updateJSONPreview();
     });
 
     maxValue.addEventListener("input", (e) => {
       const maxVal = parseFloat(e.target.value) || 0;
-      if (!Array.isArray(this.conditions[conditionIndex].value)) {
-        this.conditions[conditionIndex].value = [0, maxVal];
+      if (!Array.isArray(this.conditions[index].value)) {
+        this.conditions[index].value = [0, maxVal];
       } else {
-        this.conditions[conditionIndex].value[1] = maxVal;
+        this.conditions[index].value[1] = maxVal;
       }
       this.updateJSONPreview();
     });
@@ -7908,8 +8098,16 @@ class AutomatedRulesManager {
 
       console.log("Using single-account save method for account:", this.currentAccountId);
 
-      const url = this.currentRuleId ? `/api/rules/${this.currentRuleId}` : "/api/rules";
-      const method = this.currentRuleId ? "PUT" : "POST";
+      // CREATE logic (POST)
+
+      // Validate against existing rule names + entity_type for the same account
+      if (this.cachedRules && this.cachedRules.some(rule => rule.name === ruleData.name && rule.entity_type === ruleData.entity_type)) {
+        showError(`A rule with this name for the entity '${ruleData.entity_type}' already exists. Please choose a different name or entity type.`);
+        return; // Stop execution
+      }
+
+      const url = "/api/rules";
+      const method = "POST";
 
       // For UPDATE operations, only include conditions if they've changed
       let requestData = ruleData;
@@ -7996,40 +8194,18 @@ class AutomatedRulesManager {
         // DEBUG: Log the conditions that were found
         console.log(`[DEBUG] Found ${conditionFilters.length} user conditions to load (filtered out metadata):`, JSON.stringify(conditionFilters));
 
-        conditionFilters.forEach((filter) => {
-          this.addCondition();
-          const index = this.conditions.length - 1;
-          this.conditions[index] = {
-            field: filter.field,
-            operator: filter.operator,
-            value: filter.value,
-          };
-
-          // Set form values
-          const container = this.editorModal.querySelector(".conditions-container");
-          const row = container.querySelector(`[data-condition-index="${index}"]`);
-          row.querySelector(".condition-field").value = filter.field;
-          row.querySelector(".condition-operator").value = filter.operator;
-
-          // Handle range operators vs single value operators
-          const isRangeOperator = filter.operator === "IN_RANGE" || filter.operator === "NOT_IN_RANGE";
-          const singleValue = row.querySelector(".condition-single-value");
-          const minValue = row.querySelector(".condition-min-value");
-          const maxValue = row.querySelector(".condition-max-value");
-
-          if (isRangeOperator && Array.isArray(filter.value)) {
-            singleValue.style.display = "none";
-            minValue.style.display = "block";
-            maxValue.style.display = "block";
-            minValue.value = filter.value[0] || 0;
-            maxValue.value = filter.value[1] || 0;
-          } else {
-            singleValue.style.display = "block";
-            minValue.style.display = "none";
-            maxValue.style.display = "none";
-            singleValue.value = filter.value;
-          }
-        });
+        if (conditionFilters.length > 0) {
+          conditionFilters.forEach((filter) => {
+            // Directly push the real data
+            this.conditions.push({
+              field: filter.field,
+              operator: filter.operator,
+              value: filter.value,
+            });
+            // Render the row for the condition we just added
+            this._renderConditionRow(this.conditions.length - 1);
+          });
+        }
       }
 
       // Store original conditions for change detection (deep copy)
@@ -8256,17 +8432,31 @@ class AutomatedRulesManager {
       // Update selected accounts array before validation
       this.updateSelectedAccountsCount();
 
-      console.log("Next button clicked - Selected accounts:", this.selectedAccounts);
-
-      if (this.selectedAccounts.length < 2) {
+      // For creating a new multi-account rule, must select at least 2 accounts.
+      // For duplicating, must select at least 1.
+      if (!this.ruleToDuplicate && this.selectedAccounts.length < 2) {
         showError("Please select at least 2 accounts for multi-account rule creation");
         return;
       }
+      if (this.ruleToDuplicate && this.selectedAccounts.length < 1) {
+        showError("Please select at least 1 account to duplicate the rule to");
+        return;
+      }
+
       this.closeAccountSelector(false);
       this.isMultiAccountMode = true;
-      console.log("Multi-account mode set to:", this.isMultiAccountMode);
-      console.log("Selected accounts array:", this.selectedAccounts);
-      this.openEditor();
+
+      if (this.ruleToDuplicate) {
+        // If duplicating, open editor with pre-filled data in duplicate mode
+        const ruleId = this.ruleToDuplicate.id;
+        const metaRuleId = this.ruleToDuplicate.meta_rule_id;
+        // Clear ruleToDuplicate after we saved the IDs
+        this.ruleToDuplicate = null;
+        this.openEditor(ruleId, metaRuleId, true);
+      } else {
+        // Otherwise, open a blank editor for a new multi-account rule
+        this.openEditor();
+      }
     });
 
     // Select All / Deselect All
