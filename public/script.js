@@ -8037,40 +8037,42 @@ class AutomatedRulesManager {
         // DEBUG: Log the conditions that were found
         console.log(`[DEBUG] Found ${conditionFilters.length} user conditions to load (filtered out metadata):`, JSON.stringify(conditionFilters));
 
-        conditionFilters.forEach((filter) => {
-          this.addCondition();
-          const index = this.conditions.length - 1;
-          this.conditions[index] = {
-            field: filter.field,
-            operator: filter.operator,
-            value: filter.value,
-          };
+        if (conditionFilters.length > 0) {
+          conditionFilters.forEach((filter) => {
+            this.addCondition();
+            const index = this.conditions.length - 1;
+            this.conditions[index] = {
+              field: filter.field,
+              operator: filter.operator,
+              value: filter.value,
+            };
 
-          // Set form values
-          const container = this.editorModal.querySelector(".conditions-container");
-          const row = container.querySelector(`[data-condition-index="${index}"]`);
-          row.querySelector(".condition-field").value = filter.field;
-          row.querySelector(".condition-operator").value = filter.operator;
+            // Set form values
+            const container = this.editorModal.querySelector(".conditions-container");
+            const row = container.querySelector(`[data-condition-index="${index}"]`);
+            row.querySelector(".condition-field").value = filter.field;
+            row.querySelector(".condition-operator").value = filter.operator;
 
-          // Handle range operators vs single value operators
-          const isRangeOperator = filter.operator === "IN_RANGE" || filter.operator === "NOT_IN_RANGE";
-          const singleValue = row.querySelector(".condition-single-value");
-          const minValue = row.querySelector(".condition-min-value");
-          const maxValue = row.querySelector(".condition-max-value");
+            // Handle range operators vs single value operators
+            const isRangeOperator = filter.operator === "IN_RANGE" || filter.operator === "NOT_IN_RANGE";
+            const singleValue = row.querySelector(".condition-single-value");
+            const minValue = row.querySelector(".condition-min-value");
+            const maxValue = row.querySelector(".condition-max-value");
 
-          if (isRangeOperator && Array.isArray(filter.value)) {
-            singleValue.style.display = "none";
-            minValue.style.display = "block";
-            maxValue.style.display = "block";
-            minValue.value = filter.value[0] || 0;
-            maxValue.value = filter.value[1] || 0;
-          } else {
-            singleValue.style.display = "block";
-            minValue.style.display = "none";
-            maxValue.style.display = "none";
-            singleValue.value = filter.value;
-          }
-        });
+            if (isRangeOperator && Array.isArray(filter.value)) {
+              singleValue.style.display = "none";
+              minValue.style.display = "block";
+              maxValue.style.display = "block";
+              minValue.value = filter.value[0] || 0;
+              maxValue.value = filter.value[1] || 0;
+            } else {
+              singleValue.style.display = "block";
+              minValue.style.display = "none";
+              maxValue.style.display = "none";
+              singleValue.value = filter.value;
+            }
+          });
+        }
       }
 
       // Store original conditions for change detection (deep copy)
