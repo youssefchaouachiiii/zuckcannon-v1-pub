@@ -1755,6 +1755,11 @@ class UploadForm {
     const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
 
     for (const dropdownInput of dropdownInputs) {
+      // NEW CHECK: Only validate visible dropdowns
+      if (dropdownInput.offsetParent === null) {
+        continue;
+      }
+
       const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
       const isRequired = !dropdownInput.parentElement.parentElement.classList.contains("optional");
 
