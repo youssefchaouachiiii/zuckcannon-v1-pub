@@ -1727,6 +1727,11 @@ class UploadForm {
           });
         }
       }
+    } else {
+      console.error("Validation failed. Ad set not created.");
+      if (window.showError) {
+        window.showError("Please fill in all required fields marked with * before creating an ad set.", 4000);
+      }
     }
   }
 
@@ -7510,6 +7515,12 @@ class AutomatedRulesManager {
                 }  // Check icon for enable
               </svg>
             </button>
+            <button class="btn-icon duplicate-rule-btn" title="Duplicate" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
             <button class="btn-icon edit-rule-btn" title="Edit" data-rule-id="${rule.id}" data-meta-rule-id="${rule.meta_rule_id}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -7531,6 +7542,10 @@ class AutomatedRulesManager {
     // Bind action buttons
     tbody.querySelectorAll(".toggle-rule-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.toggleRuleStatus(btn.dataset.ruleId, btn.dataset.metaRuleId, btn.dataset.status));
+    });
+
+    tbody.querySelectorAll(".duplicate-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.duplicateRule(btn.dataset.ruleId, btn.dataset.metaRuleId));
     });
 
     tbody.querySelectorAll(".edit-rule-btn").forEach((btn) => {
@@ -7571,8 +7586,16 @@ class AutomatedRulesManager {
     this.rulesModal.style.display = "none";
   }
 
-  async openEditor(ruleId = null, metaRuleId = null) {
-    this.currentRuleId = ruleId;
+  async duplicateRule(ruleId, metaRuleId) {
+    this.openEditor(ruleId, metaRuleId, true); // Pass true for isDuplicate
+  }
+
+  async editRule(ruleId, metaRuleId) {
+    this.openEditor(ruleId, metaRuleId, false); // Pass false for isDuplicate
+  }
+
+  async openEditor(ruleId = null, metaRuleId = null, isDuplicate = false) {
+    this.currentRuleId = isDuplicate ? null : ruleId; // Clear ID if duplicating
     this.currentMetaRuleId = metaRuleId;
     this.conditions = [];
     this.originalConditions = null; // Reset original conditions
@@ -7581,10 +7604,20 @@ class AutomatedRulesManager {
     const saveBtn = this.editorModal.querySelector(".save-rule-btn");
 
     if (ruleId || metaRuleId) {
-      title.textContent = "Edit Automated Rule";
-      saveBtn.textContent = "Update Rule";
+      // Load data for both edit and duplicate
       await this.loadRuleData(ruleId, metaRuleId);
+
+      if (isDuplicate) {
+        title.textContent = "Duplicate Automated Rule";
+        saveBtn.textContent = "Create Duplicate";
+        const nameInput = this.editorModal.querySelector("#rule-name");
+        nameInput.value = `[Copy] ${nameInput.value}`;
+      } else {
+        title.textContent = "Edit Automated Rule";
+        saveBtn.textContent = "Update Rule";
+      }
     } else {
+      // Standard create flow
       title.textContent = "Create Automated Rule";
       saveBtn.textContent = "Create Rule";
       this.resetForm();
@@ -7908,8 +7941,16 @@ class AutomatedRulesManager {
 
       console.log("Using single-account save method for account:", this.currentAccountId);
 
-      const url = this.currentRuleId ? `/api/rules/${this.currentRuleId}` : "/api/rules";
-      const method = this.currentRuleId ? "PUT" : "POST";
+      // CREATE logic (POST)
+
+      // Validate against existing rule names + entity_type for the same account
+      if (this.cachedRules && this.cachedRules.some(rule => rule.name === ruleData.name && rule.entity_type === ruleData.entity_type)) {
+        showError(`A rule with this name for the entity '${ruleData.entity_type}' already exists. Please choose a different name or entity type.`);
+        return; // Stop execution
+      }
+
+      const url = "/api/rules";
+      const method = "POST";
 
       // For UPDATE operations, only include conditions if they've changed
       let requestData = ruleData;
