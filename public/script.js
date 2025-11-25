@@ -7651,17 +7651,23 @@ class AutomatedRulesManager {
   }
 
   addCondition() {
+    // This function now only handles adding a NEW, blank condition
+    const newCondition = { field: "", operator: "GREATER_THAN", value: 0 };
+    this.conditions.push(newCondition);
+    this._renderConditionRow(this.conditions.length - 1);
+  }
+
+  _renderConditionRow(index) {
+    // This new private method handles rendering the UI for a condition at a given index
+    const condition = this.conditions[index];
+    if (!condition) return;
+
     // DEBUG: Log when this function is called
-    console.log("[DEBUG] addCondition called. Current condition count:", this.conditions.length);
+    console.log(`[DEBUG] _renderConditionRow called for index: ${index}`);
 
-    const conditionIndex = this.conditions.length;
-
-    // Note: Fields are automatically mapped to Meta API format by the backend
-    // Monetary values (spent, budgets, costs) are converted to cents
-    // REMOVED Operations: Is not equal to, Is In List, Is Not In List, Contains, Does Not Contain --> Following Meta Rules Layout
     const conditionHTML = `
-      <div class="condition-row" data-condition-index="${conditionIndex}">
-        <select class="form-select condition-field" data-index="${conditionIndex}">
+      <div class="condition-row" data-condition-index="${index}">
+        <select class="form-select condition-field" data-index="${index}">
           <option value="">Select metric...</option>
           <optgroup label="Cost & Budget">
             <option value="spent">Spent ($)</option>
@@ -7688,7 +7694,7 @@ class AutomatedRulesManager {
           </optgroup>
         </select>
 
-        <select class="form-select condition-operator" data-index="${conditionIndex}">
+        <select class="form-select condition-operator" data-index="${index}">
           <option value="GREATER_THAN">is greater than (>)</option>
           <option value="LESS_THAN">is less than (<)</option>
           <option value="EQUAL">is equal to (=)</option>
@@ -7696,13 +7702,13 @@ class AutomatedRulesManager {
           <option value="NOT_IN_RANGE">is not in range</option>
         </select>
 
-        <div class="condition-value-container" data-index="${conditionIndex}">
-          <input type="number" class="form-input condition-value condition-single-value" placeholder="Value" step="0.01" data-index="${conditionIndex}" />
-          <input type="number" class="form-input condition-value condition-min-value" placeholder="Min" step="0.01" data-index="${conditionIndex}" style="display: none;" />
-          <input type="number" class="form-input condition-value condition-max-value" placeholder="Max" step="0.01" data-index="${conditionIndex}" style="display: none;" />
+        <div class="condition-value-container" data-index="${index}">
+          <input type="number" class="form-input condition-value condition-single-value" placeholder="Value" step="0.01" data-index="${index}" />
+          <input type="number" class="form-input condition-value condition-min-value" placeholder="Min" step="0.01" data-index="${index}" style="display: none;" />
+          <input type="number" class="form-input condition-value condition-max-value" placeholder="Max" step="0.01" data-index="${index}" style="display: none;" />
         </div>
 
-        <button type="button" class="btn-icon remove-condition-btn" data-index="${conditionIndex}">
+        <button type="button" class="btn-icon remove-condition-btn" data-index="${index}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -7714,70 +7720,84 @@ class AutomatedRulesManager {
     const container = this.editorModal.querySelector(".conditions-container");
     container.insertAdjacentHTML("beforeend", conditionHTML);
 
-    this.conditions.push({ field: "", operator: "GREATER_THAN", value: 0 });
-
     // Bind remove button
-    const removeBtn = container.querySelector(`[data-condition-index="${conditionIndex}"] .remove-condition-btn`);
-    removeBtn.addEventListener("click", () => this.removeCondition(conditionIndex));
+    const row = container.querySelector(`[data-condition-index="${index}"]`);
+    const removeBtn = row.querySelector(".remove-condition-btn");
+    removeBtn.addEventListener("click", () => this.removeCondition(index));
 
     // Bind change events
-    const field = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-field`);
-    const operator = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-operator`);
-    const singleValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-single-value`);
-    const minValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-min-value`);
-    const maxValue = container.querySelector(`[data-condition-index="${conditionIndex}"] .condition-max-value`);
+    const field = row.querySelector(".condition-field");
+    const operator = row.querySelector(".condition-operator");
+    const singleValue = row.querySelector(".condition-single-value");
+    const minValue = row.querySelector(".condition-min-value");
+    const maxValue = row.querySelector(".condition-max-value");
 
+    // Pre-populate values from the condition data
+    field.value = condition.field;
+    operator.value = condition.operator;
+
+    const isRangeOperator = condition.operator === "IN_RANGE" || condition.operator === "NOT_IN_RANGE";
+    if (isRangeOperator && Array.isArray(condition.value)) {
+      singleValue.style.display = "none";
+      minValue.style.display = "block";
+      maxValue.style.display = "block";
+      minValue.value = condition.value[0] || 0;
+      maxValue.value = condition.value[1] || 0;
+    } else {
+      singleValue.style.display = "block";
+      minValue.style.display = "none";
+      maxValue.style.display = "none";
+      singleValue.value = condition.value;
+    }
+
+    // Add event listeners for changes
     field.addEventListener("change", (e) => {
-      this.conditions[conditionIndex].field = e.target.value;
+      this.conditions[index].field = e.target.value;
       this.updateJSONPreview();
     });
 
     operator.addEventListener("change", (e) => {
-      this.conditions[conditionIndex].operator = e.target.value;
-      const isRangeOperator = e.target.value === "IN_RANGE" || e.target.value === "NOT_IN_RANGE";
-
-      // Toggle visibility based on operator
-      if (isRangeOperator) {
+      this.conditions[index].operator = e.target.value;
+      const isRange = e.target.value === "IN_RANGE" || e.target.value === "NOT_IN_RANGE";
+      if (isRange) {
         singleValue.style.display = "none";
         minValue.style.display = "block";
         maxValue.style.display = "block";
-        // Initialize array value if needed
-        if (!Array.isArray(this.conditions[conditionIndex].value)) {
-          this.conditions[conditionIndex].value = [0, 0];
+        if (!Array.isArray(this.conditions[index].value)) {
+          this.conditions[index].value = [0, 0];
         }
       } else {
         singleValue.style.display = "block";
         minValue.style.display = "none";
         maxValue.style.display = "none";
-        // Convert back to single value if needed
-        if (Array.isArray(this.conditions[conditionIndex].value)) {
-          this.conditions[conditionIndex].value = 0;
+        if (Array.isArray(this.conditions[index].value)) {
+          this.conditions[index].value = 0;
         }
       }
       this.updateJSONPreview();
     });
 
     singleValue.addEventListener("input", (e) => {
-      this.conditions[conditionIndex].value = parseFloat(e.target.value) || 0;
+      this.conditions[index].value = parseFloat(e.target.value) || 0;
       this.updateJSONPreview();
     });
 
     minValue.addEventListener("input", (e) => {
       const minVal = parseFloat(e.target.value) || 0;
-      if (!Array.isArray(this.conditions[conditionIndex].value)) {
-        this.conditions[conditionIndex].value = [minVal, 0];
+      if (!Array.isArray(this.conditions[index].value)) {
+        this.conditions[index].value = [minVal, 0];
       } else {
-        this.conditions[conditionIndex].value[0] = minVal;
+        this.conditions[index].value[0] = minVal;
       }
       this.updateJSONPreview();
     });
 
     maxValue.addEventListener("input", (e) => {
       const maxVal = parseFloat(e.target.value) || 0;
-      if (!Array.isArray(this.conditions[conditionIndex].value)) {
-        this.conditions[conditionIndex].value = [0, maxVal];
+      if (!Array.isArray(this.conditions[index].value)) {
+        this.conditions[index].value = [0, maxVal];
       } else {
-        this.conditions[conditionIndex].value[1] = maxVal;
+        this.conditions[index].value[1] = maxVal;
       }
       this.updateJSONPreview();
     });
@@ -8039,38 +8059,14 @@ class AutomatedRulesManager {
 
         if (conditionFilters.length > 0) {
           conditionFilters.forEach((filter) => {
-            this.addCondition();
-            const index = this.conditions.length - 1;
-            this.conditions[index] = {
+            // Directly push the real data
+            this.conditions.push({
               field: filter.field,
               operator: filter.operator,
               value: filter.value,
-            };
-
-            // Set form values
-            const container = this.editorModal.querySelector(".conditions-container");
-            const row = container.querySelector(`[data-condition-index="${index}"]`);
-            row.querySelector(".condition-field").value = filter.field;
-            row.querySelector(".condition-operator").value = filter.operator;
-
-            // Handle range operators vs single value operators
-            const isRangeOperator = filter.operator === "IN_RANGE" || filter.operator === "NOT_IN_RANGE";
-            const singleValue = row.querySelector(".condition-single-value");
-            const minValue = row.querySelector(".condition-min-value");
-            const maxValue = row.querySelector(".condition-max-value");
-
-            if (isRangeOperator && Array.isArray(filter.value)) {
-              singleValue.style.display = "none";
-              minValue.style.display = "block";
-              maxValue.style.display = "block";
-              minValue.value = filter.value[0] || 0;
-              maxValue.value = filter.value[1] || 0;
-            } else {
-              singleValue.style.display = "block";
-              minValue.style.display = "none";
-              maxValue.style.display = "none";
-              singleValue.value = filter.value;
-            }
+            });
+            // Render the row for the condition we just added
+            this._renderConditionRow(this.conditions.length - 1);
           });
         }
       }
