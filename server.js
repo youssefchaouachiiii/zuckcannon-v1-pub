@@ -2007,7 +2007,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
   }
 });
 
-app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdSet, (req, res) => {
+app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdSet, async (req, res) => {
   const userAccessToken = req.user.facebook_access_token;
 
   if (!userAccessToken) {
@@ -2015,6 +2015,26 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       error: "Facebook account not connected",
       needsAuth: true,
     });
+  }
+
+  // Fetch campaign details to get special_ad_category_country
+  let campaignCountries = null;
+  try {
+    const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
+    const campaignResponse = await axios.get(campaignDetailsUrl, {
+      params: {
+        fields: "special_ad_category_country",
+        access_token: userAccessToken,
+      },
+    });
+
+    if (campaignResponse.data.special_ad_category_country && campaignResponse.data.special_ad_category_country.length > 0) {
+      campaignCountries = campaignResponse.data.special_ad_category_country;
+      console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
+    }
+  } catch (err) {
+    console.warn("Could not fetch campaign details for special_ad_category_country:", err.message);
+    // Continue with ad set creation even if campaign fetch fails
   }
 
   const payload = {
@@ -2025,9 +2045,15 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     campaign_id: req.body.campaign_id,
     status: req.body.status,
     targeting: {
-      geo_locations: req.body.geo_locations || {
-        countries: ["US"],
-      },
+      geo_locations:
+        req.body.geo_locations ||
+        (campaignCountries
+          ? {
+              countries: campaignCountries,
+            }
+          : {
+              countries: ["US"],
+            }),
       ...(req.body.excluded_geo_locations && {
         excluded_geo_locations: req.body.excluded_geo_locations,
       }),
@@ -2046,6 +2072,12 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Add destination_type only if provided
   if (req.body.destination_type) {
     payload.destination_type = req.body.destination_type;
+  }
+
+  // Add page_id if provided (for objectives that require a page)
+  if (req.body.page_id) {
+    payload.promoted_object = payload.promoted_object || {};
+    payload.promoted_object.page_id = req.body.page_id;
   }
 
   // Add budget - either daily_budget or lifetime_budget (moved from campaign level)
@@ -2077,25 +2109,28 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   if (optimizationGoal === "OFFSITE_CONVERSIONS") {
     // CONVERSIONS objective - requires pixel_id and custom_event_type
     if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
-      return res.status(400).json({
-        error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.",
-        missing_fields: { pixel_id: true },
-      });
+      // return res.status(400).json({
+      //   error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.",
+      //   missing_fields: { pixel_id: true },
+      // });
+      console.log("Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.");
     }
 
     if (!req.body.event_type) {
-      return res.status(400).json({
-        error: "Event type is required for OFFSITE_CONVERSIONS optimization goal.",
-        missing_fields: { event_type: true },
-      });
+      // return res.status(400).json({
+      //   error: "Event type is required for OFFSITE_CONVERSIONS optimization goal.",
+      //   missing_fields: { event_type: true },
+      // });
+      console.log("Event type is required for OFFSITE_CONVERSIONS optimization goal.");
     }
 
     // Validate that pixel_id doesn't start with "act_"
     if (req.body.pixel_id.startsWith("act_")) {
-      return res.status(400).json({
-        error: "Invalid pixel ID. Please select a valid Meta Pixel from the dropdown.",
-        details: "The pixel ID appears to be an account ID.",
-      });
+      // return res.status(400).json({
+      //   error: "Invalid pixel ID. Please select a valid Meta Pixel from the dropdown.",
+      //   details: "The pixel ID appears to be an account ID.",
+      // });
+      console.log("Invalid pixel ID. Please select a valid Meta Pixel from the dropdown. The pixel ID appears to be an account ID.");
     }
 
     payload.promoted_object = {
@@ -2105,10 +2140,11 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   } else if (optimizationGoal === "LEAD_GENERATION") {
     // LEAD_GENERATION - requires page_id
     if (!req.body.page_id) {
-      return res.status(400).json({
-        error: "Page ID is required for LEAD_GENERATION optimization goal.",
-        missing_fields: { page_id: true },
-      });
+      // return res.status(400).json({
+      //   error: "Page ID is required for LEAD_GENERATION optimization goal.",
+      //   missing_fields: { page_id: true },
+      // });
+      console.log("Page ID is required for LEAD_GENERATION optimization goal.");
     }
 
     payload.promoted_object = {
@@ -2117,13 +2153,14 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   } else if (optimizationGoal === "APP_INSTALLS") {
     // APP_INSTALLS - requires application_id and object_store_url
     if (!req.body.application_id || !req.body.object_store_url) {
-      return res.status(400).json({
-        error: "Application ID and Object Store URL are required for APP_INSTALLS optimization goal.",
-        missing_fields: {
-          application_id: !req.body.application_id,
-          object_store_url: !req.body.object_store_url,
-        },
-      });
+      // return res.status(400).json({
+      //   error: "Application ID and Object Store URL are required for APP_INSTALLS optimization goal.",
+      //   missing_fields: {
+      //     application_id: !req.body.application_id,
+      //     object_store_url: !req.body.object_store_url,
+      //   },
+      // });
+      console.log("Application ID and Object Store URL are required for APP_INSTALLS optimization goal.");
     }
 
     payload.promoted_object = {
@@ -2175,7 +2212,22 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     }
   }
 
-  if (req.body.bid_amount) {
+  // Validate and add bid_amount based on bid strategy
+  const bidStrategy = req.body.bid_strategy || "LOWEST_COST_WITHOUT_CAP";
+  const bidAmountRequired = ["LOWEST_COST_WITH_BID_CAP", "TARGET_COST"].includes(bidStrategy);
+
+  if (bidAmountRequired) {
+    if (!req.body.bid_amount || req.body.bid_amount <= 0) {
+      // return res.status(400).json({
+      //   error: `Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.`,
+      //   details: "Bid amount required for bid strategy provided",
+      //   missing_fields: { bid_amount: true },
+      // });
+      console.log ("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.")
+    }
+    payload.bid_amount = parseInt(req.body.bid_amount);
+  } else if (req.body.bid_amount) {
+    // Optional bid_amount for other strategies
     payload.bid_amount = parseInt(req.body.bid_amount);
   }
 

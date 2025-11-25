@@ -203,10 +203,13 @@
         <h2>Ad Set Configuration</h2>
         <div class="adset-form-container">
           <input type="text" value="Campaign Id" class="preselect config-campaign-id" readonly />
-          <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly />
+          <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly
+            style="display: none;" />
           <input type="text" value="OFFSITE_CONVERSIONS" class="preselect config-optimization-goal" readonly />
-          <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly />
-          <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly />
+          <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly
+            style="display: none;" />
+          <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly
+            style="display: none;" />
           <input type="text" placeholder="Ad Set Name*" data-container="adset-form-container" class="config-adset-name"
             required />
 
@@ -272,7 +275,7 @@
             </div>
 
             <!-- Budget Amount Input -->
-            <div class="budget-input-wrapper" style="display: none;">
+            <div class="budget-input-wrapper" style="margin-top: 4px;">
               <span class="currency-prefix">$</span>
               <input type="number" placeholder="Enter budget amount*" data-container="adset-form-container"
                 class="config-adset-budget" step="0.01" min="1" required />
@@ -301,7 +304,7 @@
             </div>
           </div>
 
-          <!-- Bid Strategy Section -->
+          <!-- Bid Strategy Section  -->
           <div class="bid-strategy-section" style="margin-top: 15px;">
             <div class="dropdown-container">
               <div class="custom-dropdown">
@@ -322,7 +325,7 @@
             </div>
           </div>
 
-          <div class="budget-input-wrapper cost-per-result" style="display: none;">
+          <div class="budget-input-wrapper cost-per-result">
             <span class="currency-prefix">$</span>
             <input type="number" placeholder="12.50" data-container="adset-form-container"
               class="config-cost-per-result-goal" step="0.01" min="0" />
@@ -1253,7 +1256,8 @@
           <div class="progress-bar">
             <div class="progress-fill" style="width: 0%"></div>
           </div>
-          <p class="progress-text"><strong class="completed-count">0</strong> of <strong class="total-count">0</strong> accounts completed</p>
+          <p class="progress-text"><strong class="completed-count">0</strong> of <strong class="total-count">0</strong>
+            accounts completed</p>
         </div>
 
         <!-- Detailed Results Per Account -->
