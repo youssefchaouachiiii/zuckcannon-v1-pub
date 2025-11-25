@@ -3795,6 +3795,11 @@ class FileUploadHandler {
       return;
     }
 
+    // If this is a fresh upload (not additional) and initial upload was completed, clear old files
+    if (!isAdditional && this.initialUploadComplete) {
+      this.uploadedFiles = [];
+    }
+
     // Show loading state on the fetch button
     const fetchBtn = isAdditional ? document.querySelector(".gdrive-fetch-btn-additional") : document.querySelector(".gdrive-fetch-btn");
     const originalBtnText = fetchBtn.innerHTML;
@@ -3886,6 +3891,36 @@ class FileUploadHandler {
     if (this.uploadedFiles.length > 0) {
       this.displayUploadedFiles();
       this.showStep(3);
+
+      // If this is a new upload after initial upload was complete, reset the button
+      if (this.initialUploadComplete && !isAdditional) {
+        const button = document.querySelector('[data-step="3"] .continue-btn');
+        if (button && button.classList.contains('upload-complete')) {
+          // Reset button to allow new upload
+          button.textContent = "Upload Creatives";
+          button.style.backgroundColor = "";
+          button.style.cursor = "pointer";
+          button.disabled = false;
+          button.style.opacity = "1";
+          button.classList.remove("upload-complete");
+          this.initialUploadComplete = false;
+
+          // Clear ad copy section since we're starting fresh
+          const adCopySection = document.querySelector(".ad-copy-container");
+          if (adCopySection) {
+            adCopySection.style.display = "none";
+          }
+
+          // Reset uploaded assets in app state
+          appState.updateState("uploadedAssets", []);
+
+          // Reset progress tracker
+          this.progressTracker.reset();
+
+          // Clear additional files to upload array
+          this.additionalFilesToUpload = [];
+        }
+      }
     }
   }
 
@@ -7198,32 +7233,21 @@ class AutomatedRulesManager {
     this.allAdAccounts = []; // Store all available accounts
     this.ruleToDuplicate = null;
 
-    // Verify all modals exist
-    if (!this.accountSelectorModal) {
-      console.warn("Account selector modal not found - multi-account feature may not work");
-    }
-    if (!this.batchProgressModal) {
-      console.warn("Batch progress modal not found - multi-account feature may not work");
-    }
-    if (!this.batchResultsModal) {
-      console.warn("Batch results modal not found - multi-account feature may not work");
-    }
-
     this.init();
   }
 
   init() {
-    // Create the duplicate choice modal dynamically
+    // Create the duplicate choice modal dynamically and append to body
     const choiceModal = document.createElement("div");
-    choiceModal.className = "modal duplicate-choice-modal";
+    choiceModal.className = "modal dialog duplicate-choice-modal"; // Match other dialogs
     choiceModal.style.display = "none";
     choiceModal.innerHTML = `
-      <div class="modal-content" style="max-width: 400px;">
-        <div class="modal-header">
-          <h2 class="modal-title">Duplicate Rule</h2>
-          <button type="button" class="modal-close-btn">&times;</button>
+      <div class="dialog-content" style="max-width: 400px;">
+        <div class="dialog-header">
+          <h2>Duplicate Rule</h2>
+          <button type="button" class="dialog-close-btn">&times;</button>
         </div>
-        <div class="modal-body" style="padding: 24px;">
+        <div class="dialog-body" style="padding: 24px;">
           <p style="text-align: center; margin-bottom: 24px;">Where would you like to duplicate this rule?</p>
           <div style="display: flex; flex-direction: column; gap: 12px;">
             <button class="btn btn-primary duplicate-same-account">In This Ad Account</button>
@@ -7232,28 +7256,34 @@ class AutomatedRulesManager {
         </div>
       </div>
     `;
-    this.rulesModal.appendChild(choiceModal);
+    document.body.appendChild(choiceModal);
     this.choiceModal = choiceModal;
 
     // --- Duplicate Choice Modal Logic ---
-    this.choiceModal.querySelector(".modal-close-btn").addEventListener("click", () => {
+    const closeChoiceModal = () => {
       this.choiceModal.style.display = "none";
       this.ruleToDuplicate = null;
+    };
+
+    this.choiceModal.addEventListener("click", (e) => {
+      if (e.target === this.choiceModal) {
+        closeChoiceModal();
+      }
     });
+    this.choiceModal.querySelector(".dialog-close-btn").addEventListener("click", closeChoiceModal);
 
     this.choiceModal.querySelector(".duplicate-same-account").addEventListener("click", () => {
-      this.choiceModal.style.display = "none";
       if (this.ruleToDuplicate) {
         this.openEditor(this.ruleToDuplicate.id, this.ruleToDuplicate.meta_rule_id, true);
-        this.ruleToDuplicate = null;
       }
+      closeChoiceModal();
     });
 
     this.choiceModal.querySelector(".duplicate-other-accounts").addEventListener("click", () => {
-      this.choiceModal.style.display = "none";
       if (this.ruleToDuplicate) {
         this.openAccountSelector();
       }
+      closeChoiceModal();
     });
 
     // Bind modal close buttons
@@ -7282,6 +7312,7 @@ class AutomatedRulesManager {
       }
       this.isMultiAccountMode = false;
       this.selectedAccounts = [];
+      this.ruleToDuplicate = null; // Ensure this is cleared for normal flow
       this.openEditor();
     });
 
@@ -7289,6 +7320,7 @@ class AutomatedRulesManager {
     const multiRuleBtn = this.rulesModal.querySelector(".create-multi-rule-btn");
     if (multiRuleBtn) {
       multiRuleBtn.addEventListener("click", () => {
+        this.ruleToDuplicate = null; // Ensure this is cleared for normal flow
         this.openAccountSelector();
       });
     } else {
