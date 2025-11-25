@@ -458,7 +458,7 @@ function populatePages(pages) {
     }
 
     // Re-attach event listeners to the newly added options
-    const parentDropdown = dropdown.closest('.custom-dropdown');
+    const parentDropdown = dropdown.closest(".custom-dropdown");
     if (parentDropdown) {
       attachDropdownOptionListeners(parentDropdown);
     }
@@ -1636,7 +1636,7 @@ class UploadForm {
 
       // Handle bid amount if needed
       const bid_amount = document.querySelector(".config-cost-per-result-goal");
-      if (bid_amount && bid_amount.required && bid_amount.value) {
+      if (bid_amount && bid_amount.value && bid_amount.value.trim() !== "") {
         // Convert dollars to cents for Facebook API
         payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100);
       }
@@ -1773,7 +1773,7 @@ class UploadForm {
         dropdownInput.parentElement.classList.remove("empty-input");
         continue; // Skip validation if not required
       }
-      
+
       if (dropdownInput.classList.contains("placeholder") && isRequired) {
         console.error("Validation failed on dropdown:", dropdownInput.dataset.dropdown);
         this.emptyDropdownError(dropdownInput);
@@ -1798,7 +1798,6 @@ class UploadForm {
         isValid = false;
       }
     }
-
 
     // Validate countries selection
     const geoContainers = document.querySelectorAll(".geo-selection-container");
@@ -2958,45 +2957,45 @@ class FileUploadHandler {
         if (Array.isArray(items)) {
           items.forEach((item) => {
             // This handles nested results from Promise.all inside the monkey-patch
-            if (item.status === 'fulfilled') {
-                const subItem = item.value;
-                 if (subItem.status === "failed") {
-                  failedUploads.push({
-                    file: subItem.file,
-                    error: subItem.error || "Upload failed",
-                  });
-                } else if (subItem.type === "image") {
-                  normalizedAssets.push(subItem);
-                } else if (subItem.type === "video") {
-                  normalizedAssets.push({
-                    type: "video",
-                    file: subItem.file,
-                    data: subItem.data,
-                    status: "success",
-                  });
-                }
-            } else if (item.status === 'rejected') {
+            if (item.status === "fulfilled") {
+              const subItem = item.value;
+              if (subItem.status === "failed") {
                 failedUploads.push({
-                    file: "Unknown file",
-                    error: item.reason?.message || "Upload failed",
+                  file: subItem.file,
+                  error: subItem.error || "Upload failed",
                 });
+              } else if (subItem.type === "image") {
+                normalizedAssets.push(subItem);
+              } else if (subItem.type === "video") {
+                normalizedAssets.push({
+                  type: "video",
+                  file: subItem.file,
+                  data: subItem.data,
+                  status: "success",
+                });
+              }
+            } else if (item.status === "rejected") {
+              failedUploads.push({
+                file: "Unknown file",
+                error: item.reason?.message || "Upload failed",
+              });
             } else {
-                // This handles direct results from the API calls
-                if (item.status === "failed") {
-                  failedUploads.push({
-                    file: item.file,
-                    error: item.error || "Upload failed",
-                  });
-                } else if (item.type === "image") {
-                  normalizedAssets.push(item);
-                } else if (item.type === "video") {
-                  normalizedAssets.push({
-                    type: "video",
-                    file: item.file,
-                    data: item.data,
-                    status: "success",
-                  });
-                }
+              // This handles direct results from the API calls
+              if (item.status === "failed") {
+                failedUploads.push({
+                  file: item.file,
+                  error: item.error || "Upload failed",
+                });
+              } else if (item.type === "image") {
+                normalizedAssets.push(item);
+              } else if (item.type === "video") {
+                normalizedAssets.push({
+                  type: "video",
+                  file: item.file,
+                  data: item.data,
+                  status: "success",
+                });
+              }
             }
           });
         }
@@ -3007,13 +3006,16 @@ class FileUploadHandler {
         if (this.progressTracker.eventSource) {
           this.progressTracker.eventSource.close();
         }
-        this.hideLoadingState(true); 
+        this.hideLoadingState(true);
 
         const errorMsg = failedUploads.map((f) => `${f.file}: ${f.error}`).join("\n");
         alert(`All uploads failed:\n\n${errorMsg}\n\nPlease try again.`);
         return;
       } else if (failedUploads.length > 0) {
-        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
+        const failedNames = failedUploads
+          .slice(0, 3)
+          .map((f) => f.file)
+          .join(", ");
         const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
         alert(`Warning: Some uploads failed: ${failedNames}${moreText}\n\nYou can continue with the successful uploads or go back and try again.`);
       }
@@ -3031,13 +3033,11 @@ class FileUploadHandler {
 
         const currentAssets = appState.getState().uploadedAssets || [];
         appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
-        
       } else if (failedUploads.length === 0) {
-         // No assets normalized but no failures either, could be an issue.
-         this.hideLoadingState(true);
-         alert("Upload complete, but no files were processed. Please check the file types and try again.");
+        // No assets normalized but no failures either, could be an issue.
+        this.hideLoadingState(true);
+        alert("Upload complete, but no files were processed. Please check the file types and try again.");
       }
-
     } catch (err) {
       console.log("There was an error uploading files to meta.", err);
       this.hideLoadingState(true);
@@ -3195,32 +3195,35 @@ class FileUploadHandler {
 
         if (Array.isArray(items)) {
           items.forEach((item) => {
-            if (item.status === 'fulfilled') {
-                const subItem = item.value;
-                 if (subItem.status === "failed") {
-                  failedUploads.push({ file: subItem.file, error: subItem.error || "Upload failed" });
-                } else if (subItem.type === "image") {
-                  normalizedAssets.push(subItem);
-                } else if (subItem.type === "video") {
-                  normalizedAssets.push({ type: "video", file: subItem.file, data: subItem.data, status: "success" });
-                }
-            } else if (item.status === 'rejected') {
-                failedUploads.push({ file: "Unknown file", error: item.reason?.message || "Upload failed" });
+            if (item.status === "fulfilled") {
+              const subItem = item.value;
+              if (subItem.status === "failed") {
+                failedUploads.push({ file: subItem.file, error: subItem.error || "Upload failed" });
+              } else if (subItem.type === "image") {
+                normalizedAssets.push(subItem);
+              } else if (subItem.type === "video") {
+                normalizedAssets.push({ type: "video", file: subItem.file, data: subItem.data, status: "success" });
+              }
+            } else if (item.status === "rejected") {
+              failedUploads.push({ file: "Unknown file", error: item.reason?.message || "Upload failed" });
             } else {
-                if (item.status === "failed") {
-                  failedUploads.push({ file: item.file, error: item.error || "Upload failed" });
-                } else if (item.type === "image") {
-                  normalizedAssets.push(item);
-                } else if (item.type === "video") {
-                  normalizedAssets.push({ type: "video", file: item.file, data: item.data, status: "success" });
-                }
+              if (item.status === "failed") {
+                failedUploads.push({ file: item.file, error: item.error || "Upload failed" });
+              } else if (item.type === "image") {
+                normalizedAssets.push(item);
+              } else if (item.type === "video") {
+                normalizedAssets.push({ type: "video", file: item.file, data: item.data, status: "success" });
+              }
             }
           });
         }
       });
 
       if (failedUploads.length > 0) {
-        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
+        const failedNames = failedUploads
+          .slice(0, 3)
+          .map((f) => f.file)
+          .join(", ");
         const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
         alert(`Warning: Some additional uploads failed: ${failedNames}${moreText}`);
       }
@@ -3233,8 +3236,8 @@ class FileUploadHandler {
         this.updateAdCopySectionTitle();
       } else {
         this.hideLoadingState(true); // Show error state if no new assets were added
-        if(failedUploads.length > 0) {
-            alert("All additional file uploads failed. Please try again.");
+        if (failedUploads.length > 0) {
+          alert("All additional file uploads failed. Please try again.");
         }
       }
     } catch (err) {
@@ -3280,12 +3283,12 @@ class FileUploadHandler {
     const dropdowns = adCopySection.querySelectorAll(".custom-dropdown");
     if (dropdowns.length > 0) {
       // Check if dropdowns already have customDropdownInstance to avoid re-initialization
-      const needsInit = Array.from(dropdowns).some(d => !d.customDropdownInstance);
+      const needsInit = Array.from(dropdowns).some((d) => !d.customDropdownInstance);
       if (needsInit) {
         new CustomDropdown(".ad-copy-container .custom-dropdown");
       } else {
         // Re-attach listeners for existing dropdowns
-        dropdowns.forEach(dropdown => {
+        dropdowns.forEach((dropdown) => {
           attachDropdownOptionListeners(dropdown);
         });
       }
@@ -3949,7 +3952,7 @@ class FileUploadHandler {
       // If this is a new upload after initial upload was complete, reset the button
       if (this.initialUploadComplete && !isAdditional) {
         const button = document.querySelector('[data-step="3"] .continue-btn');
-        if (button && button.classList.contains('upload-complete')) {
+        if (button && button.classList.contains("upload-complete")) {
           // Reset button to allow new upload
           button.textContent = "Upload Creatives";
           button.style.backgroundColor = "";
@@ -5346,7 +5349,7 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
 
     try {
       const settledResults = await Promise.allSettled(uploadPromises);
-      
+
       // Combine results
       const allResults = settledResults.flat();
 
@@ -5362,20 +5365,20 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
           });
           return;
         }
-        
+
         // This handles the nested array of results from the library upload call
-        if(Array.isArray(result.value)) {
-            result.value.forEach(item => {
-                if (item.status === 'fulfilled') {
-                    if (item.value.status === "failed") {
-                        failedUploads.push({ file: item.value.file, error: item.value.error || "Upload failed" });
-                    } else {
-                        normalizedAssets.push(item.value);
-                    }
-                } else if (item.status === 'rejected') {
-                    failedUploads.push({ file: item.creativeId || "Unknown file", error: item.reason || "Upload failed" });
-                }
-            });
+        if (Array.isArray(result.value)) {
+          result.value.forEach((item) => {
+            if (item.status === "fulfilled") {
+              if (item.value.status === "failed") {
+                failedUploads.push({ file: item.value.file, error: item.value.error || "Upload failed" });
+              } else {
+                normalizedAssets.push(item.value);
+              }
+            } else if (item.status === "rejected") {
+              failedUploads.push({ file: item.creativeId || "Unknown file", error: item.reason || "Upload failed" });
+            }
+          });
         }
       });
 
@@ -8101,7 +8104,7 @@ class AutomatedRulesManager {
       // CREATE logic (POST)
 
       // Validate against existing rule names + entity_type for the same account
-      if (this.cachedRules && this.cachedRules.some(rule => rule.name === ruleData.name && rule.entity_type === ruleData.entity_type)) {
+      if (this.cachedRules && this.cachedRules.some((rule) => rule.name === ruleData.name && rule.entity_type === ruleData.entity_type)) {
         showError(`A rule with this name for the entity '${ruleData.entity_type}' already exists. Please choose a different name or entity type.`);
         return; // Stop execution
       }
