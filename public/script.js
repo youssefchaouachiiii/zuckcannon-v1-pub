@@ -1737,44 +1737,34 @@ class UploadForm {
 
   checkIfInputsAreValid() {
     let isValid = true;
-    const allInputs = document.getElementsByTagName("input");
+    const allInputs = document.querySelectorAll(".adset-form-container input[required]");
     const dropdownInputs = document.querySelectorAll(".adset-form-container .dropdown-display");
 
     // Validate required text inputs
     for (const input of allInputs) {
-      if (input.required && input.dataset.container === this.element.classList.value) {
-        if (input.value === "" || input.value === undefined) {
-          this.emptyInputError(input);
-          isValid = false;
-        } else {
-          input.classList.remove("empty-input");
-          // Also remove error from budget wrapper if exists
-          const wrapper = input.closest(".budget-input-wrapper");
-          if (wrapper) {
-            wrapper.classList.remove("empty-input");
-          }
-        }
+      // Check only for inputs inside the adset form that are currently visible
+      if (input.offsetParent !== null && (input.value === "" || input.value === undefined)) {
+        console.error("Validation failed on text input:", input.name || input.className);
+        this.emptyInputError(input);
+        isValid = false;
       }
     }
 
-    // Validate dropdowns (except pixel dropdown which is conditional)
+    // Validate dropdowns
     const optimizationGoal = document.querySelector(".config-optimization-goal")?.value || "";
     const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
 
     for (const dropdownInput of dropdownInputs) {
       const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
+      const isRequired = !dropdownInput.parentElement.parentElement.classList.contains("optional");
 
-      // For pixel dropdown, only validate if required for optimization goal
-      if (isPixelDropdown) {
-        if (!requiresPixelAndEvent) {
-          // Remove error styling if present since it's not required
-          dropdownInput.parentElement.classList.remove("empty-input");
-          console.log("Skipping pixel validation - not required for", optimizationGoal);
-          continue;
-        }
+      if (isPixelDropdown && !requiresPixelAndEvent) {
+        dropdownInput.parentElement.classList.remove("empty-input");
+        continue; // Skip validation if not required
       }
-
-      if (dropdownInput.classList.contains("placeholder")) {
+      
+      if (dropdownInput.classList.contains("placeholder") && isRequired) {
+        console.error("Validation failed on dropdown:", dropdownInput.dataset.dropdown);
         this.emptyDropdownError(dropdownInput);
         isValid = false;
       }
@@ -1784,32 +1774,33 @@ class UploadForm {
     const minAgeInput = document.querySelector(".min-age");
     const maxAgeInput = document.querySelector(".max-age");
     const ageContainer = document.querySelector(".targeting-age");
-
     if (minAgeInput && maxAgeInput && ageContainer && window.getComputedStyle(ageContainer).display !== "none") {
-      isValid = this.validateAgeInputs(minAgeInput, maxAgeInput) && isValid;
+      if (!this.validateAgeInputs(minAgeInput, maxAgeInput)) {
+        isValid = false;
+      }
     }
 
-    const budgetInput = document.querySelector(".config-daily-budget");
+    // Validate budget input
+    const budgetInput = document.querySelector(".config-adset-budget"); // Use the correct budget input selector
     if (budgetInput && budgetInput.required) {
-      isValid = this.validateBudgetInput(budgetInput) && isValid;
+      if (!this.validateBudgetInput(budgetInput)) {
+        isValid = false;
+      }
     }
 
-    // Validate countries selection (only if geo fields are visible)
+
+    // Validate countries selection
     const geoContainers = document.querySelectorAll(".geo-selection-container");
     const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
-
     if (geoFieldsVisible) {
       const selectedCountries = appState.getState().selectedCountries;
-      const countryContainer = document.querySelector(".selected-countries-container");
       if (selectedCountries.length === 0) {
+        console.error("Validation failed on: Geo location (countries)");
+        const countryContainer = document.querySelector(".selected-countries-container");
         if (countryContainer) {
           countryContainer.classList.add("empty-input");
         }
         isValid = false;
-      } else {
-        if (countryContainer) {
-          countryContainer.classList.remove("empty-input");
-        }
       }
     }
 
@@ -1818,37 +1809,35 @@ class UploadForm {
 
   validateAgeInputs(minAge, maxAge) {
     let isValid = true;
-
     const minVal = parseInt(minAge.value);
     const maxVal = parseInt(maxAge.value);
 
-    if (minVal < 18 || minVal > 65 || isNaN(minVal)) {
+    if (minAge.required && (isNaN(minVal) || minVal < 18 || minVal > 65)) {
+      console.error("Validation failed on: Minimum Age (must be between 18-65)");
       this.emptyInputError(minAge);
       isValid = false;
     }
-
-    if (maxVal < 18 || maxVal > 65 || isNaN(maxVal)) {
+    if (maxAge.required && (isNaN(maxVal) || maxVal < 18 || maxVal > 65)) {
+      console.error("Validation failed on: Maximum Age (must be between 18-65)");
       this.emptyInputError(maxAge);
       isValid = false;
     }
-
-    if (minVal >= maxVal) {
+    if (minAge.required && maxAge.required && !isNaN(minVal) && !isNaN(maxVal) && minVal >= maxVal) {
+      console.error("Validation failed on: Age Range (min age must be less than max age)");
       this.emptyInputError(minAge);
       this.emptyInputError(maxAge);
       isValid = false;
     }
-
     return isValid;
   }
 
   validateBudgetInput(budgetInput) {
     const value = parseFloat(budgetInput.value);
-
     if (isNaN(value) || value <= 0) {
+      console.error("Validation failed on: Budget (must be > 0)");
       this.emptyInputError(budgetInput);
       return false;
     }
-
     return true;
   }
 
