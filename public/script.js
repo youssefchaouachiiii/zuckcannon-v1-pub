@@ -3415,9 +3415,25 @@ class FileUploadHandler {
 
     // Handle final submission
     const createBtn = reviewSection.querySelector(".create-ads-button");
-    createBtn.onclick = () => {
+    console.log("[showReviewSection] Create button found:", !!createBtn);
+
+    if (!createBtn) {
+      console.error("[showReviewSection] Create button not found!");
+      return;
+    }
+
+    // Remove any existing click handlers to prevent duplicates
+    const newBtn = createBtn.cloneNode(true);
+    createBtn.parentNode.replaceChild(newBtn, createBtn);
+    console.log("[showReviewSection] Button cloned and replaced");
+
+    // Add fresh click handler
+    newBtn.onclick = (e) => {
+      console.log("[showReviewSection] Button clicked!");
+      e.preventDefault();
       this.createAds();
     };
+    console.log("[showReviewSection] Click handler attached");
   }
 
   populateReviewData() {
@@ -3546,6 +3562,12 @@ class FileUploadHandler {
     const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
     const pageText = pageDropdownDisplay ? pageDropdownDisplay.textContent : "";
     const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : "";
+
+    // Debug logging
+    console.log("[populateReviewData] CTA Selected:", cta, ctaDisplayText);
+    console.log("[populateReviewData] Page Selected:", pageText, pageId);
+    console.log("[populateReviewData] Primary Text:", primaryText?.substring(0, 50));
+    console.log("[populateReviewData] Headline:", headline);
     const primaryTextEl = document.querySelector(".primary-text-review-container p");
     const headlineEl = document.querySelector(".headline-review-container p");
     const pageEl = document.querySelector(".cta-text-review-container.page p");
@@ -3576,8 +3598,15 @@ class FileUploadHandler {
   }
 
   createAds() {
+    console.log("[createAds] Method called!");
+
     // show loading state
     const button = document.querySelector(".create-ads-button");
+    if (!button) {
+      console.error("[createAds] Button not found!");
+      return;
+    }
+    console.log("[createAds] Button found, starting animation");
     animatedEllipsis.start(button, "Creating Ads");
     button.disabled = true;
     button.style.opacity = "0.6";
