@@ -1432,6 +1432,7 @@ class CustomDropdown {
   }
 
   setDropdownData(display, option, dropdownType) {
+    display.textContent = option.textContent;
     switch (dropdownType) {
       case "pixel":
         const pixelId = option.dataset.pixelId || option.getAttribute("data-pixel-id") || "";
@@ -1439,8 +1440,10 @@ class CustomDropdown {
         display.dataset.pixelid = pixelId;
         display.dataset.pixelAccountId = pixelAccountId;
         break;
+      case "pages":
       case "page":
-        display.dataset.pageid = option.dataset.pageId || "";
+        const pageId = option.dataset.pageId || option.getAttribute("data-page-id") || "";
+        display.dataset.value = pageId;
         break;
       case "status":
         display.dataset.value = option.dataset.value || option.textContent;
@@ -1572,6 +1575,13 @@ class UploadForm {
         event_type: eventType,
         status: statusDropdown ? statusDropdown.dataset.value : "ACTIVE",
       };
+
+      // Add page_id if selected (optional)
+      const pageDropdown = document.querySelector('.dropdown-selected[data-dropdown="pages"] .dropdown-display');
+      const pageId = pageDropdown ? pageDropdown.dataset.value : null;
+      if (pageId) {
+        payload.page_id = pageId;
+      }
 
       // Only add geo_locations if fields are visible
       if (geoFieldsVisible) {
@@ -3676,11 +3686,30 @@ class FileUploadHandler {
               if (f.reason?.message) return f.reason.message;
               if (typeof f.reason === "string") return f.reason;
               if (f.reason instanceof Error) return f.reason.message;
+              // Fallback to string representation
+              if (f.reason && typeof f.reason === "object") {
+                const reasonStr = f.reason.toString();
+                if (reasonStr !== "[object Object]") return reasonStr;
+              }
               return "Unknown error";
             });
             const uniqueErrors = [...new Set(errorMessages)];
             const errorDetail = uniqueErrors.join("\n\n");
-            throw new Error(`All ad creations failed:\n\n${errorDetail}`);
+            console.error(`All ad creations failed:`, failed);
+
+            // Reset button state
+            animatedEllipsis.stop(button);
+            button.disabled = false;
+            button.style.opacity = "1";
+            button.textContent = "Create Ads";
+
+            // Show error to user
+            if (window.showError) {
+              window.showError(`Failed to create ads:\n\n${uniqueErrors.slice(0, 3).join("\n\n")}${uniqueErrors.length > 3 ? `\n\n...and ${uniqueErrors.length - 3} more errors` : ""}`, 10000);
+            } else {
+              alert(`❌ All Ads Failed to Create\n\n${errorDetail}`);
+            }
+            return;
           } else if (failed.length > 0) {
             // Some ads failed
             const successCount = successful.length;
@@ -3693,6 +3722,11 @@ class FileUploadHandler {
               if (f.reason?.message) return f.reason.message;
               if (typeof f.reason === "string") return f.reason;
               if (f.reason instanceof Error) return f.reason.message;
+              // Try to extract from toString or any string representation
+              if (f.reason && typeof f.reason === "object") {
+                const reasonStr = f.reason.toString();
+                if (reasonStr !== "[object Object]") return reasonStr;
+              }
               return "Unknown error";
             });
 
