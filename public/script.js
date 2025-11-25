@@ -2933,66 +2933,64 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.allSettled(uploadPromises);
+      const settledResults = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
       const failedUploads = [];
 
-      // No need to check for sessionId in results since we connected earlier
+      settledResults.forEach((result) => {
+        if (result.status === "rejected") {
+          failedUploads.push({
+            file: "Unknown file",
+            error: result.reason?.message || "Upload failed",
+          });
+          return;
+        }
 
-      results.forEach((result) => {
-        // Handle results that might have sessionId wrapper
-        const items = result && result.results ? result.results : result;
+        // result.status is 'fulfilled', so result.value exists
+        const items = result.value.results || result.value;
 
         if (Array.isArray(items)) {
           items.forEach((item) => {
-            if (item.status === "fulfilled") {
-              // Check if the upload actually succeeded
-              if (item.value.status === "failed") {
+            // This handles nested results from Promise.all inside the monkey-patch
+            if (item.status === 'fulfilled') {
+                const subItem = item.value;
+                 if (subItem.status === "failed") {
+                  failedUploads.push({
+                    file: subItem.file,
+                    error: subItem.error || "Upload failed",
+                  });
+                } else if (subItem.type === "image") {
+                  normalizedAssets.push(subItem);
+                } else if (subItem.type === "video") {
+                  normalizedAssets.push({
+                    type: "video",
+                    file: subItem.file,
+                    data: subItem.data,
+                    status: "success",
+                  });
+                }
+            } else if (item.status === 'rejected') {
                 failedUploads.push({
-                  file: item.value.file,
-                  error: item.value.error || "Upload failed",
+                    file: "Unknown file",
+                    error: item.reason?.message || "Upload failed",
                 });
-              } else if (item.value.type === "image") {
-                normalizedAssets.push(item.value);
-              } else if (item.value.type === "video") {
-                normalizedAssets.push({
-                  type: "video",
-                  file: item.value.file,
-                  data: item.value.data,
-                  status: "success",
-                });
-              }
-            } else if (item.status === "rejected") {
-              failedUploads.push({
-                file: "Unknown file",
-                error: item.reason || "Upload failed",
-              });
-            }
-          });
-        } else if (result) {
-          // Handle single result objects
-          result.forEach((item) => {
-            if (item.status === "fulfilled") {
-              if (item.value.status === "failed") {
-                failedUploads.push({
-                  file: item.value.file,
-                  error: item.value.error || "Upload failed",
-                });
-              } else if (item.value.type === "image") {
-                normalizedAssets.push(item.value);
-              } else if (item.value.type === "video") {
-                normalizedAssets.push({
-                  type: "video",
-                  file: item.value.file,
-                  data: item.value.data,
-                  status: "success",
-                });
-              }
-            } else if (item.status === "rejected") {
-              failedUploads.push({
-                file: "Unknown file",
-                error: item.reason || "Upload failed",
-              });
+            } else {
+                // This handles direct results from the API calls
+                if (item.status === "failed") {
+                  failedUploads.push({
+                    file: item.file,
+                    error: item.error || "Upload failed",
+                  });
+                } else if (item.type === "image") {
+                  normalizedAssets.push(item);
+                } else if (item.type === "video") {
+                  normalizedAssets.push({
+                    type: "video",
+                    file: item.file,
+                    data: item.data,
+                    status: "success",
+                  });
+                }
             }
           });
         }
@@ -3000,51 +2998,44 @@ class FileUploadHandler {
 
       // Check if all uploads failed
       if (normalizedAssets.length === 0 && failedUploads.length > 0) {
-        // All uploads failed
         if (this.progressTracker.eventSource) {
           this.progressTracker.eventSource.close();
         }
-        this.hideLoadingState(true); // Pass true to indicate errors
+        this.hideLoadingState(true); 
 
-        // Show error message
         const errorMsg = failedUploads.map((f) => `${f.file}: ${f.error}`).join("\n");
         alert(`All uploads failed:\n\n${errorMsg}\n\nPlease try again.`);
-
-        // Keep user on upload screen
         return;
       } else if (failedUploads.length > 0) {
-        // Some uploads failed
-        const failedNames = failedUploads
-          .slice(0, 3)
-          .map((f) => f.file)
-          .join(", ");
+        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
         const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
         alert(`Warning: Some uploads failed: ${failedNames}${moreText}\n\nYou can continue with the successful uploads or go back and try again.`);
       }
 
-      // Set up completion handler only if we have successful uploads
       if (normalizedAssets.length > 0) {
-        if (this.progressTracker.eventSource) {
+        if (this.progressTracker.eventSource && (videoFiles.length > 0 || gdriveFiles.length > 0)) {
           this.progressTracker.onComplete = (hasErrors, errors) => {
-            // Even if SSE reports errors, we have some successful uploads
-            this.hideLoadingState(false); // Pass false for success
+            this.hideLoadingState(hasErrors);
             this.showAdCopySection();
           };
         } else {
-          // No SSE connection, complete immediately
-          this.hideLoadingState(false); // Pass false for success
+          this.hideLoadingState(false);
           this.showAdCopySection();
         }
 
-        appState.updateState("uploadedAssets", normalizedAssets);
-      } else {
-        // No successful uploads
-        this.hideLoadingState(true); // Pass true to indicate errors
+        const currentAssets = appState.getState().uploadedAssets || [];
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+        
+      } else if (failedUploads.length === 0) {
+         // No assets normalized but no failures either, could be an issue.
+         this.hideLoadingState(true);
+         alert("Upload complete, but no files were processed. Please check the file types and try again.");
       }
+
     } catch (err) {
       console.log("There was an error uploading files to meta.", err);
-      this.hideLoadingState(true); // Pass true to indicate errors
-      alert("An error occurred during upload. Please try again.");
+      this.hideLoadingState(true);
+      alert("An unexpected error occurred during upload. Please check the console and try again.");
       return err;
     }
   }
@@ -3181,39 +3172,69 @@ class FileUploadHandler {
     }
 
     try {
-      const results = await Promise.allSettled(uploadPromises);
+      const settledResults = await Promise.allSettled(uploadPromises);
       const normalizedAssets = [];
+      const failedUploads = [];
 
-      results.forEach((result) => {
-        result.forEach((item) => {
-          if (item.status === "fulfilled") {
-            if (item.value.type === "image") {
-              normalizedAssets.push(item.value);
-            } else if (item.value.type === "video") {
-              normalizedAssets.push({
-                type: "video",
-                file: item.value.file,
-                data: item.value.data,
-                status: "success",
-              });
+      settledResults.forEach((result) => {
+        if (result.status === "rejected") {
+          failedUploads.push({
+            file: "Unknown file",
+            error: result.reason?.message || "Upload failed",
+          });
+          return;
+        }
+
+        const items = result.value.results || result.value;
+
+        if (Array.isArray(items)) {
+          items.forEach((item) => {
+            if (item.status === 'fulfilled') {
+                const subItem = item.value;
+                 if (subItem.status === "failed") {
+                  failedUploads.push({ file: subItem.file, error: subItem.error || "Upload failed" });
+                } else if (subItem.type === "image") {
+                  normalizedAssets.push(subItem);
+                } else if (subItem.type === "video") {
+                  normalizedAssets.push({ type: "video", file: subItem.file, data: subItem.data, status: "success" });
+                }
+            } else if (item.status === 'rejected') {
+                failedUploads.push({ file: "Unknown file", error: item.reason?.message || "Upload failed" });
+            } else {
+                if (item.status === "failed") {
+                  failedUploads.push({ file: item.file, error: item.error || "Upload failed" });
+                } else if (item.type === "image") {
+                  normalizedAssets.push(item);
+                } else if (item.type === "video") {
+                  normalizedAssets.push({ type: "video", file: item.file, data: item.data, status: "success" });
+                }
             }
-          }
-        });
+          });
+        }
       });
 
-      // Update app state with spread operator
-      const currentAssets = appState.getState().uploadedAssets;
-      appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+      if (failedUploads.length > 0) {
+        const failedNames = failedUploads.slice(0, 3).map((f) => f.file).join(", ");
+        const moreText = failedUploads.length > 3 ? ` and ${failedUploads.length - 3} more` : "";
+        alert(`Warning: Some additional uploads failed: ${failedNames}${moreText}`);
+      }
 
-      // Clear additional files array
-      this.additionalFilesToUpload = [];
-
-      this.hideLoadingState();
-
-      // Update ad copy section title
-      this.updateAdCopySectionTitle();
+      if (normalizedAssets.length > 0) {
+        const currentAssets = appState.getState().uploadedAssets;
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
+        this.additionalFilesToUpload = [];
+        this.hideLoadingState();
+        this.updateAdCopySectionTitle();
+      } else {
+        this.hideLoadingState(true); // Show error state if no new assets were added
+        if(failedUploads.length > 0) {
+            alert("All additional file uploads failed. Please try again.");
+        }
+      }
     } catch (err) {
       console.log("There was an error uploading additional files to meta.", err);
+      this.hideLoadingState(true);
+      alert("An unexpected error occurred while uploading additional files. Please try again.");
       return err;
     }
   }
@@ -5216,73 +5237,37 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
     this.progressTracker.reset();
 
     try {
-      const uploadPromises = [];
-
-      // Handle library files
-      if (libraryFiles.length > 0) {
-        const libraryPromise = (async () => {
-          try {
-            const creativeIds = libraryFiles.map((file) => file.libraryId);
-            console.log("Processing library files:", creativeIds);
-
-            const response = await fetch("/api/upload-library-creatives", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ creativeIds, account_id }),
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json();
-              console.error("Library upload failed:", errorData);
-              throw new Error(errorData.error || "Failed to upload library creatives");
-            }
-
-            const libraryResults = await response.json();
-            console.log("Library upload response:", libraryResults);
-
-            return libraryResults.results;
-          } catch (error) {
-            console.error("Error uploading library files:", error);
-            throw error;
-          }
-        })();
-
-        uploadPromises.push(libraryPromise);
-      }
-
-      // Handle other files using the original method
-      if (otherFiles.length > 0) {
-        const otherFilesPromise = originalUploadFiles.call(this, otherFiles, account_id);
-        uploadPromises.push(otherFilesPromise);
-      }
-
-      // Wait for all uploads to complete
-      const results = await Promise.allSettled(uploadPromises);
-
+      const settledResults = await Promise.allSettled(uploadPromises);
+      
       // Combine results
-      const allResults = results.flat();
+      const allResults = settledResults.flat();
 
       // Process results similar to original method
       const normalizedAssets = [];
       const failedUploads = [];
 
-      allResults.forEach((item) => {
-        if (item.status === "fulfilled") {
-          if (item.value.status === "failed") {
-            failedUploads.push({
-              file: item.value.file,
-              error: item.value.error || "Upload failed",
-            });
-          } else {
-            normalizedAssets.push(item.value);
-          }
-        } else if (item.status === "rejected") {
+      allResults.forEach((result) => {
+        if (result.status === "rejected") {
           failedUploads.push({
-            file: item.creativeId || "Unknown file",
-            error: item.reason || "Upload failed",
+            file: result.reason?.creativeId || "Unknown file",
+            error: result.reason?.message || result.reason || "Upload failed",
           });
+          return;
+        }
+        
+        // This handles the nested array of results from the library upload call
+        if(Array.isArray(result.value)) {
+            result.value.forEach(item => {
+                if (item.status === 'fulfilled') {
+                    if (item.value.status === "failed") {
+                        failedUploads.push({ file: item.value.file, error: item.value.error || "Upload failed" });
+                    } else {
+                        normalizedAssets.push(item.value);
+                    }
+                } else if (item.status === 'rejected') {
+                    failedUploads.push({ file: item.creativeId || "Unknown file", error: item.reason || "Upload failed" });
+                }
+            });
         }
       });
 
@@ -5295,7 +5280,8 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
       }
 
       if (normalizedAssets.length > 0) {
-        appState.updateState("uploadedAssets", normalizedAssets);
+        const currentAssets = appState.getState().uploadedAssets || [];
+        appState.updateState("uploadedAssets", [...currentAssets, ...normalizedAssets]);
         this.showAdCopySection();
       }
 
@@ -7249,6 +7235,27 @@ class AutomatedRulesManager {
     this.rulesModal.appendChild(choiceModal);
     this.choiceModal = choiceModal;
 
+    // --- Duplicate Choice Modal Logic ---
+    this.choiceModal.querySelector(".modal-close-btn").addEventListener("click", () => {
+      this.choiceModal.style.display = "none";
+      this.ruleToDuplicate = null;
+    });
+
+    this.choiceModal.querySelector(".duplicate-same-account").addEventListener("click", () => {
+      this.choiceModal.style.display = "none";
+      if (this.ruleToDuplicate) {
+        this.openEditor(this.ruleToDuplicate.id, this.ruleToDuplicate.meta_rule_id, true);
+        this.ruleToDuplicate = null;
+      }
+    });
+
+    this.choiceModal.querySelector(".duplicate-other-accounts").addEventListener("click", () => {
+      this.choiceModal.style.display = "none";
+      if (this.ruleToDuplicate) {
+        this.openAccountSelector();
+      }
+    });
+
     // Bind modal close buttons
     this.rulesModal.querySelectorAll(".modal-close-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.closeModal());
@@ -7604,7 +7611,13 @@ class AutomatedRulesManager {
   }
 
   async duplicateRule(ruleId, metaRuleId) {
-    this.openEditor(ruleId, metaRuleId, true); // Pass true for isDuplicate
+    const ruleData = this.cachedRules.find((r) => (ruleId && r.id == ruleId) || (metaRuleId && r.meta_rule_id === metaRuleId));
+    if (!ruleData) {
+      showError("Could not find the rule to duplicate.");
+      return;
+    }
+    this.ruleToDuplicate = ruleData;
+    this.choiceModal.style.display = "flex";
   }
 
   async editRule(ruleId, metaRuleId) {
