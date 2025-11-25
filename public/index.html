@@ -230,11 +230,25 @@
             </div>
           </div>
 
+          <!-- Page dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="pages">
+                <span class="dropdown-display placeholder">Page (Optional)</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options pages"></ul>
+            </div>
+          </div>
+
           <!-- Pixel dropdown -->
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="pixel">
-                <span class="dropdown-display placeholder">Pixel</span>
+                <span class="dropdown-display placeholder">Pixel (Optional)</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -246,7 +260,7 @@
 
           <!-- Custom Event Type Selection -->
           <div class="event-type-container" style="opacity: 1;">
-            <input type="text" placeholder="Custom Event Type" data-container="adset-form-container"
+            <input type="text" placeholder="Custom Event Type (Optional)" data-container="adset-form-container"
               class="config-event-type" readonly>
             <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
             <ul class="event-type-suggestions" style="display: none;"></ul>
@@ -541,25 +555,103 @@
                 </svg>
               </div>
               <ul class="dropdown-options cta">
-                <li class="cta-option" data-value="">No button</li>
-                <li class="cta-option" data-value="BUY_TICKETS">Buy tickets</li>
-                <li class="cta-option" data-value="CONTACT_US">Contact us</li>
-                <li class="cta-option" data-value="DOWNLOAD">Download</li>
-                <li class="cta-option" data-value="GET_OFFER">Get offer</li>
-                <li class="cta-option" data-value="GET_QUOTE">Get quote</li>
-                <li class="cta-option" data-value="GET_SHOWTIMES">Get showtimes</li>
-                <li class="cta-option selected" data-value="LEARN_MORE">Learn more</li>
-                <li class="cta-option" data-value="LISTEN_NOW">Listen now</li>
-                <li class="cta-option" data-value="ORDER_NOW">Order now</li>
-                <li class="cta-option" data-value="PLAY_GAME">Play game</li>
-                <li class="cta-option" data-value="REQUEST_TIME">Request time</li>
-                <li class="cta-option" data-value="SEE_MENU">See menu</li>
+                <li class="cta-option" data-value="NO_BUTTON">No button</li>
+                <li class="cta-option" data-value="OPEN_LINK">Open link</li>
+                <li class="cta-option" data-value="LIKE_PAGE">Like page</li>
                 <li class="cta-option" data-value="SHOP_NOW">Shop now</li>
+                <li class="cta-option" data-value="PLAY_GAME">Play game</li>
+                <li class="cta-option" data-value="INSTALL_APP">Install app</li>
+                <li class="cta-option" data-value="USE_APP">Use app</li>
+                <li class="cta-option" data-value="CALL">Call</li>
+                <li class="cta-option" data-value="CALL_ME">Call me</li>
+                <li class="cta-option" data-value="VIDEO_CALL">Video call</li>
+                <li class="cta-option" data-value="INSTALL_MOBILE_APP">Install mobile app</li>
+                <li class="cta-option" data-value="USE_MOBILE_APP">Use mobile app</li>
+                <li class="cta-option" data-value="MOBILE_DOWNLOAD">Mobile download</li>
+                <li class="cta-option" data-value="BOOK_TRAVEL">Book travel</li>
+                <li class="cta-option" data-value="LISTEN_MUSIC">Listen music</li>
+                <li class="cta-option" data-value="WATCH_VIDEO">Watch video</li>
+                <li class="cta-option selected" data-value="LEARN_MORE">Learn more</li>
                 <li class="cta-option" data-value="SIGN_UP">Sign up</li>
-                <li class="cta-option" data-value="SUBSCRIBE">Subscribe</li>
+                <li class="cta-option" data-value="DOWNLOAD">Download</li>
                 <li class="cta-option" data-value="WATCH_MORE">Watch more</li>
+                <li class="cta-option" data-value="VISIT_PAGES_FEED">Visit pages feed</li>
+                <li class="cta-option" data-value="CALL_NOW">Call now</li>
                 <li class="cta-option" data-value="APPLY_NOW">Apply now</li>
+                <li class="cta-option" data-value="CONTACT">Contact</li>
+                <li class="cta-option" data-value="BUY_NOW">Buy now</li>
+                <li class="cta-option" data-value="GET_OFFER">Get offer</li>
+                <li class="cta-option" data-value="GET_OFFER_VIEW">Get offer view</li>
+                <li class="cta-option" data-value="BUY_TICKETS">Buy tickets</li>
+                <li class="cta-option" data-value="UPDATE_APP">Update app</li>
+                <li class="cta-option" data-value="GET_DIRECTIONS">Get directions</li>
+                <li class="cta-option" data-value="BUY">Buy</li>
+                <li class="cta-option" data-value="SEND_UPDATES">Send updates</li>
+                <li class="cta-option" data-value="MESSAGE_PAGE">Message page</li>
+                <li class="cta-option" data-value="DONATE">Donate</li>
+                <li class="cta-option" data-value="SUBSCRIBE">Subscribe</li>
+                <li class="cta-option" data-value="SAY_THANKS">Say thanks</li>
+                <li class="cta-option" data-value="SELL_NOW">Sell now</li>
+                <li class="cta-option" data-value="SHARE">Share</li>
+                <li class="cta-option" data-value="DONATE_NOW">Donate now</li>
+                <li class="cta-option" data-value="GET_QUOTE">Get quote</li>
+                <li class="cta-option" data-value="CONTACT_US">Contact us</li>
+                <li class="cta-option" data-value="ORDER_NOW">Order now</li>
+                <li class="cta-option" data-value="START_ORDER">Start order</li>
+                <li class="cta-option" data-value="ADD_TO_CART">Add to cart</li>
+                <li class="cta-option" data-value="VIEW_CART">View cart</li>
+                <li class="cta-option" data-value="VIEW_IN_CART">View in cart</li>
+                <li class="cta-option" data-value="VIDEO_ANNOTATION">Video annotation</li>
+                <li class="cta-option" data-value="RECORD_NOW">Record now</li>
+                <li class="cta-option" data-value="INQUIRE_NOW">Inquire now</li>
+                <li class="cta-option" data-value="CONFIRM">Confirm</li>
+                <li class="cta-option" data-value="REFER_FRIENDS">Refer friends</li>
+                <li class="cta-option" data-value="REQUEST_TIME">Request time</li>
+                <li class="cta-option" data-value="GET_SHOWTIMES">Get showtimes</li>
+                <li class="cta-option" data-value="LISTEN_NOW">Listen now</li>
+                <li class="cta-option" data-value="TRY_DEMO">Try demo</li>
+                <li class="cta-option" data-value="WOODHENGE_SUPPORT">Woodhenge support</li>
+                <li class="cta-option" data-value="SOTTO_SUBSCRIBE">Sotto subscribe</li>
+                <li class="cta-option" data-value="FOLLOW_USER">Follow user</li>
+                <li class="cta-option" data-value="RAISE_MONEY">Raise money</li>
+                <li class="cta-option" data-value="SEE_SHOP">See shop</li>
+                <li class="cta-option" data-value="GET_DETAILS">Get details</li>
+                <li class="cta-option" data-value="FIND_OUT_MORE">Find out more</li>
+                <li class="cta-option" data-value="VISIT_WEBSITE">Visit website</li>
+                <li class="cta-option" data-value="BROWSE_SHOP">Browse shop</li>
+                <li class="cta-option" data-value="EVENT_RSVP">Event RSVP</li>
+                <li class="cta-option" data-value="WHATSAPP_MESSAGE">WhatsApp message</li>
+                <li class="cta-option" data-value="FOLLOW_NEWS_STORYLINE">Follow news storyline</li>
+                <li class="cta-option" data-value="SEE_MORE">See more</li>
                 <li class="cta-option" data-value="BOOK_NOW">Book now</li>
+                <li class="cta-option" data-value="FIND_A_GROUP">Find a group</li>
+                <li class="cta-option" data-value="FIND_YOUR_GROUPS">Find your groups</li>
+                <li class="cta-option" data-value="PAY_TO_ACCESS">Pay to access</li>
+                <li class="cta-option" data-value="PURCHASE_GIFT_CARDS">Purchase gift cards</li>
+                <li class="cta-option" data-value="FOLLOW_PAGE">Follow page</li>
+                <li class="cta-option" data-value="SEND_A_GIFT">Send a gift</li>
+                <li class="cta-option" data-value="SWIPE_UP_SHOP">Swipe up shop</li>
+                <li class="cta-option" data-value="SWIPE_UP_PRODUCT">Swipe up product</li>
+                <li class="cta-option" data-value="SEND_GIFT_MONEY">Send gift money</li>
+                <li class="cta-option" data-value="PLAY_GAME_ON_FACEBOOK">Play game on Facebook</li>
+                <li class="cta-option" data-value="GET_STARTED">Get started</li>
+                <li class="cta-option" data-value="OPEN_INSTANT_APP">Open instant app</li>
+                <li class="cta-option" data-value="AUDIO_CALL">Audio call</li>
+                <li class="cta-option" data-value="GET_PROMOTIONS">Get promotions</li>
+                <li class="cta-option" data-value="JOIN_CHANNEL">Join channel</li>
+                <li class="cta-option" data-value="MAKE_AN_APPOINTMENT">Make an appointment</li>
+                <li class="cta-option" data-value="ASK_ABOUT_SERVICES">Ask about services</li>
+                <li class="cta-option" data-value="BOOK_A_CONSULTATION">Book a consultation</li>
+                <li class="cta-option" data-value="GET_A_QUOTE">Get a quote</li>
+                <li class="cta-option" data-value="BUY_VIA_MESSAGE">Buy via message</li>
+                <li class="cta-option" data-value="ASK_FOR_MORE_INFO">Ask for more info</li>
+                <li class="cta-option" data-value="CHAT_WITH_US">Chat with us</li>
+                <li class="cta-option" data-value="VIEW_PRODUCT">View product</li>
+                <li class="cta-option" data-value="VIEW_CHANNEL">View channel</li>
+                <li class="cta-option" data-value="GET_IN_TOUCH">Get in touch</li>
+                <li class="cta-option" data-value="WATCH_LIVE_VIDEO">Watch live video</li>
+                <li class="cta-option" data-value="SHOP_WITH_AI">Shop with AI</li>
+                <li class="cta-option" data-value="TRY_ON_WITH_AI">Try on with AI</li>
               </ul>
             </div>
           </div>

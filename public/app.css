@@ -755,6 +755,13 @@ h2 {
   overflow-x: hidden;
 }
 
+/* CTA dropdown - limit height and make scrollable for long list */
+.dropdown-options.cta {
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Creative Upload */
 .creative-upload h2 {
   margin-bottom: 20px;
