@@ -456,6 +456,12 @@ function populatePages(pages) {
                 <li data-page-id="${page.id}">${page.name}</li>
         `;
     }
+
+    // Re-attach event listeners to the newly added options
+    const parentDropdown = dropdown.closest('.custom-dropdown');
+    if (parentDropdown) {
+      attachDropdownOptionListeners(parentDropdown);
+    }
   });
 }
 
@@ -3273,7 +3279,16 @@ class FileUploadHandler {
     // Populate page dropdown if we have pages data
     const dropdowns = adCopySection.querySelectorAll(".custom-dropdown");
     if (dropdowns.length > 0) {
-      new CustomDropdown(".ad-copy-container .custom-dropdown");
+      // Check if dropdowns already have customDropdownInstance to avoid re-initialization
+      const needsInit = Array.from(dropdowns).some(d => !d.customDropdownInstance);
+      if (needsInit) {
+        new CustomDropdown(".ad-copy-container .custom-dropdown");
+      } else {
+        // Re-attach listeners for existing dropdowns
+        dropdowns.forEach(dropdown => {
+          attachDropdownOptionListeners(dropdown);
+        });
+      }
     }
 
     adCopySection.scrollIntoView({
@@ -7281,9 +7296,11 @@ class AutomatedRulesManager {
 
     this.choiceModal.querySelector(".duplicate-other-accounts").addEventListener("click", () => {
       if (this.ruleToDuplicate) {
+        // Don't call closeChoiceModal() here - it will clear ruleToDuplicate
+        // Just hide the modal but keep ruleToDuplicate for later use
+        this.choiceModal.style.display = "none";
         this.openAccountSelector();
       }
-      closeChoiceModal();
     });
 
     // Bind modal close buttons
@@ -8370,10 +8387,14 @@ class AutomatedRulesManager {
 
       this.closeAccountSelector(false);
       this.isMultiAccountMode = true;
-      
+
       if (this.ruleToDuplicate) {
         // If duplicating, open editor with pre-filled data in duplicate mode
-        this.openEditor(this.ruleToDuplicate.id, this.ruleToDuplicate.meta_rule_id, true);
+        const ruleId = this.ruleToDuplicate.id;
+        const metaRuleId = this.ruleToDuplicate.meta_rule_id;
+        // Clear ruleToDuplicate after we saved the IDs
+        this.ruleToDuplicate = null;
+        this.openEditor(ruleId, metaRuleId, true);
       } else {
         // Otherwise, open a blank editor for a new multi-account rule
         this.openEditor();
