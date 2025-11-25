@@ -2105,51 +2105,47 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-promoted-object
   const optimizationGoal = req.body.optimization_goal;
 
+  console.log("=== PROMOTED OBJECT DEBUG ===");
+  console.log("Optimization Goal:", optimizationGoal);
+  console.log("page_id from request:", req.body.page_id);
+  console.log("pixel_id from request:", req.body.pixel_id);
+  console.log("Current promoted_object:", payload.promoted_object);
+
   // Build promoted_object based on optimization goal requirements
   if (optimizationGoal === "OFFSITE_CONVERSIONS") {
-    // CONVERSIONS objective - requires pixel_id and custom_event_type
-    if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
-      // return res.status(400).json({
-      //   error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.",
-      //   missing_fields: { pixel_id: true },
-      // });
-      console.log("Pixel ID is required for OFFSITE_CONVERSIONS optimization goal.");
+    // CONVERSIONS objective - pixel_id and event_type are optional, user decides if needed
+    if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
+      // Validate that pixel_id doesn't start with "act_"
+      if (req.body.pixel_id.startsWith("act_")) {
+        console.log("⚠️ WARNING: Invalid pixel ID - appears to be an account ID.");
+      } else {
+        // Merge with existing promoted_object if it exists
+        payload.promoted_object = payload.promoted_object || {};
+        payload.promoted_object.pixel_id = req.body.pixel_id;
+        payload.promoted_object.custom_event_type = req.body.event_type;
+      }
     }
-
-    if (!req.body.event_type) {
-      // return res.status(400).json({
-      //   error: "Event type is required for OFFSITE_CONVERSIONS optimization goal.",
-      //   missing_fields: { event_type: true },
-      // });
-      console.log("Event type is required for OFFSITE_CONVERSIONS optimization goal.");
-    }
-
-    // Validate that pixel_id doesn't start with "act_"
-    if (req.body.pixel_id.startsWith("act_")) {
-      // return res.status(400).json({
-      //   error: "Invalid pixel ID. Please select a valid Meta Pixel from the dropdown.",
-      //   details: "The pixel ID appears to be an account ID.",
-      // });
-      console.log("Invalid pixel ID. Please select a valid Meta Pixel from the dropdown. The pixel ID appears to be an account ID.");
-    }
-
-    payload.promoted_object = {
-      pixel_id: req.body.pixel_id,
-      custom_event_type: req.body.event_type,
-    };
   } else if (optimizationGoal === "LEAD_GENERATION") {
-    // LEAD_GENERATION - requires page_id
+    // LEAD_GENERATION - requires page_id, optionally pixel_id
+    // custom_event_type should be a separate field, not in promoted_object
     if (!req.body.page_id) {
-      // return res.status(400).json({
-      //   error: "Page ID is required for LEAD_GENERATION optimization goal.",
-      //   missing_fields: { page_id: true },
-      // });
-      console.log("Page ID is required for LEAD_GENERATION optimization goal.");
+      console.log("⚠️ WARNING: Page ID is recommended for LEAD_GENERATION optimization goal.");
+    } else {
+      // Merge with existing promoted_object if it exists
+      payload.promoted_object = payload.promoted_object || {};
+      payload.promoted_object.page_id = req.body.page_id;
     }
 
-    payload.promoted_object = {
-      page_id: req.body.page_id,
-    };
+    // Add pixel_id if provided (for lead conversion tracking)
+    if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && !req.body.pixel_id.startsWith("act_")) {
+      payload.promoted_object = payload.promoted_object || {};
+      payload.promoted_object.pixel_id = req.body.pixel_id;
+    }
+
+    // custom_event_type is a separate field for LEAD_GENERATION, not inside promoted_object
+    if (req.body.event_type && req.body.event_type.trim() !== "") {
+      payload.custom_event_type = req.body.event_type;
+    }
   } else if (optimizationGoal === "APP_INSTALLS") {
     // APP_INSTALLS - requires application_id and object_store_url
     if (!req.body.application_id || !req.body.object_store_url) {
@@ -2163,10 +2159,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       console.log("Application ID and Object Store URL are required for APP_INSTALLS optimization goal.");
     }
 
-    payload.promoted_object = {
-      application_id: req.body.application_id,
-      object_store_url: req.body.object_store_url,
-    };
+    // Merge with existing promoted_object if it exists
+    payload.promoted_object = payload.promoted_object || {};
+    payload.promoted_object.application_id = req.body.application_id;
+    payload.promoted_object.object_store_url = req.body.object_store_url;
 
     // Add custom_event_type if provided (for mobile app events)
     if (req.body.event_type) {
@@ -2174,29 +2170,27 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     }
   } else if (optimizationGoal === "LINK_CLICKS" && req.body.application_id && req.body.object_store_url) {
     // LINK_CLICKS for mobile app or Canvas app engagement
-    payload.promoted_object = {
-      application_id: req.body.application_id,
-      object_store_url: req.body.object_store_url,
-    };
+    payload.promoted_object = payload.promoted_object || {};
+    payload.promoted_object.application_id = req.body.application_id;
+    payload.promoted_object.object_store_url = req.body.object_store_url;
   } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS") {
-    // PAGE_LIKES or OFFER_CLAIMS - requires page_id
-    if (req.body.page_id) {
-      payload.promoted_object = {
-        page_id: req.body.page_id,
-      };
+    // PAGE_LIKES or OFFER_CLAIMS - page_id is recommended
+    if (!req.body.page_id) {
+      console.log(`⚠️ WARNING: Page ID is recommended for ${optimizationGoal} optimization goal.`);
+    } else {
+      // Merge with existing promoted_object if it exists
+      payload.promoted_object = payload.promoted_object || {};
+      payload.promoted_object.page_id = req.body.page_id;
     }
   } else if (optimizationGoal === "PRODUCT_CATALOG_SALES") {
     // PRODUCT_CATALOG_SALES - requires product_set_id
     if (!req.body.product_set_id) {
-      return res.status(400).json({
-        error: "Product Set ID is required for PRODUCT_CATALOG_SALES optimization goal.",
-        missing_fields: { product_set_id: true },
-      });
+      console.log("⚠️ WARNING: Product Set ID is recommended for PRODUCT_CATALOG_SALES optimization goal.");
+    } else {
+      // Merge with existing promoted_object if it exists
+      payload.promoted_object = payload.promoted_object || {};
+      payload.promoted_object.product_set_id = req.body.product_set_id;
     }
-
-    payload.promoted_object = {
-      product_set_id: req.body.product_set_id,
-    };
 
     // Add custom_event_type if provided
     if (req.body.event_type) {
@@ -2205,10 +2199,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   } else if (optimizationGoal === "LINK_CLICKS" && req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
     // For other goals that optionally support conversion tracking
     if (!req.body.pixel_id.startsWith("act_")) {
-      payload.promoted_object = {
-        pixel_id: req.body.pixel_id,
-        custom_event_type: req.body.event_type,
-      };
+      // Merge with existing promoted_object if it exists
+      payload.promoted_object = payload.promoted_object || {};
+      payload.promoted_object.pixel_id = req.body.pixel_id;
+      payload.promoted_object.custom_event_type = req.body.event_type;
     }
   }
 
@@ -2223,7 +2217,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       //   details: "Bid amount required for bid strategy provided",
       //   missing_fields: { bid_amount: true },
       // });
-      console.log ("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.")
+      console.log("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.");
     }
     payload.bid_amount = parseInt(req.body.bid_amount);
   } else if (req.body.bid_amount) {
@@ -2244,9 +2238,27 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     try {
       console.log("Creating ad set with payload:", JSON.stringify(payload, null, 2));
 
-      const response = await axios.post(graphUrl, payload, {
+      // Convert payload to URLSearchParams for proper Meta API format
+      const formData = new URLSearchParams();
+
+      for (const [key, value] of Object.entries(payload)) {
+        if (key === "targeting" || key === "promoted_object") {
+          // These fields must be JSON stringified
+          formData.append(key, JSON.stringify(value));
+        } else if (Array.isArray(value)) {
+          formData.append(key, JSON.stringify(value));
+        } else if (typeof value === "object" && value !== null) {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, value);
+        }
+      }
+
+      console.log("Sending to Meta API:", formData.toString());
+
+      const response = await axios.post(graphUrl, formData, {
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
       });
 
@@ -3503,7 +3515,22 @@ app.post("/api/create-ad-creative", (req, res) => {
         console.log("Some ad creatives failed to create:", failures);
       }
 
-      res.status(200).json(response);
+      // Transform Error objects to plain objects so they serialize properly
+      const serializedResponse = response.map((result) => {
+        if (result.status === "rejected" && result.reason instanceof Error) {
+          return {
+            status: "rejected",
+            reason: {
+              message: result.reason.message,
+              name: result.reason.name,
+              stack: result.reason.stack,
+            },
+          };
+        }
+        return result;
+      });
+
+      res.status(200).json(serializedResponse);
     }
 
     createAdCreativePromises();
