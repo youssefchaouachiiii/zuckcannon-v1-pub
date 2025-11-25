@@ -3775,3 +3775,96 @@ h2 {
     transform: translateY(0);
   }
 }
+
+/* Duplicate Choice Modal for Automated Rules */
+.duplicate-choice-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000; /* Higher than automated rules modal */
+}
+
+.duplicate-choice-modal .dialog-content {
+  background: white;
+  border-radius: 8px;
+  padding: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  position: relative;
+  animation: slideUp 0.3s ease;
+}
+
+.duplicate-choice-modal .dialog-header {
+  padding: 24px 24px 0 24px;
+  border-bottom: none;
+}
+
+.duplicate-choice-modal .dialog-header h2 {
+  color: #103dee;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.duplicate-choice-modal .dialog-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  line-height: 1;
+}
+
+.duplicate-choice-modal .dialog-close-btn:hover {
+  color: #333;
+}
+
+.duplicate-choice-modal .dialog-body {
+  padding: 24px;
+}
+
+.duplicate-choice-modal .btn {
+  width: 100%;
+  padding: 12px 24px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-radius: 4px;
+}
+
+.duplicate-choice-modal .btn-primary {
+  background: #103dee;
+  color: white;
+}
+
+.duplicate-choice-modal .btn-primary:hover {
+  background: #0e35c7;
+}
+
+.duplicate-choice-modal .btn-secondary {
+  background: #f0f2f5;
+  color: #333;
+  border: 1px solid #dddfe2;
+}
+
+.duplicate-choice-modal .btn-secondary:hover {
+  background: #e4e6eb;
+  border-color: #bcc0c4;
+}
