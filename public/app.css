@@ -3875,3 +3875,105 @@ h2 {
   background: #e4e6eb;
   border-color: #bcc0c4;
 }
+
+.bulk-duplicate-content .modal-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 20px;
+  align-items: center;
+}
+
+input.bulk-campaign-name {
+  padding: 10px;
+  width: 100%;
+}
+
+input.bulk-adset-name {
+  padding: 10px;
+  width: 100%;
+}
+
+/* Bulk Duplicate Campaign Modal */
+.bulk-duplicate-campaign-modal,
+.bulk-duplicate-adset-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.bulk-duplicate-content {
+  background: white;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.bulk-duplicate-body {
+  padding: 20px;
+}
+
+/* Bulk Adset Selection List */
+.bulk-adset-list-container {
+  margin: 20px 0;
+}
+
+.bulk-adset-selection-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+}
+
+.bulk-adset-item {
+  background: white;
+  border: 2px solid #e4e6eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bulk-adset-item:hover {
+  border-color: #103dee;
+  background: #f0f5ff;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(16, 61, 238, 0.1);
+}
+
+.bulk-adset-item h4 {
+  margin: 0 0 8px 0;
+  color: #1c1e21;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.bulk-adset-item p {
+  margin: 0;
+  color: #65676b;
+  font-size: 13px;
+}
+
+.bulk-adset-account-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+  margin-top: 10px;
+}
