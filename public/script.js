@@ -625,7 +625,7 @@ class SingleSelectGroup {
 
   attachEventListeners() {
     // Store bound event handler for cleanup
-    this.clickHandler = (e) => {
+    this.clickHandler = async (e) => {
       const clickedItem = e.currentTarget;
       const nextColumnSelector = clickedItem.dataset.nextColumn;
       const nextColumn = nextColumnSelector ? document.querySelector(nextColumnSelector) : null;
@@ -647,7 +647,7 @@ class SingleSelectGroup {
         clickedItem.classList.add("selected");
 
         // Display nextColumn if nextColumn data attribute exists
-        if (nextColumnSelector || clickedItem.dataset.actionType === "duplicate-campaign") {
+        if (nextColumnSelector || clickedItem.dataset.actionType === "duplicate-campaign" || clickedItem.dataset.actionType === "duplicate-campaign-multi" || clickedItem.dataset.actionType === "duplicate-adset-multi") {
           // Campaign dataset filtering logic for account column
           if (clickedItem.classList.contains("account")) {
             this.displayNextColumn(nextColumn);
@@ -769,6 +769,44 @@ class SingleSelectGroup {
                   this.showDuplicateCampaignDialog(campaignData);
                 }
               }
+            } else if (actionType === "duplicate-campaign-multi") {
+              // Show bulk campaign duplication modal
+              console.log("duplicate-campaign-multi action triggered");
+              e.preventDefault();
+              e.stopPropagation();
+              const selectedCampaign = appState.getState().selectedCampaign;
+              const selectedAccount = appState.getState().selectedAccount;
+              console.log("Selected campaign:", selectedCampaign, "Selected account:", selectedAccount);
+              if (selectedCampaign) {
+                const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaign}"]`);
+                console.log("Campaign element:", campaignElement);
+                if (campaignElement) {
+                  const campaignData = {
+                    id: selectedCampaign,
+                    name: campaignElement.querySelector("h3").textContent,
+                    account_id: selectedAccount,
+                  };
+                  console.log("Opening bulk campaign modal with data:", campaignData);
+                  await openBulkDuplicateCampaignModal(campaignData);
+                }
+              } else {
+                alert("Please select a campaign first");
+              }
+              return; // Stop further processing
+            } else if (actionType === "duplicate-adset-multi") {
+              // Show bulk ad set duplication modal
+              console.log("duplicate-adset-multi action triggered");
+              e.preventDefault();
+              e.stopPropagation();
+              const selectedCampaign = appState.getState().selectedCampaign;
+              console.log("Selected campaign:", selectedCampaign, "AdSets:", campaignAdSets[selectedCampaign]);
+              if (selectedCampaign && campaignAdSets[selectedCampaign] && campaignAdSets[selectedCampaign].length > 0) {
+                console.log("Opening bulk adset modal");
+                await openBulkDuplicateAdSetModal();
+              } else {
+                alert("Please select a campaign with ad sets first");
+              }
+              return; // Stop further processing
             } else {
               this.displayNextColumn(nextColumn);
               this.showAdSetConfig();
@@ -8756,3 +8794,893 @@ const automatedRulesManager = new AutomatedRulesManager();
 document.querySelector(".rules-btn").addEventListener("click", () => {
   automatedRulesManager.openModal();
 });
+
+// ============================================
+// BULK DUPLICATE CAMPAIGN FUNCTIONALITY
+// ============================================
+
+let bulkCampaignDuplicateData = {
+  selectedAccounts: [],
+  campaignData: null,
+  campaignName: "",
+  deepCopy: false,
+};
+
+async function openBulkDuplicateCampaignModal(campaignData) {
+  console.log("openBulkDuplicateCampaignModal called with:", campaignData);
+
+  bulkCampaignDuplicateData.campaignData = campaignData;
+  bulkCampaignDuplicateData.selectedAccounts = [];
+
+  const modal = document.querySelector(".bulk-duplicate-campaign-modal");
+  console.log("Modal element found:", modal);
+
+  if (!modal) {
+    console.error("Bulk duplicate campaign modal not found in DOM");
+    alert("Modal not found. Please refresh the page.");
+    return;
+  }
+
+  // Reset modal to step 1
+  showBulkDuplicateCampaignStep(1);
+
+  // Show source campaign name
+  const sourceNameEl = modal.querySelector(".bulk-campaign-source-name");
+  if (sourceNameEl) {
+    sourceNameEl.textContent = campaignData.name;
+  }
+
+  // Set default campaign name
+  const nameInput = modal.querySelector(".bulk-campaign-name");
+  if (nameInput) {
+    nameInput.value = `${campaignData.name} (Copy)`;
+    bulkCampaignDuplicateData.campaignName = nameInput.value;
+  }
+
+  // Load accounts immediately
+  await loadAccountsForBulkCampaign();
+
+  modal.style.display = "flex";
+  console.log("Modal display set to flex");
+}
+
+function showBulkDuplicateCampaignStep(stepNumber) {
+  const steps = document.querySelectorAll(".bulk-duplicate-campaign-modal .bulk-duplicate-step");
+  steps.forEach((step) => (step.style.display = "none"));
+
+  const currentStep = document.querySelector(`.bulk-duplicate-campaign-modal .bulk-duplicate-step[data-step="${stepNumber}"]`);
+  if (currentStep) {
+    currentStep.style.display = "block";
+  }
+}
+
+async function loadAccountsForBulkCampaign() {
+  const accountList = document.querySelector(".bulk-campaign-account-list");
+  if (!accountList) return;
+
+  accountList.innerHTML = '<p style="padding: 20px; text-align: center;">Loading accounts...</p>';
+
+  try {
+    let accounts = window.adAccountsData;
+
+    if (!accounts || accounts.length === 0) {
+      const response = await fetch("/api/fetch-meta-data");
+      if (!response.ok) throw new Error("Failed to fetch account data");
+      const data = await response.json();
+      accounts = data.adAccounts || [];
+      window.adAccountsData = accounts;
+    }
+
+    if (accounts.length === 0) {
+      accountList.innerHTML = '<p style="padding: 20px; text-align: center;">No ad accounts available</p>';
+      return;
+    }
+
+    // Filter out the source account
+    const sourceAccountId = bulkCampaignDuplicateData.campaignData.account_id;
+    const targetAccounts = accounts.filter((acc) => acc.account_id !== sourceAccountId);
+
+    accountList.innerHTML = "";
+
+    targetAccounts.forEach((account) => {
+      const accountItem = document.createElement("div");
+      accountItem.className = "account-item";
+      accountItem.dataset.accountId = account.account_id;
+      accountItem.dataset.accountName = account.name;
+
+      accountItem.innerHTML = `
+        <input type="checkbox" class="account-checkbox" data-account-id="${account.account_id}">
+        <div class="account-info">
+          <div class="account-name">${account.name}</div>
+          <div class="account-id">ID: ${account.account_id}</div>
+        </div>
+      `;
+
+      accountItem.addEventListener("click", (e) => {
+        if (e.target.classList.contains("account-checkbox")) return;
+        const checkbox = accountItem.querySelector(".account-checkbox");
+        checkbox.checked = !checkbox.checked;
+        toggleBulkCampaignAccountSelection(account.account_id, account.name, checkbox.checked);
+      });
+
+      const checkbox = accountItem.querySelector(".account-checkbox");
+      checkbox.addEventListener("change", (e) => {
+        toggleBulkCampaignAccountSelection(account.account_id, account.name, e.target.checked);
+      });
+
+      accountList.appendChild(accountItem);
+    });
+
+    setupBulkCampaignAccountSearch();
+  } catch (error) {
+    console.error("Error loading accounts:", error);
+    accountList.innerHTML = '<p style="padding: 20px; text-align: center; color: red;">Failed to load accounts</p>';
+  }
+}
+
+function setupBulkCampaignAccountSearch() {
+  const searchInput = document.querySelector(".bulk-campaign-account-search");
+  if (!searchInput) return;
+
+  searchInput.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const accountItems = document.querySelectorAll(".bulk-campaign-account-list .account-item");
+
+    accountItems.forEach((item) => {
+      const name = item.dataset.accountName.toLowerCase();
+      const id = item.dataset.accountId.toLowerCase();
+
+      if (name.includes(searchTerm) || id.includes(searchTerm)) {
+        item.style.display = "flex";
+      } else {
+        item.style.display = "none";
+      }
+    });
+  });
+}
+
+function toggleBulkCampaignAccountSelection(accountId, accountName, selected) {
+  const accountItem = document.querySelector(`.bulk-campaign-account-list .account-item[data-account-id="${accountId}"]`);
+  if (!accountItem) return;
+
+  if (selected) {
+    accountItem.classList.add("selected");
+    if (!bulkCampaignDuplicateData.selectedAccounts.find((a) => a.id === accountId)) {
+      bulkCampaignDuplicateData.selectedAccounts.push({ id: accountId, name: accountName });
+    }
+  } else {
+    accountItem.classList.remove("selected");
+    bulkCampaignDuplicateData.selectedAccounts = bulkCampaignDuplicateData.selectedAccounts.filter((a) => a.id !== accountId);
+  }
+
+  updateBulkCampaignSelectionUI();
+}
+
+function updateBulkCampaignSelectionUI() {
+  const count = bulkCampaignDuplicateData.selectedAccounts.length;
+  const startBtn = document.querySelector(".bulk-campaign-start");
+  const countEl = document.querySelector(".bulk-campaign-selected-count");
+
+  if (countEl) {
+    countEl.textContent = count;
+  }
+
+  if (startBtn) {
+    startBtn.disabled = count === 0;
+    startBtn.textContent = `Start Duplication (${count} account${count !== 1 ? "s" : ""})`;
+  }
+}
+
+async function startBulkCampaignDuplication() {
+  showBulkDuplicateCampaignStep(2);
+
+  const progressContainer = document.querySelector(".bulk-duplicate-campaign-modal .account-progress-list");
+  progressContainer.innerHTML = "";
+
+  bulkCampaignDuplicateData.selectedAccounts.forEach((account) => {
+    const item = document.createElement("div");
+    item.className = "account-progress-item";
+    item.dataset.accountId = account.id;
+
+    item.innerHTML = `
+      <div class="account-progress-header">
+        <span class="account-progress-name">${account.name}</span>
+        <span class="account-progress-status pending">Pending</span>
+      </div>
+      <div class="account-progress-details"></div>
+    `;
+
+    progressContainer.appendChild(item);
+  });
+
+  let completedAccounts = 0;
+  const totalAccounts = bulkCampaignDuplicateData.selectedAccounts.length;
+  const results = [];
+
+  for (const account of bulkCampaignDuplicateData.selectedAccounts) {
+    const result = await processBulkCampaignDuplication(account);
+    results.push(result);
+    completedAccounts++;
+    updateBulkCampaignOverallProgress(completedAccounts, totalAccounts);
+  }
+
+  showBulkCampaignResults(results);
+}
+
+async function processBulkCampaignDuplication(account) {
+  const accountId = account.id;
+  const progressItem = document.querySelector(`.bulk-duplicate-campaign-modal .account-progress-item[data-account-id="${accountId}"]`);
+  const statusSpan = progressItem.querySelector(".account-progress-status");
+  const detailsDiv = progressItem.querySelector(".account-progress-details");
+
+  statusSpan.textContent = "Processing";
+  statusSpan.className = "account-progress-status processing";
+
+  try {
+    const response = await fetch("/api/duplicate-campaign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campaign_id: bulkCampaignDuplicateData.campaignData.id,
+        name: bulkCampaignDuplicateData.campaignName,
+        deep_copy: bulkCampaignDuplicateData.deepCopy,
+        status_option: "PAUSED",
+        account_id: accountId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || errorData.details || `Failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    statusSpan.textContent = "Success";
+    statusSpan.className = "account-progress-status success";
+
+    let detailMessage = `✓ Campaign created: ${data.newCampaignId || data.id}`;
+    if (data.mode === "async_double_batch") {
+      detailMessage += `\n${data.structure?.adsets || 0} adsets and ${data.structure?.ads || 0} ads will be duplicated asynchronously.`;
+    }
+    detailsDiv.textContent = detailMessage;
+    detailsDiv.style.whiteSpace = "pre-line";
+
+    return {
+      account,
+      success: true,
+      campaignId: data.newCampaignId || data.id,
+      mode: data.mode,
+      structure: data.structure,
+    };
+  } catch (error) {
+    console.error(`Error duplicating campaign to account ${accountId}:`, error);
+
+    statusSpan.textContent = "Failed";
+    statusSpan.className = "account-progress-status failed";
+    detailsDiv.textContent = `✗ ${error.message}`;
+
+    return {
+      account,
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+function updateBulkCampaignOverallProgress(completed, total) {
+  const progressFill = document.querySelector(".bulk-duplicate-campaign-modal .overall-progress .progress-fill");
+  const progressText = document.querySelector(".bulk-duplicate-campaign-modal .overall-progress .progress-text");
+
+  const percentage = Math.round((completed / total) * 100);
+
+  if (progressFill) {
+    progressFill.style.width = `${percentage}%`;
+  }
+
+  if (progressText) {
+    progressText.textContent = `${completed} of ${total} accounts completed`;
+  }
+}
+
+function showBulkCampaignResults(results) {
+  showBulkDuplicateCampaignStep(3);
+
+  let successCount = 0;
+  let failedCount = 0;
+
+  results.forEach((result) => {
+    if (result.success) successCount++;
+    else failedCount++;
+  });
+
+  const successStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.success .stat-number");
+  const failedStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.failed .stat-number");
+  const accountsStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.accounts .stat-number");
+
+  if (successStat) successStat.textContent = successCount;
+  if (failedStat) failedStat.textContent = failedCount;
+  if (accountsStat) accountsStat.textContent = results.length;
+
+  const resultsList = document.querySelector(".bulk-campaign-results-list");
+  if (resultsList) {
+    resultsList.innerHTML = "";
+
+    results.forEach((result) => {
+      const item = document.createElement("div");
+      item.className = "result-item";
+
+      const statusClass = result.success ? "success" : "failed";
+      const statusText = result.success ? "Success" : "Failed";
+
+      item.innerHTML = `
+        <div class="result-item-header">
+          <span class="result-account-name">${result.account.name}</span>
+          <span class="result-status ${statusClass}">${statusText}</span>
+        </div>
+        ${result.success ? `<div class="result-details">Campaign ID: ${result.campaignId}</div>` : ""}
+        ${
+          result.success && result.mode === "async_double_batch"
+            ? `<div class="result-details" style="color: #666; font-size: 13px;">⏱️ Duplicating ${result.structure?.adsets || 0} adsets and ${result.structure?.ads || 0} ads asynchronously. Check Meta Ads Manager in 1-5 minutes.</div>`
+            : ""
+        }
+        ${result.error ? `<div class="result-errors"><div class="result-errors-title">Error:</div><div>${result.error}</div></div>` : ""}
+      `;
+
+      resultsList.appendChild(item);
+    });
+  }
+}
+
+// Setup bulk campaign duplication event listeners
+function setupBulkCampaignDuplicateListeners() {
+  const modal = document.querySelector(".bulk-duplicate-campaign-modal");
+  if (!modal) return;
+
+  // Close button
+  const closeBtn = modal.querySelector(".bulk-duplicate-campaign-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+
+  // Click outside to close
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+    }
+  });
+
+  // Campaign name input
+  const nameInput = modal.querySelector(".bulk-campaign-name");
+  if (nameInput) {
+    nameInput.addEventListener("input", (e) => {
+      bulkCampaignDuplicateData.campaignName = e.target.value.trim();
+    });
+  }
+
+  // Deep copy radio buttons
+  const deepCopyRadios = modal.querySelectorAll('input[name="bulk-campaign-deep-copy"]');
+  deepCopyRadios.forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      bulkCampaignDuplicateData.deepCopy = e.target.value === "true";
+    });
+  });
+
+  // Select/Deselect all
+  const selectAllBtn = modal.querySelector(".bulk-campaign-select-all");
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener("click", () => {
+      const checkboxes = modal.querySelectorAll(".bulk-campaign-account-list .account-checkbox");
+      checkboxes.forEach((cb) => {
+        cb.checked = true;
+        const accountItem = cb.closest(".account-item");
+        toggleBulkCampaignAccountSelection(accountItem.dataset.accountId, accountItem.dataset.accountName, true);
+      });
+    });
+  }
+
+  const deselectAllBtn = modal.querySelector(".bulk-campaign-deselect-all");
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener("click", () => {
+      const checkboxes = modal.querySelectorAll(".bulk-campaign-account-list .account-checkbox");
+      checkboxes.forEach((cb) => {
+        cb.checked = false;
+        const accountItem = cb.closest(".account-item");
+        toggleBulkCampaignAccountSelection(accountItem.dataset.accountId, accountItem.dataset.accountName, false);
+      });
+    });
+  }
+
+  // Start duplication button
+  const startBtn = modal.querySelector(".bulk-campaign-start");
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      startBulkCampaignDuplication();
+    });
+  }
+
+  // Cancel buttons
+  const cancelBtn = modal.querySelector(".bulk-duplicate-campaign-cancel");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+
+  // Close results button
+  const closeResultsBtn = modal.querySelector(".bulk-duplicate-campaign-close-results");
+  if (closeResultsBtn) {
+    closeResultsBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+}
+
+// ============================================
+// BULK DUPLICATE AD SET FUNCTIONALITY
+// ============================================
+
+let bulkAdSetDuplicateData = {
+  selectedAccounts: [],
+  adSetData: null,
+  adSetName: "",
+  deepCopy: false,
+};
+
+async function openBulkDuplicateAdSetModal() {
+  console.log("openBulkDuplicateAdSetModal called");
+
+  bulkAdSetDuplicateData.selectedAccounts = [];
+  bulkAdSetDuplicateData.adSetData = null;
+
+  const modal = document.querySelector(".bulk-duplicate-adset-modal");
+  console.log("Modal element found:", modal);
+
+  if (!modal) {
+    console.error("Bulk duplicate adset modal not found in DOM");
+    alert("Modal not found. Please refresh the page.");
+    return;
+  }
+
+  showBulkDuplicateAdSetStep(1);
+  loadAdSetsForBulkDuplication();
+
+  modal.style.display = "flex";
+  console.log("Modal display set to flex");
+}
+
+function showBulkDuplicateAdSetStep(stepNumber) {
+  const steps = document.querySelectorAll(".bulk-duplicate-adset-modal .bulk-duplicate-step");
+  steps.forEach((step) => (step.style.display = "none"));
+
+  const currentStep = document.querySelector(`.bulk-duplicate-adset-modal .bulk-duplicate-step[data-step="${stepNumber}"]`);
+  if (currentStep) {
+    currentStep.style.display = "block";
+  }
+}
+
+function loadAdSetsForBulkDuplication() {
+  const selectedCampaignId = appState.getState().selectedCampaign;
+  const adSetList = document.querySelector(".bulk-adset-selection-list");
+
+  if (!adSetList) return;
+
+  if (!selectedCampaignId || !campaignAdSets[selectedCampaignId]) {
+    adSetList.innerHTML = '<p style="color: #666; padding: 16px;">No ad sets found for this campaign.</p>';
+    return;
+  }
+
+  const adSets = campaignAdSets[selectedCampaignId];
+  adSetList.innerHTML = "";
+
+  adSets.forEach((adSet) => {
+    const adSetElement = document.createElement("div");
+    adSetElement.className = "bulk-adset-item";
+    adSetElement.dataset.adsetId = adSet.id;
+    adSetElement.dataset.adsetName = adSet.name;
+    adSetElement.innerHTML = `
+      <h4>${adSet.name}</h4>
+      <p>ID: ${adSet.id}</p>
+    `;
+
+    adSetElement.addEventListener("click", () => {
+      bulkAdSetDuplicateData.adSetData = adSet;
+      showBulkDuplicateAdSetStep(2);
+
+      // Show source ad set name
+      const sourceNameEl = document.querySelector(".bulk-adset-source-name");
+      if (sourceNameEl) {
+        sourceNameEl.textContent = adSet.name;
+      }
+
+      // Set default name
+      const nameInput = document.querySelector(".bulk-adset-name");
+      if (nameInput) {
+        nameInput.value = `${adSet.name} (Copy)`;
+        bulkAdSetDuplicateData.adSetName = nameInput.value;
+      }
+
+      // Load accounts
+      loadAccountsForBulkAdSet();
+    });
+
+    adSetList.appendChild(adSetElement);
+  });
+}
+
+async function loadAccountsForBulkAdSet() {
+  const accountList = document.querySelector(".bulk-adset-account-list");
+  if (!accountList) return;
+
+  accountList.innerHTML = '<p style="padding: 20px; text-align: center;">Loading accounts...</p>';
+
+  try {
+    let accounts = window.adAccountsData;
+
+    if (!accounts || accounts.length === 0) {
+      const response = await fetch("/api/fetch-meta-data");
+      if (!response.ok) throw new Error("Failed to fetch account data");
+      const data = await response.json();
+      accounts = data.adAccounts || [];
+      window.adAccountsData = accounts;
+    }
+
+    if (accounts.length === 0) {
+      accountList.innerHTML = '<p style="padding: 20px; text-align: center;">No ad accounts available</p>';
+      return;
+    }
+
+    // Filter out the source account
+    const sourceAccountId = appState.getState().selectedAccount;
+    const targetAccounts = accounts.filter((acc) => acc.account_id !== sourceAccountId);
+
+    accountList.innerHTML = "";
+
+    targetAccounts.forEach((account) => {
+      const accountItem = document.createElement("div");
+      accountItem.className = "account-item";
+      accountItem.dataset.accountId = account.account_id;
+      accountItem.dataset.accountName = account.name;
+
+      accountItem.innerHTML = `
+        <input type="checkbox" class="account-checkbox" data-account-id="${account.account_id}">
+        <div class="account-info">
+          <div class="account-name">${account.name}</div>
+          <div class="account-id">ID: ${account.account_id}</div>
+        </div>
+      `;
+
+      accountItem.addEventListener("click", (e) => {
+        if (e.target.classList.contains("account-checkbox")) return;
+        const checkbox = accountItem.querySelector(".account-checkbox");
+        checkbox.checked = !checkbox.checked;
+        toggleBulkAdSetAccountSelection(account.account_id, account.name, checkbox.checked);
+      });
+
+      const checkbox = accountItem.querySelector(".account-checkbox");
+      checkbox.addEventListener("change", (e) => {
+        toggleBulkAdSetAccountSelection(account.account_id, account.name, e.target.checked);
+      });
+
+      accountList.appendChild(accountItem);
+    });
+
+    setupBulkAdSetAccountSearch();
+  } catch (error) {
+    console.error("Error loading accounts:", error);
+    accountList.innerHTML = '<p style="padding: 20px; text-align: center; color: red;">Failed to load accounts</p>';
+  }
+}
+
+function setupBulkAdSetAccountSearch() {
+  const searchInput = document.querySelector(".bulk-adset-account-search");
+  if (!searchInput) return;
+
+  searchInput.addEventListener("input", (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const accountItems = document.querySelectorAll(".bulk-adset-account-list .account-item");
+
+    accountItems.forEach((item) => {
+      const name = item.dataset.accountName.toLowerCase();
+      const id = item.dataset.accountId.toLowerCase();
+
+      if (name.includes(searchTerm) || id.includes(searchTerm)) {
+        item.style.display = "flex";
+      } else {
+        item.style.display = "none";
+      }
+    });
+  });
+}
+
+function toggleBulkAdSetAccountSelection(accountId, accountName, selected) {
+  const accountItem = document.querySelector(`.bulk-adset-account-list .account-item[data-account-id="${accountId}"]`);
+  if (!accountItem) return;
+
+  if (selected) {
+    accountItem.classList.add("selected");
+    if (!bulkAdSetDuplicateData.selectedAccounts.find((a) => a.id === accountId)) {
+      bulkAdSetDuplicateData.selectedAccounts.push({ id: accountId, name: accountName });
+    }
+  } else {
+    accountItem.classList.remove("selected");
+    bulkAdSetDuplicateData.selectedAccounts = bulkAdSetDuplicateData.selectedAccounts.filter((a) => a.id !== accountId);
+  }
+
+  updateBulkAdSetSelectionUI();
+}
+
+function updateBulkAdSetSelectionUI() {
+  const count = bulkAdSetDuplicateData.selectedAccounts.length;
+  const startBtn = document.querySelector(".bulk-adset-start");
+  const countEl = document.querySelector(".bulk-adset-selected-count");
+
+  if (countEl) {
+    countEl.textContent = count;
+  }
+
+  if (startBtn) {
+    startBtn.disabled = count === 0;
+    startBtn.textContent = `Start Duplication (${count} account${count !== 1 ? "s" : ""})`;
+  }
+}
+
+async function startBulkAdSetDuplication() {
+  showBulkDuplicateAdSetStep(3);
+
+  const progressContainer = document.querySelector(".bulk-duplicate-adset-modal .account-progress-list");
+  progressContainer.innerHTML = "";
+
+  bulkAdSetDuplicateData.selectedAccounts.forEach((account) => {
+    const item = document.createElement("div");
+    item.className = "account-progress-item";
+    item.dataset.accountId = account.id;
+
+    item.innerHTML = `
+      <div class="account-progress-header">
+        <span class="account-progress-name">${account.name}</span>
+        <span class="account-progress-status pending">Pending</span>
+      </div>
+      <div class="account-progress-details"></div>
+    `;
+
+    progressContainer.appendChild(item);
+  });
+
+  let completedAccounts = 0;
+  const totalAccounts = bulkAdSetDuplicateData.selectedAccounts.length;
+  const results = [];
+
+  for (const account of bulkAdSetDuplicateData.selectedAccounts) {
+    const result = await processBulkAdSetDuplication(account);
+    results.push(result);
+    completedAccounts++;
+    updateBulkAdSetOverallProgress(completedAccounts, totalAccounts);
+  }
+
+  showBulkAdSetResults(results);
+}
+
+async function processBulkAdSetDuplication(account) {
+  const accountId = account.id;
+  const progressItem = document.querySelector(`.bulk-duplicate-adset-modal .account-progress-item[data-account-id="${accountId}"]`);
+  const statusSpan = progressItem.querySelector(".account-progress-status");
+  const detailsDiv = progressItem.querySelector(".account-progress-details");
+
+  statusSpan.textContent = "Processing";
+  statusSpan.className = "account-progress-status processing";
+
+  try {
+    // First, we need to get the campaign ID in the target account
+    // For now, we'll use the same campaign from the source account
+    // Note: In production, you might want to let users select or create campaigns per account
+
+    const response = await fetch("/api/duplicate-ad-set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ad_set_id: bulkAdSetDuplicateData.adSetData.id,
+        name: bulkAdSetDuplicateData.adSetName,
+        deep_copy: bulkAdSetDuplicateData.deepCopy,
+        status_option: "INHERITED_FROM_SOURCE",
+        campaign_id: appState.getState().selectedCampaign,
+        account_id: accountId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || errorData.details || `Failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    statusSpan.textContent = "Success";
+    statusSpan.className = "account-progress-status success";
+    detailsDiv.textContent = `✓ Ad Set created: ${data.id}`;
+
+    return {
+      account,
+      success: true,
+      adSetId: data.id,
+    };
+  } catch (error) {
+    console.error(`Error duplicating ad set to account ${accountId}:`, error);
+
+    statusSpan.textContent = "Failed";
+    statusSpan.className = "account-progress-status failed";
+    detailsDiv.textContent = `✗ ${error.message}`;
+
+    return {
+      account,
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+function updateBulkAdSetOverallProgress(completed, total) {
+  const progressFill = document.querySelector(".bulk-duplicate-adset-modal .overall-progress .progress-fill");
+  const progressText = document.querySelector(".bulk-duplicate-adset-modal .overall-progress .progress-text");
+
+  const percentage = Math.round((completed / total) * 100);
+
+  if (progressFill) {
+    progressFill.style.width = `${percentage}%`;
+  }
+
+  if (progressText) {
+    progressText.textContent = `${completed} of ${total} accounts completed`;
+  }
+}
+
+function showBulkAdSetResults(results) {
+  showBulkDuplicateAdSetStep(4);
+
+  let successCount = 0;
+  let failedCount = 0;
+
+  results.forEach((result) => {
+    if (result.success) successCount++;
+    else failedCount++;
+  });
+
+  const successStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.success .stat-number");
+  const failedStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.failed .stat-number");
+  const accountsStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.accounts .stat-number");
+
+  if (successStat) successStat.textContent = successCount;
+  if (failedStat) failedStat.textContent = failedCount;
+  if (accountsStat) accountsStat.textContent = results.length;
+
+  const resultsList = document.querySelector(".bulk-adset-results-list");
+  if (resultsList) {
+    resultsList.innerHTML = "";
+
+    results.forEach((result) => {
+      const item = document.createElement("div");
+      item.className = "result-item";
+
+      const statusClass = result.success ? "success" : "failed";
+      const statusText = result.success ? "Success" : "Failed";
+
+      item.innerHTML = `
+        <div class="result-item-header">
+          <span class="result-account-name">${result.account.name}</span>
+          <span class="result-status ${statusClass}">${statusText}</span>
+        </div>
+        ${result.success ? `<div class="result-details">Ad Set ID: ${result.adSetId}</div>` : ""}
+        ${result.error ? `<div class="result-errors"><div class="result-errors-title">Error:</div><div>${result.error}</div></div>` : ""}
+      `;
+
+      resultsList.appendChild(item);
+    });
+  }
+}
+
+// Setup bulk ad set duplication event listeners
+function setupBulkAdSetDuplicateListeners() {
+  const modal = document.querySelector(".bulk-duplicate-adset-modal");
+  if (!modal) return;
+
+  // Close button
+  const closeBtn = modal.querySelector(".bulk-duplicate-adset-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+
+  // Click outside to close
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+    }
+  });
+
+  // Ad set name input
+  const nameInput = modal.querySelector(".bulk-adset-name");
+  if (nameInput) {
+    nameInput.addEventListener("input", (e) => {
+      bulkAdSetDuplicateData.adSetName = e.target.value.trim();
+    });
+  }
+
+  // Deep copy radio buttons
+  const deepCopyRadios = modal.querySelectorAll('input[name="bulk-adset-deep-copy"]');
+  deepCopyRadios.forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      bulkAdSetDuplicateData.deepCopy = e.target.value === "true";
+    });
+  });
+
+  // Back to list button
+  const backToListBtn = modal.querySelector(".bulk-adset-back-to-list");
+  if (backToListBtn) {
+    backToListBtn.addEventListener("click", () => {
+      showBulkDuplicateAdSetStep(1);
+    });
+  }
+
+  // Select/Deselect all
+  const selectAllBtn = modal.querySelector(".bulk-adset-select-all");
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener("click", () => {
+      const checkboxes = modal.querySelectorAll(".bulk-adset-account-list .account-checkbox");
+      checkboxes.forEach((cb) => {
+        cb.checked = true;
+        const accountItem = cb.closest(".account-item");
+        toggleBulkAdSetAccountSelection(accountItem.dataset.accountId, accountItem.dataset.accountName, true);
+      });
+    });
+  }
+
+  const deselectAllBtn = modal.querySelector(".bulk-adset-deselect-all");
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener("click", () => {
+      const checkboxes = modal.querySelectorAll(".bulk-adset-account-list .account-checkbox");
+      checkboxes.forEach((cb) => {
+        cb.checked = false;
+        const accountItem = cb.closest(".account-item");
+        toggleBulkAdSetAccountSelection(accountItem.dataset.accountId, accountItem.dataset.accountName, false);
+      });
+    });
+  }
+
+  // Start duplication button
+  const startBtn = modal.querySelector(".bulk-adset-start");
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      startBulkAdSetDuplication();
+    });
+  }
+
+  // Cancel buttons
+  const cancelBtn = modal.querySelector(".bulk-duplicate-adset-cancel");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+
+  // Close results button
+  const closeResultsBtn = modal.querySelector(".bulk-duplicate-adset-close-results");
+  if (closeResultsBtn) {
+    closeResultsBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+}
+
+// Initialize bulk duplication listeners when DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    setupBulkCampaignDuplicateListeners();
+    setupBulkAdSetDuplicateListeners();
+  });
+} else {
+  setupBulkCampaignDuplicateListeners();
+  setupBulkAdSetDuplicateListeners();
+}
