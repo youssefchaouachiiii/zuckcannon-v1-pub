@@ -178,6 +178,8 @@
       <ul>
         <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-campaign">
           Duplicate <strong>Campaign</strong></li>
+        <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-campaign-multi">
+          Duplicate <strong>Campaign</strong> for Multiple Ad Accounts</li>
         <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="create-new">
           Create New <strong>Ad Set</strong>
         </li>
@@ -185,6 +187,8 @@
           to Existing <strong>Ad Set</strong>
         <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="duplicate-existing">
           Duplicate Existing <strong>Ad Set</strong></li>
+        <!-- <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-adset-multi">
+          Duplicate Existing <strong>Ad Set</strong> for Multiple Ad Accounts</li> -->
       </ul>
     </div>
     <!-- Upload Column -->
@@ -892,6 +896,242 @@
         <div class="button-group">
           <button class="btn-secondary campaign-cancel">Cancel</button>
           <button class="btn-primary campaign-create" disabled>Create Campaign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Duplicate Campaign Modal -->
+  <div class="bulk-duplicate-campaign-modal" style="display: none;">
+    <div class="modal-content bulk-duplicate-content">
+      <div class="modal-header">
+        <h2>Duplicate Campaign to Multiple Accounts</h2>
+        <button class="modal-close-btn bulk-duplicate-campaign-close">&times;</button>
+      </div>
+
+      <div class="bulk-duplicate-body">
+        <!-- Step 1: Select Accounts & Configure -->
+        <div class="bulk-duplicate-step" data-step="1">
+          <h3>Select Target Ad Accounts</h3>
+          <p class="step-description">Campaign: <strong class="bulk-campaign-source-name"></strong></p>
+
+          <div class="form-group">
+            <label>New Campaign Name*</label>
+            <input type="text" class="bulk-campaign-name" placeholder="Enter campaign name" required />
+          </div>
+
+          <div class="form-group">
+            <label>Copy Options*</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="bulk-campaign-deep-copy" value="false" checked />
+                <span>Create empty campaign (recommended)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="bulk-campaign-deep-copy" value="true" />
+                <span>Copy all ad sets and ads</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="account-selection-container">
+            <div class="search-box">
+              <input type="text" class="bulk-campaign-account-search" placeholder="Search accounts..." />
+            </div>
+            <div class="bulk-campaign-account-list">
+              <!-- Accounts will be populated dynamically -->
+            </div>
+          </div>
+
+          <p class="form-help-text" style="margin-top: 15px;">
+            Selected: <strong class="bulk-campaign-selected-count">0</strong> accounts
+          </p>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-campaign-select-all">Select All</button>
+            <button class="btn-secondary bulk-campaign-deselect-all">Deselect All</button>
+            <button class="btn-secondary bulk-duplicate-campaign-cancel">Cancel</button>
+            <button class="btn-primary bulk-campaign-start" disabled>Start Duplication</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Progress -->
+        <div class="bulk-duplicate-step" data-step="2" style="display: none;">
+          <h3>Duplicating Campaign...</h3>
+          <p class="step-description">Creating campaigns across multiple accounts. Please wait...</p>
+
+          <div class="bulk-progress-container">
+            <div class="overall-progress">
+              <h4>Overall Progress</h4>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+              </div>
+              <p class="progress-text">0 of 0 accounts completed</p>
+            </div>
+
+            <div class="account-progress-list">
+              <!-- Individual account progress will be shown here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Results -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Duplication Complete!</h3>
+
+          <div class="bulk-results-container">
+            <div class="results-summary">
+              <div class="result-stat success">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Succeeded</span>
+              </div>
+              <div class="result-stat failed">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Failed</span>
+              </div>
+              <div class="result-stat accounts">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Accounts</span>
+              </div>
+            </div>
+
+            <div class="results-details">
+              <h4>Details by Account</h4>
+              <div class="bulk-campaign-results-list">
+                <!-- Detailed results will be shown here -->
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-primary bulk-duplicate-campaign-close-results">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Duplicate Ad Set Modal -->
+  <div class="bulk-duplicate-adset-modal" style="display: none;">
+    <div class="modal-content bulk-duplicate-content">
+      <div class="modal-header">
+        <h2>Duplicate Ad Set to Multiple Accounts</h2>
+        <button class="modal-close-btn bulk-duplicate-adset-close">&times;</button>
+      </div>
+
+      <div class="bulk-duplicate-body">
+        <!-- Step 1: Select Ad Set & Configure -->
+        <div class="bulk-duplicate-step" data-step="1">
+          <h3>Select Ad Set to Duplicate</h3>
+          <p class="step-description">Choose an ad set from the current campaign</p>
+
+          <div class="bulk-adset-list-container">
+            <div class="bulk-adset-selection-list">
+              <!-- Ad sets will be populated here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-duplicate-adset-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Select Accounts & Configure -->
+        <div class="bulk-duplicate-step" data-step="2" style="display: none;">
+          <h3>Select Target Ad Accounts</h3>
+          <p class="step-description">Ad Set: <strong class="bulk-adset-source-name"></strong></p>
+
+          <div class="form-group">
+            <label>New Ad Set Name*</label>
+            <input type="text" class="bulk-adset-name" placeholder="Enter ad set name" required />
+          </div>
+
+          <div class="form-group">
+            <label>Copy Options*</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="bulk-adset-deep-copy" value="false" checked />
+                <span>Create empty ad set (recommended)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="bulk-adset-deep-copy" value="true" />
+                <span>Copy all ads</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="account-selection-container">
+            <div class="search-box">
+              <input type="text" class="bulk-adset-account-search" placeholder="Search accounts..." />
+            </div>
+            <div class="bulk-adset-account-list">
+              <!-- Accounts will be populated dynamically -->
+            </div>
+          </div>
+
+          <p class="form-help-text" style="margin-top: 15px;">
+            Selected: <strong class="bulk-adset-selected-count">0</strong> accounts
+          </p>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-adset-select-all">Select All</button>
+            <button class="btn-secondary bulk-adset-deselect-all">Deselect All</button>
+            <button class="btn-secondary bulk-adset-back-to-list">Back</button>
+            <button class="btn-primary bulk-adset-start" disabled>Start Duplication</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Progress -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Duplicating Ad Set...</h3>
+          <p class="step-description">Creating ad sets across multiple accounts. Please wait...</p>
+
+          <div class="bulk-progress-container">
+            <div class="overall-progress">
+              <h4>Overall Progress</h4>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+              </div>
+              <p class="progress-text">0 of 0 accounts completed</p>
+            </div>
+
+            <div class="account-progress-list">
+              <!-- Individual account progress will be shown here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Results -->
+        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
+          <h3>Duplication Complete!</h3>
+
+          <div class="bulk-results-container">
+            <div class="results-summary">
+              <div class="result-stat success">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Succeeded</span>
+              </div>
+              <div class="result-stat failed">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Failed</span>
+              </div>
+              <div class="result-stat accounts">
+                <span class="stat-number">0</span>
+                <span class="stat-label">Accounts</span>
+              </div>
+            </div>
+
+            <div class="results-details">
+              <h4>Details by Account</h4>
+              <div class="bulk-adset-results-list">
+                <!-- Detailed results will be shown here -->
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-primary bulk-duplicate-adset-close-results">Close</button>
+          </div>
         </div>
       </div>
     </div>

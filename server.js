@@ -2306,6 +2306,39 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   let totalAdsCount = 0;
   let totalChildObjects = 0;
 
+  // Get source ad set's account ID to check if cross-account
+  let sourceAdSetAccountId = null;
+  let targetCampaignAccountId = null;
+
+  try {
+    // Get source ad set account
+    const adSetCheckUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}`;
+    const adSetCheckResponse = await axios.get(adSetCheckUrl, {
+      params: {
+        fields: "account_id",
+        access_token: userAccessToken,
+      },
+    });
+    sourceAdSetAccountId = normalizeAdAccountId(adSetCheckResponse.data.account_id);
+
+    // Get target campaign account
+    if (campaign_id) {
+      const campaignCheckUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+      const campaignCheckResponse = await axios.get(campaignCheckUrl, {
+        params: {
+          fields: "account_id",
+          access_token: userAccessToken,
+        },
+      });
+      targetCampaignAccountId = normalizeAdAccountId(campaignCheckResponse.data.account_id);
+    }
+  } catch (err) {
+    console.error("Failed to get account IDs:", err.response?.data || err.message);
+  }
+
+  const isCrossAccount = sourceAdSetAccountId && targetCampaignAccountId && sourceAdSetAccountId !== targetCampaignAccountId;
+  console.log(`Ad Set ${ad_set_id}: source=${sourceAdSetAccountId}, target=${targetCampaignAccountId}, cross-account=${isCrossAccount}`);
+
   // If deep_copy is true, fetch ad set structure to count ads
   if (deep_copy) {
     try {
@@ -2352,7 +2385,125 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   });
 
   try {
-    if (needsAsync) {
+    let newAdSetId;
+
+    if (isCrossAccount) {
+      // CROSS-ACCOUNT DUPLICATION: Fetch full ad set details and create new ad set
+      console.log(`Using CROSS-ACCOUNT duplication for ad set ${ad_set_id}`);
+
+      // Fetch full ad set details
+      const adSetDetailsUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}`;
+      const adSetDetailsResponse = await axios.get(adSetDetailsUrl, {
+        params: {
+          fields:
+            "name,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,bid_amount,targeting,destination_type,promoted_object,status,start_time,end_time,pacing_type,adset_schedule" + (deep_copy ? ",ads{id,name}" : ""),
+          access_token: userAccessToken,
+        },
+      });
+
+      const sourceAdSet = adSetDetailsResponse.data;
+      console.log("Source ad set details:", sourceAdSet.name);
+
+      if (deep_copy) {
+        adsData = sourceAdSet.ads?.data || [];
+        totalAdsCount = adsData.length;
+        totalChildObjects = totalAdsCount;
+      }
+
+      // Create new ad set in target account with target campaign
+      const createAdSetPayload = {
+        name: name || `${sourceAdSet.name} (Copy)`,
+        campaign_id: campaign_id,
+        optimization_goal: sourceAdSet.optimization_goal,
+        billing_event: sourceAdSet.billing_event,
+        status: status_option === "INHERITED_FROM_SOURCE" ? sourceAdSet.status : status_option || "PAUSED",
+        access_token: userAccessToken,
+      };
+
+      // Copy optional fields
+      if (sourceAdSet.bid_strategy) createAdSetPayload.bid_strategy = sourceAdSet.bid_strategy;
+      if (sourceAdSet.daily_budget) createAdSetPayload.daily_budget = sourceAdSet.daily_budget;
+      if (sourceAdSet.lifetime_budget) createAdSetPayload.lifetime_budget = sourceAdSet.lifetime_budget;
+      if (sourceAdSet.bid_amount) createAdSetPayload.bid_amount = sourceAdSet.bid_amount;
+      if (sourceAdSet.targeting) createAdSetPayload.targeting = sourceAdSet.targeting;
+      if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
+      if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
+      if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
+      if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
+      if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
+      if (sourceAdSet.adset_schedule) createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+
+      // Create ad set in target account
+      const createAdSetUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
+
+      // Convert to URLSearchParams
+      const formData = new URLSearchParams();
+      for (const [key, value] of Object.entries(createAdSetPayload)) {
+        if (typeof value === "object" && value !== null) {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, value.toString());
+        }
+      }
+
+      const createResponse = await axios.post(createAdSetUrl, formData, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      newAdSetId = createResponse.data.id;
+      console.log(`✅ Created new ad set in target account: ${newAdSetId}`);
+
+      // If deep_copy, duplicate ads
+      if (deep_copy && totalAdsCount > 0) {
+        console.log(`Duplicating ${totalAdsCount} ads to new ad set ${newAdSetId}`);
+
+        // Use batch requests for ads
+        const FormData = (await import("form-data")).default;
+        const batchOperations = adsData.map((ad) => ({
+          method: "POST",
+          relative_url: `${ad.id}/copies`,
+          body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
+        }));
+
+        // Send in chunks
+        const chunkSize = 50;
+        const batchIds = [];
+
+        for (let i = 0; i < batchOperations.length; i += chunkSize) {
+          const chunk = batchOperations.slice(i, i + chunkSize);
+          const formData = new FormData();
+          formData.append("access_token", userAccessToken);
+          formData.append("batch", JSON.stringify(chunk));
+          formData.append("is_parallel", "true");
+
+          const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+
+          const batchId = batchResponse.data?.id || batchResponse.data?.async_batch_request_id || null;
+          batchIds.push(batchId);
+        }
+
+        return res.json({
+          success: true,
+          mode: "cross_account_async",
+          id: newAdSetId,
+          original_id: ad_set_id,
+          batchRequestIds: batchIds,
+          adsCount: totalAdsCount,
+          message: `Ad set created in target account. ${totalAdsCount} ads are being duplicated asynchronously.`,
+        });
+      }
+
+      // No deep copy or no ads
+      return res.json({
+        success: true,
+        mode: "cross_account_sync",
+        id: newAdSetId,
+        original_id: ad_set_id,
+        message: "Ad set created successfully in target account",
+      });
+    } else if (needsAsync) {
       // ASYNC/BATCH REQUEST FOR AD SET - Manual approach:
       // 1. Create new ad set shell with /copies but deep_copy=false
       // 2. Duplicate ads into new ad set using async batch
@@ -2627,6 +2778,24 @@ app.post("/api/duplicate-campaign", async (req, res) => {
   let totalAdsCount = 0;
   let totalChildObjects = 0;
 
+  // Get source campaign's account ID to check if cross-account
+  let sourceCampaignAccountId = null;
+  try {
+    const campaignCheckUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+    const campaignCheckResponse = await axios.get(campaignCheckUrl, {
+      params: {
+        fields: "account_id",
+        access_token: userAccessToken,
+      },
+    });
+    sourceCampaignAccountId = normalizeAdAccountId(campaignCheckResponse.data.account_id);
+  } catch (err) {
+    console.error("Failed to get campaign account ID:", err.response?.data || err.message);
+  }
+
+  const isCrossAccount = sourceCampaignAccountId && sourceCampaignAccountId !== normalizedAccountId;
+  console.log(`Campaign ${campaign_id}: source=${sourceCampaignAccountId}, target=${normalizedAccountId}, cross-account=${isCrossAccount}`);
+
   // STEP 1 Fetch campaign structure (adsets + ads)
   if (deep_copy) {
     try {
@@ -2675,29 +2844,94 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
   try {
     // STEP 2 Create campaign shell
-    const shallowPayload = {
-      deep_copy: false,
-      status_option: status_option || "PAUSED",
-      access_token: userAccessToken,
-    };
+    let newCampaignId;
 
-    const campaignCopyUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/copies`;
-    const shallowResponse = await axios.post(campaignCopyUrl, shallowPayload, {
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const newCampaignId = shallowResponse.data.copied_campaign_id || shallowResponse.data.id;
-    // console.log(`✅ Created new campaign shell: ${newCampaignId}`);
-
-    if (name && newCampaignId) {
-      await axios.post(`https://graph.facebook.com/${api_version}/${newCampaignId}`, {
-        name,
-        access_token: userAccessToken,
+    if (isCrossAccount) {
+      // For cross-account duplication, we need to fetch full campaign details and create new campaign
+      const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+      const campaignDetailsResponse = await axios.get(campaignDetailsUrl, {
+        params: {
+          fields: "name,objective,status,special_ad_categories,special_ad_category_country,bid_strategy,daily_budget,lifetime_budget,start_time,stop_time,buying_type",
+          access_token: userAccessToken,
+        },
       });
-      // console.log(`Updated campaign name to: ${name}`);
+
+      const sourceCampaign = campaignDetailsResponse.data;
+      console.log("Source campaign details:", sourceCampaign);
+
+      // Create new campaign in target account
+      const createCampaignPayload = {
+        name: name || `${sourceCampaign.name} (Copy)`,
+        objective: sourceCampaign.objective,
+        status: status_option || "PAUSED",
+        access_token: userAccessToken,
+      };
+
+      // Add optional fields if they exist
+      if (sourceCampaign.special_ad_categories && sourceCampaign.special_ad_categories.length > 0) {
+        createCampaignPayload.special_ad_categories = sourceCampaign.special_ad_categories;
+      }
+      if (sourceCampaign.special_ad_category_country && sourceCampaign.special_ad_category_country.length > 0) {
+        createCampaignPayload.special_ad_category_country = sourceCampaign.special_ad_category_country;
+      }
+      if (sourceCampaign.bid_strategy) {
+        createCampaignPayload.bid_strategy = sourceCampaign.bid_strategy;
+      }
+      if (sourceCampaign.daily_budget) {
+        createCampaignPayload.daily_budget = sourceCampaign.daily_budget;
+      }
+      if (sourceCampaign.lifetime_budget) {
+        createCampaignPayload.lifetime_budget = sourceCampaign.lifetime_budget;
+      }
+      if (sourceCampaign.start_time) {
+        createCampaignPayload.start_time = sourceCampaign.start_time;
+      }
+      if (sourceCampaign.stop_time) {
+        createCampaignPayload.stop_time = sourceCampaign.stop_time;
+      }
+      if (sourceCampaign.buying_type) {
+        createCampaignPayload.buying_type = sourceCampaign.buying_type;
+      }
+
+      // Set is_adset_budget_sharing_enabled to true for cross-account duplication
+      createCampaignPayload.is_adset_budget_sharing_enabled = false;
+
+      const createCampaignUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/campaigns`;
+      const createResponse = await axios.post(createCampaignUrl, createCampaignPayload);
+
+      newCampaignId = createResponse.data.id;
+      console.log(`✅ Created new campaign in target account: ${newCampaignId}`);
+    } else {
+      // For same-account duplication, use the /copies endpoint
+      const shallowPayload = {
+        deep_copy: false,
+        status_option: status_option || "PAUSED",
+        access_token: userAccessToken,
+      };
+
+      const campaignCopyUrl = `https://graph.facebook.com/${api_version}/${campaign_id}/copies`;
+      const shallowResponse = await axios.post(campaignCopyUrl, shallowPayload, {
+        headers: { "Content-Type": "application/json" },
+      });
+
+      newCampaignId = shallowResponse.data.copied_campaign_id || shallowResponse.data.id;
+      console.log(`✅ Created campaign copy in same account: ${newCampaignId}`);
+
+      if (name && newCampaignId) {
+        await axios.post(`https://graph.facebook.com/${api_version}/${newCampaignId}`, {
+          name,
+          access_token: userAccessToken,
+        });
+        console.log(`Updated campaign name to: ${name}`);
+      }
     }
 
-    if (!needsAsync) {
+    if (!newCampaignId) {
+      throw new Error("Failed to create campaign - no campaign ID returned");
+    }
+
+    // If not doing deep copy, return here
+    if (!deep_copy) {
       return res.json({
         success: true,
         mode: "sync",
