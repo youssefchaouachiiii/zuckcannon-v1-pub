@@ -2442,6 +2442,9 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         // Always include special_ad_categories, defaulting to an empty array.
         // The value must be a JSON string as per Meta API requirements.
         special_ad_categories: JSON.stringify(special_ad_categories || []),
+        // Since we are not using a campaign-level budget, this field is required.
+        // Defaulting to 'false' is the safest option.
+        is_adset_budget_sharing_enabled: false,
       };
 
       // Budget (daily_budget, lifetime_budget) is set at the Ad Set level,
