@@ -619,13 +619,29 @@ async function init() {
 
               const campaignSelection = document.querySelector('.campaign-selection');
 
-              if (campaignSelection && !campaignSelection.multiSelectListenerAttached) {
+              console.log('[Multi-Select] Toggle activated. Campaign selection found:', !!campaignSelection);
 
-                  campaignSelection.addEventListener('click', (e) => {
+              if (campaignSelection) {
+
+                  // Remove old listener if exists
+
+                  if (campaignSelection.multiSelectClickHandler) {
+
+                    campaignSelection.removeEventListener('click', campaignSelection.multiSelectClickHandler);
+
+                  }
+
+                  // Create and attach new listener
+
+                  campaignSelection.multiSelectClickHandler = (e) => {
+
+                      console.log('[Multi-Select] Click detected on campaign selection');
 
                       const campaignItem = e.target.closest('.campaign');
 
                       if (campaignItem && toggle.checked) {
+
+                          console.log('[Multi-Select] Campaign item clicked:', campaignItem.dataset.campaignId);
 
                           const checkbox = campaignItem.querySelector('.campaign-checkbox');
 
@@ -635,13 +651,29 @@ async function init() {
 
                               campaignItem.classList.toggle('selected', checkbox.checked);
 
+                              console.log('[Multi-Select] Checkbox toggled. New state:', checkbox.checked);
+
                                // After a selection is made in multi-select mode, show the action column
 
                               const actionColumn = document.getElementById("col-3");
 
-                              if (actionColumn) {
+                              // Check if any campaign is selected
+
+                              const anySelected = document.querySelectorAll('.campaign-checkbox:checked').length > 0;
+
+                              console.log('[Multi-Select] Any campaigns selected:', anySelected);
+
+                              if (actionColumn && anySelected) {
 
                                 actionColumn.style.display = "block";
+
+                                console.log('[Multi-Select] Action column shown');
+
+                              } else if (actionColumn && !anySelected) {
+
+                                actionColumn.style.display = "none";
+
+                                console.log('[Multi-Select] Action column hidden');
 
                               }
 
@@ -649,9 +681,15 @@ async function init() {
 
                       }
 
-                  });
+                  };
 
-                  campaignSelection.multiSelectListenerAttached = true;
+                  campaignSelection.addEventListener('click', campaignSelection.multiSelectClickHandler);
+
+                  console.log('[Multi-Select] Event listener attached successfully');
+
+              } else {
+
+                  console.warn('[Multi-Select] Campaign selection not found. Make sure campaigns are loaded.');
 
               }
 
