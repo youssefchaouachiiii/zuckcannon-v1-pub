@@ -466,6 +466,14 @@ function populatePages(pages) {
     // Re-attach event listeners to the newly added options
     const parentDropdown = dropdown.closest(".custom-dropdown");
     if (parentDropdown) {
+      // If dropdown instance doesn't exist, create it first
+      if (!parentDropdown.customDropdownInstance) {
+        console.log('[populatePages] Creating new CustomDropdown instance for pages dropdown');
+        // Find a selector that uniquely identifies this dropdown
+        const isAdCopyContainer = parentDropdown.closest('.ad-copy-container');
+        const selector = isAdCopyContainer ? '.ad-copy-container .custom-dropdown' : '.adset-config .custom-dropdown';
+        new CustomDropdown(selector);
+      }
       attachDropdownOptionListeners(parentDropdown);
     }
   });
@@ -537,9 +545,7 @@ async function init() {
 
         initializeCreateCampaignDialog();
 
-        initializeCampaignMultiSelect(); // Add this call
 
-    
 
         setupMetaDataUpdates();
 
@@ -559,149 +565,8 @@ async function init() {
 
     
 
-    function initializeCampaignMultiSelect() {
-
-      const toggle = document.getElementById("campaign-multi-select-toggle");
-
-      const campaignColumn = document.querySelector(".campaign-column");
-
-    
-
-      if (toggle && campaignColumn) {
-
-        toggle.addEventListener("change", () => {
-
-          const isMultiSelect = toggle.checked;
-
-          campaignColumn.classList.toggle("multi-select-mode", isMultiSelect);
-
-    
-
-          // Hide downstream columns when toggling multi-select
-
-          const actionColumn = document.getElementById("col-3");
-
-          const uploadColumn = document.getElementById("col-4");
-
-          if (actionColumn) actionColumn.style.display = "none";
-
-          if (uploadColumn) uploadColumn.style.display = "none";
-
-    
-
-    
-
-          const campaigns = document.querySelectorAll(".campaign");
-
-          campaigns.forEach(campaign => {
-
-            const checkbox = campaign.querySelector(".campaign-checkbox");
-
-            if (checkbox) {
-
-              checkbox.style.display = isMultiSelect ? "inline-block" : "none";
-
-              checkbox.checked = false; // Uncheck all when mode changes
-
-            }
-
-            campaign.classList.remove("selected"); // Deselect all visually
-
-          });
-
-    
-
-          // In multi-select mode, the next step should always be the action column
-
-          if (isMultiSelect) {
-
-              // Add a shared event listener for the whole selection container
-
-              const campaignSelection = document.querySelector('.campaign-selection');
-
-              console.log('[Multi-Select] Toggle activated. Campaign selection found:', !!campaignSelection);
-
-              if (campaignSelection) {
-
-                  // Remove old listener if exists
-
-                  if (campaignSelection.multiSelectClickHandler) {
-
-                    campaignSelection.removeEventListener('click', campaignSelection.multiSelectClickHandler);
-
-                  }
-
-                  // Create and attach new listener
-
-                  campaignSelection.multiSelectClickHandler = (e) => {
-
-                      console.log('[Multi-Select] Click detected on campaign selection');
-
-                      const campaignItem = e.target.closest('.campaign');
-
-                      if (campaignItem && toggle.checked) {
-
-                          console.log('[Multi-Select] Campaign item clicked:', campaignItem.dataset.campaignId);
-
-                          const checkbox = campaignItem.querySelector('.campaign-checkbox');
-
-                          if (checkbox) {
-
-                              checkbox.checked = !checkbox.checked;
-
-                              campaignItem.classList.toggle('selected', checkbox.checked);
-
-                              console.log('[Multi-Select] Checkbox toggled. New state:', checkbox.checked);
-
-                               // After a selection is made in multi-select mode, show the action column
-
-                              const actionColumn = document.getElementById("col-3");
-
-                              // Check if any campaign is selected
-
-                              const anySelected = document.querySelectorAll('.campaign-checkbox:checked').length > 0;
-
-                              console.log('[Multi-Select] Any campaigns selected:', anySelected);
-
-                              if (actionColumn && anySelected) {
-
-                                actionColumn.style.display = "block";
-
-                                console.log('[Multi-Select] Action column shown');
-
-                              } else if (actionColumn && !anySelected) {
-
-                                actionColumn.style.display = "none";
-
-                                console.log('[Multi-Select] Action column hidden');
-
-                              }
-
-                          }
-
-                      }
-
-                  };
-
-                  campaignSelection.addEventListener('click', campaignSelection.multiSelectClickHandler);
-
-                  console.log('[Multi-Select] Event listener attached successfully');
-
-              } else {
-
-                  console.warn('[Multi-Select] Campaign selection not found. Make sure campaigns are loaded.');
-
-              }
-
-          }
-
-        });
-
-      }
-
-    }
-
-    
+    // [REMOVED] Old multi-select toggle function - replaced with new modal approach
+    // See setupMultiCampaignAdSetModal() function below
 
     function clearAdSetForm() {
 
@@ -1494,7 +1359,7 @@ function attachDropdownOptionListeners(dropdown) {
 
   // If there's no instance, we can't attach listeners that depend on it.
   if (!dropdownInstance) {
-    console.warn("Cannot attach listeners: CustomDropdown instance not found on element.", dropdown);
+    console.log("[attachDropdownOptionListeners] Skipping - CustomDropdown instance not initialized yet for:", dropdownType);
     return;
   }
 
@@ -9973,13 +9838,388 @@ function setupBulkAdSetDuplicateListeners() {
   }
 }
 
+// ========================================
+// Multi-Campaign Ad Set Creation Modal
+// ========================================
+
+function setupMultiCampaignAdSetModal() {
+  const modal = document.querySelector('.multi-campaign-adset-modal');
+  const openBtn = document.querySelector('.create-multi-adset-btn');
+  const closeBtn = document.querySelector('.multi-campaign-adset-close');
+  const cancelBtn = document.querySelector('.multi-campaign-adset-cancel');
+  const selectAllBtn = document.querySelector('.multi-campaign-adset-select-all');
+  const deselectAllBtn = document.querySelector('.multi-campaign-adset-deselect-all');
+  const nextBtn = document.querySelector('.multi-campaign-adset-next');
+  const backBtn = document.querySelector('.multi-campaign-adset-back');
+  const createBtn = document.querySelector('.multi-campaign-adset-create');
+  const searchInput = document.querySelector('.multi-campaign-adset-search');
+
+  let selectedCampaignIds = [];
+  let allCampaigns = [];
+
+  // Open modal
+  if (openBtn) {
+    openBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('[Multi-Campaign AdSet] Opening modal');
+
+      // Get campaigns from current state
+      const campaigns = document.querySelectorAll('.campaign');
+
+      if (campaigns.length === 0) {
+        window.showError?.('No campaigns found. Please select an ad account first.', 4000);
+        return;
+      }
+
+      allCampaigns = Array.from(campaigns).map(c => ({
+        id: c.dataset.campaignId,
+        name: c.querySelector('h3')?.textContent || 'Unnamed Campaign',
+        status: c.querySelector('ul li')?.textContent || 'Unknown',
+        element: c
+      }));
+
+      populateCampaignList(allCampaigns);
+      modal.style.display = 'block';
+      showStep(1);
+    });
+  }
+
+  // Close modal
+  const closeModal = () => {
+    modal.style.display = 'none';
+    selectedCampaignIds = [];
+    resetForm();
+  };
+
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  // Populate campaign list
+  function populateCampaignList(campaigns) {
+    const listContainer = document.querySelector('.multi-campaign-adset-list');
+    listContainer.innerHTML = '';
+
+    campaigns.forEach(campaign => {
+      const item = document.createElement('div');
+      item.className = 'account-item';
+      item.innerHTML = `
+        <label>
+          <input type="checkbox" value="${campaign.id}" data-campaign-name="${campaign.name}">
+          <span>${campaign.name} (${campaign.status})</span>
+        </label>
+      `;
+      listContainer.appendChild(item);
+    });
+
+    // Attach checkbox listeners
+    const checkboxes = listContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+      cb.addEventListener('change', updateSelectedCount);
+    });
+  }
+
+  // Search campaigns
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      const filtered = allCampaigns.filter(c =>
+        c.name.toLowerCase().includes(query) ||
+        c.status.toLowerCase().includes(query)
+      );
+      populateCampaignList(filtered);
+
+      // Restore checked state
+      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        if (selectedCampaignIds.includes(cb.value)) {
+          cb.checked = true;
+        }
+      });
+    });
+  }
+
+  // Select/Deselect All
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
+      checkboxes.forEach(cb => cb.checked = true);
+      updateSelectedCount();
+    });
+  }
+
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
+      checkboxes.forEach(cb => cb.checked = false);
+      updateSelectedCount();
+    });
+  }
+
+  // Update selected count
+  function updateSelectedCount() {
+    const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]:checked');
+    selectedCampaignIds = Array.from(checkboxes).map(cb => cb.value);
+
+    const countEl = document.querySelector('.multi-campaign-adset-selected-count');
+    if (countEl) countEl.textContent = selectedCampaignIds.length;
+
+    // Enable/disable next button
+    if (nextBtn) {
+      nextBtn.disabled = selectedCampaignIds.length === 0;
+    }
+  }
+
+  // Next to Step 2
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      console.log('[Multi-Campaign AdSet] Moving to step 2. Selected campaigns:', selectedCampaignIds);
+
+      // Update summary
+      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]:checked');
+      const campaignNames = Array.from(checkboxes).map(cb => cb.dataset.campaignName);
+      const summary = document.querySelector('.selected-campaigns-summary');
+      if (summary) {
+        summary.textContent = `${selectedCampaignIds.length} campaign${selectedCampaignIds.length > 1 ? 's' : ''} (${campaignNames.join(', ')})`;
+      }
+
+      // Initialize dropdowns for step 2
+      setTimeout(() => {
+        new CustomDropdown('.multi-campaign-adset-form .custom-dropdown');
+        initializeGeoSelectionForModal();
+      }, 100);
+
+      showStep(2);
+    });
+  }
+
+  // Back to Step 1
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      showStep(1);
+    });
+  }
+
+  // Create Ad Sets
+  if (createBtn) {
+    createBtn.addEventListener('click', async () => {
+      console.log('[Multi-Campaign AdSet] Creating ad sets...');
+
+      if (!validateForm()) {
+        window.showError?.('Please fill in all required fields.', 4000);
+        return;
+      }
+
+      const payload = buildPayload();
+      console.log('[Multi-Campaign AdSet] Payload:', payload);
+
+      // Show loading state
+      createBtn.disabled = true;
+      createBtn.textContent = 'Creating...';
+
+      try {
+        const response = await fetch('/api/create-ad-set-multiple', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok && response.status !== 207) {
+          throw new Error(data.error || 'Failed to create ad sets');
+        }
+
+        // Show success/partial success message
+        const { total_created, total_failed, failed_adsets } = data;
+
+        if (total_failed > 0) {
+          const failedCampaigns = failed_adsets.map(f => f.campaign_id).join(', ');
+          window.showError?.(`Partially complete: ${total_created} ad sets created, ${total_failed} failed in campaigns: ${failedCampaigns}`, 8000);
+        } else {
+          window.showSuccess?.(`${total_created} ad set${total_created > 1 ? 's' : ''} created successfully!`, 5000);
+        }
+
+        closeModal();
+
+      } catch (error) {
+        console.error('[Multi-Campaign AdSet] Error:', error);
+        window.showError?.(`Error: ${error.message}`, 6000);
+      } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Ad Sets';
+      }
+    });
+  }
+
+  // Show step
+  function showStep(stepNumber) {
+    const steps = document.querySelectorAll('.multi-campaign-adset-modal .bulk-duplicate-step');
+    steps.forEach((step, index) => {
+      step.style.display = (index + 1) === stepNumber ? 'block' : 'none';
+    });
+  }
+
+  // Validate form
+  function validateForm() {
+    const form = document.querySelector('.multi-campaign-adset-form');
+    const name = form.querySelector('.config-adset-name')?.value.trim();
+    const budget = form.querySelector('.config-adset-budget')?.value;
+    const startDate = form.querySelector('.config-start-datetime')?.value;
+    const minAge = form.querySelector('.min-age')?.value;
+    const maxAge = form.querySelector('.max-age')?.value;
+    const countries = form.querySelectorAll('#selected-countries-multi .tag');
+
+    return name && budget && startDate && minAge && maxAge && countries.length > 0;
+  }
+
+  // Build payload
+  function buildPayload() {
+    const form = document.querySelector('.multi-campaign-adset-form');
+    const statusDropdown = form.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display');
+    const budgetTypeDropdown = form.querySelector('.dropdown-selected[data-dropdown="adset-budget-type"] .dropdown-display');
+
+    const selectedAccount = document.querySelector('.account.selected');
+    const accountId = selectedAccount?.dataset.campaignId || '';
+
+    const payload = {
+      account_id: accountId,
+      campaign_ids: selectedCampaignIds,
+      name: form.querySelector('.config-adset-name').value.trim(),
+      status: statusDropdown?.textContent.trim() || 'PAUSED',
+      optimization_goal: 'OFFSITE_CONVERSIONS',
+      billing_event: 'IMPRESSIONS',
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      start_time: form.querySelector('.config-start-datetime').value,
+      targeting: {}
+    };
+
+    // Budget
+    const budgetType = budgetTypeDropdown?.textContent.trim().toLowerCase();
+    const budgetAmount = parseFloat(form.querySelector('.config-adset-budget').value);
+
+    if (budgetType === 'daily budget') {
+      payload.daily_budget = budgetAmount;
+    } else if (budgetType === 'lifetime budget') {
+      payload.lifetime_budget = budgetAmount;
+      const endDate = form.querySelector('.config-end-datetime').value;
+      if (endDate) payload.end_time = endDate;
+    }
+
+    // End time (optional for daily)
+    const endDate = form.querySelector('.config-end-datetime').value;
+    if (endDate && budgetType === 'daily budget') {
+      payload.end_time = endDate;
+    }
+
+    // Age targeting
+    payload.targeting.age_min = parseInt(form.querySelector('.min-age').value);
+    payload.targeting.age_max = parseInt(form.querySelector('.max-age').value);
+
+    // Country targeting
+    const countryTags = form.querySelectorAll('#selected-countries-multi .tag');
+    const countries = Array.from(countryTags).map(tag => tag.dataset.countryCode);
+    payload.targeting.geo_locations = { countries };
+
+    return payload;
+  }
+
+  // Reset form
+  function resetForm() {
+    const form = document.querySelector('.multi-campaign-adset-form');
+    if (form) {
+      form.querySelector('.config-adset-name').value = '';
+      form.querySelector('.config-adset-budget').value = '';
+      form.querySelector('.config-start-datetime').value = '';
+      form.querySelector('.config-end-datetime').value = '';
+      form.querySelector('.min-age').value = '';
+      form.querySelector('.max-age').value = '';
+
+      const countryTags = form.querySelector('#selected-countries-multi');
+      if (countryTags) countryTags.innerHTML = '';
+    }
+  }
+
+  // Initialize geo selection for modal
+  function initializeGeoSelectionForModal() {
+    const countryInput = document.querySelector('.multi-campaign-adset-form .country-search-input');
+    const countrySuggestions = document.querySelector('.multi-campaign-adset-form .country-suggestions');
+    const selectedCountriesContainer = document.querySelector('#selected-countries-multi');
+
+    if (!countryInput || !countrySuggestions) return;
+
+    const fbData = appState.getState().fbLocationsData;
+    if (!fbData || !fbData.countries) {
+      console.warn('FB locations data not available');
+      return;
+    }
+
+    const countries = fbData.countries;
+    let selectedCountries = [];
+
+    countryInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      if (query.length < 2) {
+        countrySuggestions.style.display = 'none';
+        return;
+      }
+
+      const matches = countries.filter(c =>
+        c.name.toLowerCase().includes(query) ||
+        c.country_code.toLowerCase().includes(query)
+      ).slice(0, 10);
+
+      if (matches.length > 0) {
+        countrySuggestions.innerHTML = matches.map(c =>
+          `<li data-country-code="${c.country_code}">${c.name} (${c.country_code})</li>`
+        ).join('');
+        countrySuggestions.style.display = 'block';
+      } else {
+        countrySuggestions.style.display = 'none';
+      }
+    });
+
+    countrySuggestions.addEventListener('click', (e) => {
+      if (e.target.tagName === 'LI') {
+        const countryCode = e.target.dataset.countryCode;
+        const countryName = e.target.textContent;
+
+        if (!selectedCountries.includes(countryCode)) {
+          selectedCountries.push(countryCode);
+
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.dataset.countryCode = countryCode;
+          tag.innerHTML = `${countryName} <span class="remove-tag">×</span>`;
+          selectedCountriesContainer.appendChild(tag);
+
+          tag.querySelector('.remove-tag').addEventListener('click', () => {
+            selectedCountries = selectedCountries.filter(c => c !== countryCode);
+            tag.remove();
+          });
+        }
+
+        countryInput.value = '';
+        countrySuggestions.style.display = 'none';
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.country-selection')) {
+        countrySuggestions.style.display = 'none';
+      }
+    });
+  }
+}
+
 // Initialize bulk duplication listeners when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     setupBulkCampaignDuplicateListeners();
     setupBulkAdSetDuplicateListeners();
+    setupMultiCampaignAdSetModal();
   });
 } else {
   setupBulkCampaignDuplicateListeners();
   setupBulkAdSetDuplicateListeners();
+  setupMultiCampaignAdSetModal();
 }
