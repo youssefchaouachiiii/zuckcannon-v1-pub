@@ -9843,6 +9843,8 @@ function setupBulkAdSetDuplicateListeners() {
 // ========================================
 
 function setupMultiCampaignAdSetModal() {
+  console.log('[Multi-Campaign AdSet] Initializing modal...');
+
   const modal = document.querySelector('.multi-campaign-adset-modal');
   const openBtn = document.querySelector('.create-multi-adset-btn');
   const closeBtn = document.querySelector('.multi-campaign-adset-close');
@@ -9854,14 +9856,23 @@ function setupMultiCampaignAdSetModal() {
   const createBtn = document.querySelector('.multi-campaign-adset-create');
   const searchInput = document.querySelector('.multi-campaign-adset-search');
 
+  console.log('[Multi-Campaign AdSet] Elements found:', {
+    modal: !!modal,
+    openBtn: !!openBtn,
+    closeBtn: !!closeBtn,
+    cancelBtn: !!cancelBtn
+  });
+
   let selectedCampaignIds = [];
   let allCampaigns = [];
 
   // Open modal
   if (openBtn) {
+    console.log('[Multi-Campaign AdSet] Attaching click listener to button');
     openBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      console.log('[Multi-Campaign AdSet] Opening modal');
+      e.stopPropagation();
+      console.log('[Multi-Campaign AdSet] Button clicked! Opening modal');
 
       // Get campaigns from current state
       const campaigns = document.querySelectorAll('.campaign');
@@ -9882,6 +9893,8 @@ function setupMultiCampaignAdSetModal() {
       modal.style.display = 'block';
       showStep(1);
     });
+  } else {
+    console.warn('[Multi-Campaign AdSet] Button not found! Make sure .create-multi-adset-btn exists in the DOM.');
   }
 
   // Close modal
