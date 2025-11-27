@@ -10417,7 +10417,7 @@ function setupMultiAccountCampaignModal() {
 
   nextBtn?.addEventListener('click', () => {
     if (selectedAdAccounts.length === 0) {
-      showToast('Please select at least one ad account', 'error');
+      alert('Please select at least one ad account');
       return;
     }
     showStep(2);
@@ -10431,28 +10431,42 @@ function setupMultiAccountCampaignModal() {
   function populateAdAccounts() {
     if (!adAccountsList) return;
 
-    // Get all ad accounts from the global state or dropdown
+    // Get all ad accounts from the global state
     const accounts = [];
 
-    // Try to get from the ad account dropdown in the UI
-    const adAccountDropdowns = document.querySelectorAll('.custom-dropdown[data-type="adaccount"]');
-
-    if (adAccountDropdowns.length > 0) {
-      // Get from dropdown options
-      const dropdown = adAccountDropdowns[0];
-      const options = dropdown.querySelectorAll('.dropdown-option');
-
-      options.forEach(option => {
-        const accountId = option.dataset.value;
-        const accountName = option.textContent.trim();
-
-        if (accountId && accountName && accountId !== 'null') {
+    // Try to get from window.metaData (global state)
+    if (window.metaData && window.metaData.adAccounts && Array.isArray(window.metaData.adAccounts)) {
+      window.metaData.adAccounts.forEach(account => {
+        if (account.id && account.name) {
           accounts.push({
-            id: accountId,
-            name: accountName
+            id: account.id,
+            name: account.name
           });
         }
       });
+    }
+
+    // Fallback: Try to get from the ad account dropdown in the UI
+    if (accounts.length === 0) {
+      const adAccountDropdowns = document.querySelectorAll('.custom-dropdown[data-type="adaccount"]');
+
+      if (adAccountDropdowns.length > 0) {
+        // Get from dropdown options
+        const dropdown = adAccountDropdowns[0];
+        const options = dropdown.querySelectorAll('.dropdown-option');
+
+        options.forEach(option => {
+          const accountId = option.dataset.value;
+          const accountName = option.textContent.trim();
+
+          if (accountId && accountName && accountId !== 'null') {
+            accounts.push({
+              id: accountId,
+              name: accountName
+            });
+          }
+        });
+      }
     }
 
     console.log('[Multi-Account Campaign] Found ad accounts:', accounts.length);
@@ -10561,7 +10575,7 @@ function setupMultiAccountCampaignModal() {
   // Create campaign
   createBtn?.addEventListener('click', async () => {
     if (selectedAdAccounts.length === 0) {
-      showToast('Please select at least one ad account', 'error');
+      alert('Please select at least one ad account');
       return;
     }
 
@@ -10586,12 +10600,12 @@ function setupMultiAccountCampaignModal() {
 
     // Validate
     if (!campaignName) {
-      showToast('Please enter a campaign name', 'error');
+      alert('Please enter a campaign name');
       return;
     }
 
     if (!objective) {
-      showToast('Please select an objective', 'error');
+      alert('Please select an objective');
       return;
     }
 
@@ -10607,7 +10621,7 @@ function setupMultiAccountCampaignModal() {
     // Add budget if selected
     if (budgetType && budgetType !== 'NONE') {
       if (!budgetAmount || parseFloat(budgetAmount) <= 0) {
-        showToast('Please enter a valid budget amount', 'error');
+        alert('Please enter a valid budget amount');
         return;
       }
 
@@ -10639,9 +10653,9 @@ function setupMultiAccountCampaignModal() {
         const failCount = result.results?.filter(r => !r.success).length || 0;
 
         if (failCount === 0) {
-          showToast(`Campaign created successfully in ${successCount} account(s)`, 'success');
+          alert(`Campaign created successfully in ${successCount} account(s)`);
         } else {
-          showToast(`Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`, 'warning');
+          alert(`Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`);
         }
 
         closeModal();
@@ -10652,11 +10666,11 @@ function setupMultiAccountCampaignModal() {
         }, 1500);
       } else {
         console.error('[Multi-Account Campaign] Error:', result);
-        showToast(result.error || 'Failed to create campaign', 'error');
+        alert(result.error || 'Failed to create campaign');
       }
     } catch (error) {
       console.error('[Multi-Account Campaign] Request failed:', error);
-      showToast('Request failed. Please try again.', 'error');
+      alert('Request failed. Please try again.');
     } finally {
       createBtn.disabled = false;
       createBtn.textContent = 'Create Campaign';
