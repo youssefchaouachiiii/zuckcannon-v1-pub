@@ -1628,6 +1628,164 @@ h2 {
   border-color: #103dee;
 }
 
+/* Campaign Compatibility Warning */
+.campaign-compatibility-warning {
+  color: #dc3545;
+  font-size: 13px;
+  margin: 0 0 16px 0;
+  background: #ffe6e6;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 4px solid #dc3545;
+  line-height: 1.5;
+}
+
+/* Age Section in Multi-Campaign Modal */
+.multi-campaign-adset-form .targeting-age {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.multi-campaign-adset-form .targeting-age label {
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 0;
+}
+
+.multi-campaign-adset-form .targeting-age input {
+  width: calc(50% - 4px);
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.multi-campaign-adset-form .targeting-age input:focus {
+  outline: none;
+  border-color: #4caf50;
+}
+
+/* Age Warning for Special Ad Categories */
+.age-warning {
+  color: #ff9800;
+  font-size: 13px;
+  margin-top: 8px;
+  background: #fff3e0;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #ff9800;
+  line-height: 1.5;
+}
+
+/* Event Type Container for Multi-Campaign Modal */
+.event-type-container-multi {
+  position: relative;
+  margin-top: 4px;
+}
+
+.event-type-container-multi input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.event-type-container-multi .config-event-type-multi {
+  cursor: pointer;
+}
+
+.event-type-container-multi .event-type-search-multi {
+  margin-top: 0;
+}
+
+.event-type-suggestions-multi {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.event-type-suggestions-multi li {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.event-type-suggestions-multi li:hover {
+  background: #f5f5f5;
+}
+
+.event-type-suggestions-multi .event-description {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* Cost Per Result Input for Multi-Campaign Modal */
+.cost-per-result-multi {
+  margin-top: 4px;
+}
+
+/* Ad Scheduling Container for Multi-Campaign Modal */
+.ad-scheduling-container-multi {
+  margin-top: 20px;
+}
+
+.schedule-item-multi {
+  margin-top: 15px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+}
+
+.remove-schedule-btn-multi:hover {
+  background: #c82333 !important;
+}
+
+/* Multi-Campaign Modal - Campaign List Styling */
+.multi-campaign-adset-list .account-item label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px;
+}
+
+.multi-campaign-adset-list .account-item label input[type="checkbox"] {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+/* Account Mismatch Warning */
+.account-mismatch-warning {
+  color: #dc3545;
+  font-size: 13px;
+  margin: 10px 0;
+  background: #ffe6e6;
+  padding: 10px;
+  border-radius: 4px;
+  border-left: 4px solid #dc3545;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
 .duplicate-adset-dialog .dialog-close-btn {
   position: absolute;
   top: 10px;
@@ -3910,6 +4068,10 @@ h2 {
   border-radius: 4px;
 }
 
+.config-adset-name {
+  padding: 12px 16px;
+}
+
 .duplicate-choice-modal .btn-primary {
   background: #103dee;
   color: white;
@@ -4398,6 +4560,91 @@ input.bulk-adset-name {
   margin-bottom: 8px;
 }
 
+/* Dropdown containers in multi-account modal */
+.multi-account-campaign-modal .dropdown-container {
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.multi-account-campaign-modal .custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.multi-account-campaign-modal .dropdown-selected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected:hover {
+  border-color: #6f42c1;
+}
+
+.multi-account-campaign-modal .dropdown-display {
+  font-size: 14px;
+  color: #333;
+}
+
+.multi-account-campaign-modal .dropdown-display.placeholder {
+  color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options.show ~ .dropdown-selected .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.multi-account-campaign-modal .dropdown-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: none;
+}
+
+.multi-account-campaign-modal .dropdown-options.show {
+  display: block;
+}
+
+.multi-account-campaign-modal .dropdown-options li {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.15s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options li:hover {
+  background-color: #f5f5f5;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected:hover {
+  background-color: #5a35a0;
+}
+
 .multi-account-campaign-modal .form-group input,
 .multi-account-campaign-modal .form-group select {
   width: 100%;
@@ -4524,4 +4771,98 @@ input.bulk-adset-name {
 .multi-account-campaign-modal .empty-state p {
   margin: 0;
   font-size: 14px;
+}
+
+/* Dropdown styling for multi-account campaign modal */
+.multi-account-campaign-modal .dropdown-container {
+  margin-bottom: 20px;
+}
+
+.multi-account-campaign-modal .custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.multi-account-campaign-modal .dropdown-selected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected:hover {
+  border-color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-selected.open {
+  border-color: #6f42c1;
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.1);
+}
+
+.multi-account-campaign-modal .dropdown-display {
+  flex: 1;
+  color: #333;
+}
+
+.multi-account-campaign-modal .dropdown-display.placeholder {
+  color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-arrow {
+  margin-left: 8px;
+  transition: transform 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.multi-account-campaign-modal .dropdown-options {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.multi-account-campaign-modal .dropdown-options.show {
+  display: block;
+}
+
+.multi-account-campaign-modal .dropdown-options li {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.15s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options li:hover {
+  background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected {
+  background-color: #e8e0f5;
+  color: #6f42c1;
+  font-weight: 500;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected:hover {
+  background-color: #dcd0f0;
 }

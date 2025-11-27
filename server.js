@@ -2326,8 +2326,19 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
     }
 
     // The API expects targeting to be a JSON string
-    if (adSetPayload.targeting && typeof adSetPayload.targeting === 'object') {
-        adSetPayload.targeting = JSON.stringify(adSetPayload.targeting);
+    if (adSetPayload.targeting && typeof adSetPayload.targeting === "object") {
+      adSetPayload.targeting = JSON.stringify(adSetPayload.targeting);
+    }
+
+    // The API expects promoted_object to be a JSON string
+    if (adSetPayload.promoted_object && typeof adSetPayload.promoted_object === "object") {
+      adSetPayload.promoted_object = JSON.stringify(adSetPayload.promoted_object);
+    }
+
+    // Handle ad scheduling - must set pacing_type if adset_schedule is provided
+    if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
+      adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
+      adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2397,7 +2408,8 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
     }
 
     // If base creation succeeded but subsequent steps failed, return partial success
-    res.status(207).json({ // 207 Multi-Status is appropriate here
+    res.status(207).json({
+      // 207 Multi-Status is appropriate here
       success: false,
       message: "Partial failure during ad set duplication. The base ad set was created, but some copies failed.",
       base_adset_id: baseAdSetId,
@@ -2437,7 +2449,7 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
       const campaignPayload = {
         name: campaign_name,
         objective: objective,
-        status: status || 'PAUSED',
+        status: status || "PAUSED",
         access_token: userAccessToken,
         // Always include special_ad_categories, defaulting to an empty array.
         // The value must be a JSON string as per Meta API requirements.
@@ -2451,11 +2463,7 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
       // not at the Campaign level in this application's architecture.
       // It is intentionally omitted here to maintain consistency.
 
-      return MetaBatch.createBatchOperation(
-        "POST",
-        `act_${normalizedAccountId}/campaigns`,
-        campaignPayload
-      );
+      return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
     });
 
     // Execute batch request
@@ -2480,8 +2488,8 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
       }
     });
 
-    const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.filter((r) => !r.success).length;
 
     // If all succeeded
     if (failCount === 0) {
@@ -2496,7 +2504,8 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
 
     // If some succeeded, some failed
     if (successCount > 0) {
-      return res.status(207).json({ // 207 Multi-Status
+      return res.status(207).json({
+        // 207 Multi-Status
         success: true,
         message: `Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`,
         results: results,
@@ -2513,7 +2522,6 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
       total_created: successCount,
       total_failed: failCount,
     });
-
   } catch (error) {
     console.error("Error creating multi-account campaigns:", error.response?.data || error.message);
 
@@ -2529,15 +2537,11 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
 async function fetchAndCacheAdSets(adSetIds, accessToken) {
   if (!adSetIds || adSetIds.length === 0) return;
 
-  const operations = adSetIds.map((id) =>
-    MetaBatch.createBatchOperation("GET", `${id}?fields=id,name,campaign_id,status,optimization_goal,billing_event,daily_budget,lifetime_budget,created_time`)
-  );
+  const operations = adSetIds.map((id) => MetaBatch.createBatchOperation("GET", `${id}?fields=id,name,campaign_id,status,optimization_goal,billing_event,daily_budget,lifetime_budget,created_time`));
 
   const results = await MetaBatch.executeChunkedBatchRequest(operations, accessToken);
 
-  const adSetsToCache = results
-    .filter((res) => res.success && res.data)
-    .map((res) => res.data);
+  const adSetsToCache = results.filter((res) => res.success && res.data).map((res) => res.data);
 
   if (adSetsToCache.length > 0) {
     await FacebookCacheDB.saveAdSets(adSetsToCache);
