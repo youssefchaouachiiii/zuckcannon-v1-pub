@@ -4067,3 +4067,74 @@ input.bulk-adset-name {
   border-color: #103dee;
   box-shadow: 0 0 0 3px rgba(16, 61, 238, 0.1);
 }
+
+/* Multi-Campaign Ad Set Modal */
+.multi-campaign-adset-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.multi-campaign-adset-modal[style*="display: block"] {
+  display: flex !important;
+}
+
+.multi-campaign-adset-modal .modal-content {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.multi-campaign-adset-modal .modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.multi-campaign-adset-modal .modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #333;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.multi-campaign-adset-modal .multi-campaign-adset-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.multi-campaign-adset-modal .search-box {
+  margin-bottom: 12px;
+}
+
+.multi-campaign-adset-modal .search-box input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
