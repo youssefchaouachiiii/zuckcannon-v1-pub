@@ -9866,36 +9866,59 @@ function setupMultiCampaignAdSetModal() {
   let selectedCampaignIds = [];
   let allCampaigns = [];
 
-  // Open modal
+  // Helper function to open modal
+  const openModal = () => {
+    console.log('[Multi-Campaign AdSet] Opening modal');
+
+    // Get campaigns from current state
+    const campaigns = document.querySelectorAll('.campaign');
+
+    if (campaigns.length === 0) {
+      window.showError?.('No campaigns found. Please select an ad account first.', 4000);
+      return;
+    }
+
+    allCampaigns = Array.from(campaigns).map(c => ({
+      id: c.dataset.campaignId,
+      name: c.querySelector('h3')?.textContent || 'Unnamed Campaign',
+      status: c.querySelector('ul li')?.textContent || 'Unknown',
+      element: c
+    }));
+
+    populateCampaignList(allCampaigns);
+    modal.style.display = 'block';
+    showStep(1);
+  };
+
+  // Open modal - Method 1: Direct listener
   if (openBtn) {
     console.log('[Multi-Campaign AdSet] Attaching click listener to button');
+
+    // Try multiple event listeners
     openBtn.addEventListener('click', (e) => {
+      console.log('[Multi-Campaign AdSet] Click event triggered!');
       e.preventDefault();
       e.stopPropagation();
-      console.log('[Multi-Campaign AdSet] Button clicked! Opening modal');
+      openModal();
+    }, true); // Use capture phase
 
-      // Get campaigns from current state
-      const campaigns = document.querySelectorAll('.campaign');
-
-      if (campaigns.length === 0) {
-        window.showError?.('No campaigns found. Please select an ad account first.', 4000);
-        return;
-      }
-
-      allCampaigns = Array.from(campaigns).map(c => ({
-        id: c.dataset.campaignId,
-        name: c.querySelector('h3')?.textContent || 'Unnamed Campaign',
-        status: c.querySelector('ul li')?.textContent || 'Unknown',
-        element: c
-      }));
-
-      populateCampaignList(allCampaigns);
-      modal.style.display = 'block';
-      showStep(1);
+    openBtn.addEventListener('mousedown', () => {
+      console.log('[Multi-Campaign AdSet] Mousedown event triggered!');
     });
+
   } else {
     console.warn('[Multi-Campaign AdSet] Button not found! Make sure .create-multi-adset-btn exists in the DOM.');
   }
+
+  // Method 2: Event delegation as fallback
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.create-multi-adset-btn')) {
+      console.log('[Multi-Campaign AdSet] Button clicked via delegation!');
+      e.preventDefault();
+      e.stopPropagation();
+      openModal();
+    }
+  }, true);
 
   // Close modal
   const closeModal = () => {
