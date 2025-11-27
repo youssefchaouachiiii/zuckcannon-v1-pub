@@ -2439,21 +2439,14 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         objective: objective,
         status: status || 'PAUSED',
         access_token: userAccessToken,
+        // Always include special_ad_categories, defaulting to an empty array.
+        // The value must be a JSON string as per Meta API requirements.
+        special_ad_categories: JSON.stringify(special_ad_categories || []),
       };
 
-      // Add special ad categories if provided
-      if (special_ad_categories && special_ad_categories.length > 0) {
-        campaignPayload.special_ad_categories = JSON.stringify(special_ad_categories);
-      }
-
-      // Add budget if provided
-      if (budget_type && budget_type !== 'NONE' && budget_amount) {
-        if (budget_type === 'DAILY') {
-          campaignPayload.daily_budget = Math.round(budget_amount);
-        } else if (budget_type === 'LIFETIME') {
-          campaignPayload.lifetime_budget = Math.round(budget_amount);
-        }
-      }
+      // Budget (daily_budget, lifetime_budget) is set at the Ad Set level,
+      // not at the Campaign level in this application's architecture.
+      // It is intentionally omitted here to maintain consistency.
 
       return MetaBatch.createBatchOperation(
         "POST",
