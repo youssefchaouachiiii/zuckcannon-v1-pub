@@ -825,6 +825,61 @@ export const validateRequest = {
     next();
   },
 
+  // Validate multi-campaign ad set creation
+  multiCampaignCreateAdSet: (req, res, next) => {
+    // Validate campaign_ids
+    const { campaign_ids } = req.body;
+    if (!campaign_ids || !Array.isArray(campaign_ids) || campaign_ids.length === 0) {
+      return res.status(400).json({ error: "campaign_ids array is required and must not be empty" });
+    }
+
+    // Reuse single ad set validation logic, but make campaign_id optional since we use campaign_ids
+    const { campaign_id, ...restOfBody } = req.body;
+    const tempReq = { body: restOfBody }; // Create a temporary request object
+
+    // Temporarily remove campaign_id from required fields for validation purposes
+    const requiredFields = ["account_id", "name", "optimization_goal", "billing_event", "status"];
+    const missingFields = requiredFields.filter((field) => !tempReq.body[field]);
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        error: `Missing required fields: ${missingFields.join(", ")}`,
+      });
+    }
+
+    // Pass the original request to the existing validator, but handle the response inside this middleware
+    const tempRes = {
+      status: (code) => ({
+        json: (body) => {
+          // If the downstream validator finds an error, send it from here
+          res.status(code).json(body);
+        },
+      }),
+    };
+
+    // Create a mock next function to capture if validation passes
+    let validationError = null;
+    const mockNext = (err) => {
+      if (err) {
+        validationError = err;
+      }
+    };
+
+    // Create a temporary request object for the existing validator
+    const validationReq = { ...req };
+    if (validationReq.body.campaign_id) {
+      delete validationReq.body.campaign_id; // Remove campaign_id as it's not needed
+    }
+
+    // Run the existing createAdSet validator
+    validateRequest.createAdSet(validationReq, tempRes, mockNext);
+
+    // If validation passed (mockNext was called without error), call the real next()
+    if (!res.headersSent) {
+      next();
+    }
+  },
+
   // Validate creative upload from library
   uploadLibraryCreatives: (req, res, next) => {
     const { creativeIds, account_id } = req.body;
