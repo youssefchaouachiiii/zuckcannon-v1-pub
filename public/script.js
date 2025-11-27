@@ -10178,7 +10178,7 @@ function setupMultiCampaignAdSetModal() {
       campaign_ids: selectedCampaignIds,
       name: form.querySelector('.config-adset-name').value.trim(),
       status: statusDropdown?.textContent.trim() || 'PAUSED',
-      optimization_goal: 'OFFSITE_CONVERSIONS',
+      optimization_goal: 'LINK_CLICKS',
       billing_event: 'IMPRESSIONS',
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       start_time: form.querySelector('.config-start-datetime').value,
