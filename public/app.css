@@ -3977,3 +3977,66 @@ input.bulk-adset-name {
   background: #f9f9f9;
   margin-top: 10px;
 }
+
+/* Campaign Selection Step */
+.campaign-selection-container {
+  margin: 20px 0;
+}
+
+.bulk-campaign-mappings-list {
+  max-height: 500px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px;
+  background: #f9f9f9;
+}
+
+.campaign-mapping-item {
+  background: white;
+  border: 1px solid #e4e6eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.mapping-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e6eb;
+}
+
+.mapping-item-header strong {
+  font-size: 15px;
+  color: #1c1e21;
+}
+
+.mapping-item-id {
+  font-size: 12px;
+  color: #65676b;
+}
+
+.campaign-selector {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #e4e6eb;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  color: #1c1e21;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.campaign-selector:hover {
+  border-color: #103dee;
+}
+
+.campaign-selector:focus {
+  outline: none;
+  border-color: #103dee;
+  box-shadow: 0 0 0 3px rgba(16, 61, 238, 0.1);
+}
