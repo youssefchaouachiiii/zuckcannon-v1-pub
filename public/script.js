@@ -531,6 +531,9 @@ async function init() {
       return;
     }
 
+    // Store metaResponse in global window object for modal access
+    window.metaData = metaResponse;
+
     populateAdAccounts(metaResponse.adAccounts);
     populateCampaigns(metaResponse.campaigns);
     populatePixels(metaResponse.pixels);
@@ -5841,6 +5844,9 @@ function forceMetaDataRefreshOnNextLoad() {
 
 // Update UI with fresh data without disrupting the user
 function updateUIWithFreshData(freshData) {
+  // Update global metaData for modal access
+  window.metaData = freshData;
+
   // Store the current selections
   const currentState = appState.getState();
   const selectedAccountId = currentState.selectedAccount;
