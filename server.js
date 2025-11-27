@@ -2337,7 +2337,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   }
 
   const isCrossAccount = sourceAdSetAccountId && targetCampaignAccountId && sourceAdSetAccountId !== targetCampaignAccountId;
-  console.log(`Ad Set ${ad_set_id}: source=${sourceAdSetAccountId}, target=${targetCampaignAccountId}, cross-account=${isCrossAccount}`);
+  console.log(`[ADSET DUPLICATION] Ad Set ${ad_set_id}:`);
+  console.log(`  - Source AdSet Account: ${sourceAdSetAccountId}`);
+  console.log(`  - Target Campaign: ${campaign_id} (Account: ${targetCampaignAccountId})`);
+  console.log(`  - Requested Account: ${normalizedAccountId}`);
+  console.log(`  - Cross-Account: ${isCrossAccount}`);
+
+  // Validation: Check if campaign belongs to the specified account
+  if (targetCampaignAccountId && normalizedAccountId !== targetCampaignAccountId) {
+    console.error(`❌ MISMATCH: Campaign ${campaign_id} belongs to account ${targetCampaignAccountId}, but request specifies account ${normalizedAccountId}`);
+    return res.status(400).json({
+      error: "Campaign and account mismatch",
+      details: `The selected campaign belongs to account ${targetCampaignAccountId}, but you're trying to create the ad set in account ${normalizedAccountId}. Please select a campaign from the correct account.`,
+    });
+  }
 
   // If deep_copy is true, fetch ad set structure to count ads
   if (deep_copy) {

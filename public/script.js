@@ -9227,6 +9227,7 @@ let bulkAdSetDuplicateData = {
   adSetData: null,
   adSetName: "",
   deepCopy: false,
+  campaignMapping: {}, // Maps accountId to selected campaignId
 };
 
 async function openBulkDuplicateAdSetModal() {
@@ -9234,6 +9235,7 @@ async function openBulkDuplicateAdSetModal() {
 
   bulkAdSetDuplicateData.selectedAccounts = [];
   bulkAdSetDuplicateData.adSetData = null;
+  bulkAdSetDuplicateData.campaignMapping = {};
 
   const modal = document.querySelector(".bulk-duplicate-adset-modal");
   console.log("Modal element found:", modal);
@@ -9414,21 +9416,118 @@ function toggleBulkAdSetAccountSelection(accountId, accountName, selected) {
 
 function updateBulkAdSetSelectionUI() {
   const count = bulkAdSetDuplicateData.selectedAccounts.length;
-  const startBtn = document.querySelector(".bulk-adset-start");
+  const nextBtn = document.querySelector(".bulk-adset-next-to-campaigns");
   const countEl = document.querySelector(".bulk-adset-selected-count");
 
   if (countEl) {
     countEl.textContent = count;
   }
 
-  if (startBtn) {
-    startBtn.disabled = count === 0;
-    startBtn.textContent = `Start Duplication (${count} account${count !== 1 ? "s" : ""})`;
+  if (nextBtn) {
+    nextBtn.disabled = count === 0;
+    nextBtn.textContent = count > 0 ? `Next: Select Campaigns (${count} account${count !== 1 ? "s" : ""})` : "Next: Select Campaigns";
   }
 }
 
+async function loadCampaignsForSelectedAccounts() {
+  const mappingsList = document.querySelector(".bulk-campaign-mappings-list");
+  if (!mappingsList) return;
+
+  mappingsList.innerHTML = '<p style="padding: 20px; text-align: center;">Loading campaigns...</p>';
+
+  try {
+    // Fetch all campaigns from Meta API if not cached
+    let allCampaigns = window.allCampaignsCache;
+
+    if (!allCampaigns) {
+      const response = await fetch("/api/fetch-meta-data");
+      if (!response.ok) throw new Error("Failed to fetch campaigns");
+      const data = await response.json();
+      allCampaigns = data.campaigns || [];
+      window.allCampaignsCache = allCampaigns; // Cache for future use
+    }
+
+    console.log("All campaigns count:", allCampaigns.length);
+    console.log("Selected accounts:", bulkAdSetDuplicateData.selectedAccounts);
+
+    // Normalize account IDs for comparison (remove 'act_' prefix if present)
+    const normalizeAccountId = (id) => id?.toString().replace(/^act_/, "");
+
+    // Group campaigns by account_id
+    const accountCampaigns = {};
+    bulkAdSetDuplicateData.selectedAccounts.forEach((account) => {
+      const normalizedAccountId = normalizeAccountId(account.id);
+      accountCampaigns[account.id] = allCampaigns.filter((campaign) => {
+        const normalizedCampaignAccountId = normalizeAccountId(campaign.account_id);
+        return normalizedCampaignAccountId === normalizedAccountId;
+      });
+      console.log(`Account ${account.name} (${normalizedAccountId}): ${accountCampaigns[account.id].length} campaigns`);
+    });
+
+    // Build UI for campaign selection
+    mappingsList.innerHTML = "";
+
+    bulkAdSetDuplicateData.selectedAccounts.forEach((account) => {
+      const campaigns = accountCampaigns[account.id] || [];
+      const mappingItem = document.createElement("div");
+      mappingItem.className = "campaign-mapping-item";
+      mappingItem.dataset.accountId = account.id;
+
+      let campaignOptions = '<option value="">Select a campaign...</option>';
+
+      if (campaigns.length === 0) {
+        campaignOptions += '<option value="" disabled>No campaigns available</option>';
+      } else {
+        campaigns.forEach((campaign) => {
+          const statusLabel = campaign.status === "ACTIVE" ? "✓" : " ";
+          campaignOptions += `<option value="${campaign.id}">${statusLabel} ${campaign.name}</option>`;
+        });
+      }
+
+      mappingItem.innerHTML = `
+        <div class="mapping-item-header">
+          <strong>${account.name}</strong>
+          <span class="mapping-item-id">ID: ${account.id}</span>
+        </div>
+        <select class="campaign-selector" data-account-id="${account.id}" ${campaigns.length === 0 ? "disabled" : ""}>
+          ${campaignOptions}
+        </select>
+        ${campaigns.length === 0 ? '<p style="color: #dc3545; font-size: 13px; margin-top: 8px;">⚠ No campaigns found in this account. Create a campaign first.</p>' : ""}
+      `;
+
+      const selector = mappingItem.querySelector(".campaign-selector");
+      selector.addEventListener("change", (e) => {
+        if (e.target.value) {
+          bulkAdSetDuplicateData.campaignMapping[account.id] = e.target.value;
+        } else {
+          delete bulkAdSetDuplicateData.campaignMapping[account.id];
+        }
+        validateCampaignSelection();
+      });
+
+      mappingsList.appendChild(mappingItem);
+    });
+
+    validateCampaignSelection();
+  } catch (error) {
+    console.error("Error loading campaigns:", error);
+    mappingsList.innerHTML = `<p style="padding: 20px; text-align: center; color: red;">Failed to load campaigns: ${error.message}</p>`;
+  }
+}
+
+function validateCampaignSelection() {
+  const startBtn = document.querySelector(".bulk-duplicate-step[data-step='3'] .bulk-adset-start");
+  if (!startBtn) return;
+
+  const selectedCount = Object.keys(bulkAdSetDuplicateData.campaignMapping).length;
+  const requiredCount = bulkAdSetDuplicateData.selectedAccounts.length;
+
+  startBtn.disabled = selectedCount < requiredCount;
+  startBtn.textContent = selectedCount < requiredCount ? `Select campaigns for all accounts (${selectedCount}/${requiredCount})` : `Start Duplication (${requiredCount} account${requiredCount !== 1 ? "s" : ""})`;
+}
+
 async function startBulkAdSetDuplication() {
-  showBulkDuplicateAdSetStep(3);
+  showBulkDuplicateAdSetStep(4);
 
   const progressContainer = document.querySelector(".bulk-duplicate-adset-modal .account-progress-list");
   progressContainer.innerHTML = "";
@@ -9473,9 +9572,12 @@ async function processBulkAdSetDuplication(account) {
   statusSpan.className = "account-progress-status processing";
 
   try {
-    // First, we need to get the campaign ID in the target account
-    // For now, we'll use the same campaign from the source account
-    // Note: In production, you might want to let users select or create campaigns per account
+    // Use the campaign selected for this specific account
+    const campaignId = bulkAdSetDuplicateData.campaignMapping[accountId];
+
+    if (!campaignId) {
+      throw new Error("No campaign selected for this account");
+    }
 
     const response = await fetch("/api/duplicate-ad-set", {
       method: "POST",
@@ -9485,7 +9587,7 @@ async function processBulkAdSetDuplication(account) {
         name: bulkAdSetDuplicateData.adSetName,
         deep_copy: bulkAdSetDuplicateData.deepCopy,
         status_option: "INHERITED_FROM_SOURCE",
-        campaign_id: appState.getState().selectedCampaign,
+        campaign_id: campaignId,
         account_id: accountId,
       }),
     });
@@ -9537,7 +9639,7 @@ function updateBulkAdSetOverallProgress(completed, total) {
 }
 
 function showBulkAdSetResults(results) {
-  showBulkDuplicateAdSetStep(4);
+  showBulkDuplicateAdSetStep(5);
 
   let successCount = 0;
   let failedCount = 0;
@@ -9621,6 +9723,23 @@ function setupBulkAdSetDuplicateListeners() {
   if (backToListBtn) {
     backToListBtn.addEventListener("click", () => {
       showBulkDuplicateAdSetStep(1);
+    });
+  }
+
+  // Next to campaigns button
+  const nextToCampaignsBtn = modal.querySelector(".bulk-adset-next-to-campaigns");
+  if (nextToCampaignsBtn) {
+    nextToCampaignsBtn.addEventListener("click", async () => {
+      showBulkDuplicateAdSetStep(3);
+      await loadCampaignsForSelectedAccounts();
+    });
+  }
+
+  // Back to accounts button
+  const backToAccountsBtn = modal.querySelector(".bulk-adset-back-to-accounts");
+  if (backToAccountsBtn) {
+    backToAccountsBtn.addEventListener("click", () => {
+      showBulkDuplicateAdSetStep(2);
     });
   }
 

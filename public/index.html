@@ -187,8 +187,8 @@
           to Existing <strong>Ad Set</strong>
         <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="duplicate-existing">
           Duplicate Existing <strong>Ad Set</strong></li>
-        <!-- <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-adset-multi">
-          Duplicate Existing <strong>Ad Set</strong> for Multiple Ad Accounts</li> -->
+        <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-adset-multi">
+          Duplicate Existing <strong>Ad Set</strong> for Multiple Ad Accounts</li>
       </ul>
     </div>
     <!-- Upload Column -->
@@ -1077,12 +1077,29 @@
             <button class="btn-secondary bulk-adset-select-all">Select All</button>
             <button class="btn-secondary bulk-adset-deselect-all">Deselect All</button>
             <button class="btn-secondary bulk-adset-back-to-list">Back</button>
+            <button class="btn-primary bulk-adset-next-to-campaigns" disabled>Next: Select Campaigns</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Select Campaigns -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Select Target Campaign for Each Account</h3>
+          <p class="step-description">Choose which campaign to place the ad set in for each account</p>
+
+          <div class="campaign-selection-container">
+            <div class="bulk-campaign-mappings-list">
+              <!-- Campaign selectors for each account will be populated here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-adset-back-to-accounts">Back</button>
             <button class="btn-primary bulk-adset-start" disabled>Start Duplication</button>
           </div>
         </div>
 
-        <!-- Step 3: Progress -->
-        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+        <!-- Step 4: Progress -->
+        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
           <h3>Duplicating Ad Set...</h3>
           <p class="step-description">Creating ad sets across multiple accounts. Please wait...</p>
 
@@ -1101,8 +1118,8 @@
           </div>
         </div>
 
-        <!-- Step 4: Results -->
-        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
+        <!-- Step 5: Results -->
+        <div class="bulk-duplicate-step" data-step="5" style="display: none;">
           <h3>Duplication Complete!</h3>
 
           <div class="bulk-results-container">
