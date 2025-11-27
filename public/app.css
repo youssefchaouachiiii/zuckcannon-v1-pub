@@ -301,6 +301,33 @@ h2 {
   transform: scale(0.98);
 }
 
+/* Create Multi-Account Campaign Button (Header) */
+.create-multi-account-campaign-btn {
+  background-color: #6f42c1;
+  color: white;
+  border: none;
+  cursor: pointer;
+  padding: 8px 12px;
+  margin-left: 8px;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-multi-account-campaign-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #6f42c1;
+  border: #6f42c1 1px solid;
+}
+
+.create-multi-account-campaign-btn p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 /* Campaign Search */
 .campaign-search-wrapper {
   display: flex;
@@ -4136,5 +4163,365 @@ input.bulk-adset-name {
   padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Multi-Account Campaign Modal */
+.multi-account-campaign-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.multi-account-campaign-modal[style*="display: block"] {
+  display: flex !important;
+}
+
+.multi-account-campaign-modal .modal-content {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.multi-account-campaign-modal .modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #333;
+  font-weight: 600;
+}
+
+.multi-account-campaign-modal .close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.multi-account-campaign-modal .close-btn:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.multi-account-campaign-modal .modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.multi-account-campaign-modal .step {
+  display: none;
+}
+
+.multi-account-campaign-modal .step.active {
+  display: block;
+}
+
+.multi-account-campaign-modal .step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.multi-account-campaign-modal .step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #999;
+}
+
+.multi-account-campaign-modal .step-item.active {
+  color: #6f42c1;
+  font-weight: 600;
+}
+
+.multi-account-campaign-modal .step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.multi-account-campaign-modal .step-item.active .step-number {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.multi-account-campaign-modal .section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.multi-account-campaign-modal .search-box {
+  margin-bottom: 16px;
+}
+
+.multi-account-campaign-modal .search-box input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.multi-account-campaign-modal .search-box input:focus {
+  border-color: #6f42c1;
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.1);
+}
+
+.multi-account-campaign-modal .selection-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.multi-account-campaign-modal .select-all-btn,
+.multi-account-campaign-modal .deselect-all-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background-color: white;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.multi-account-campaign-modal .select-all-btn:hover,
+.multi-account-campaign-modal .deselect-all-btn:hover {
+  background-color: #f8f9fa;
+  border-color: #6f42c1;
+  color: #6f42c1;
+}
+
+.multi-account-campaign-modal .ad-accounts-list {
+  max-height: 350px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  background-color: #fafafa;
+}
+
+.multi-account-campaign-modal .ad-account-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.multi-account-campaign-modal .ad-account-item:hover {
+  background-color: #f8f9fa;
+  border-color: #6f42c1;
+}
+
+.multi-account-campaign-modal .ad-account-item input[type="checkbox"] {
+  margin-right: 12px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.multi-account-campaign-modal .ad-account-info {
+  flex: 1;
+}
+
+.multi-account-campaign-modal .ad-account-name {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.multi-account-campaign-modal .ad-account-id {
+  font-size: 12px;
+  color: #666;
+}
+
+.multi-account-campaign-modal .form-group {
+  margin-bottom: 20px;
+}
+
+.multi-account-campaign-modal .form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.multi-account-campaign-modal .form-group input,
+.multi-account-campaign-modal .form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  font-family: inherit;
+}
+
+.multi-account-campaign-modal .form-group input:focus,
+.multi-account-campaign-modal .form-group select:focus {
+  border-color: #6f42c1;
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.1);
+}
+
+.multi-account-campaign-modal .checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.multi-account-campaign-modal .checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-account-campaign-modal .checkbox-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.multi-account-campaign-modal .checkbox-item label {
+  margin: 0;
+  cursor: pointer;
+  font-weight: 400;
+  color: #555;
+}
+
+.multi-account-campaign-modal .modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .selected-count {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.multi-account-campaign-modal .footer-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.multi-account-campaign-modal .btn-cancel,
+.multi-account-campaign-modal .btn-back,
+.multi-account-campaign-modal .btn-next,
+.multi-account-campaign-modal .btn-create {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.multi-account-campaign-modal .btn-cancel {
+  background-color: white;
+  color: #666;
+  border: 1px solid #ddd;
+}
+
+.multi-account-campaign-modal .btn-cancel:hover {
+  background-color: #f8f9fa;
+  border-color: #999;
+  color: #333;
+}
+
+.multi-account-campaign-modal .btn-back {
+  background-color: white;
+  color: #6f42c1;
+  border: 1px solid #6f42c1;
+}
+
+.multi-account-campaign-modal .btn-back:hover {
+  background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .btn-next,
+.multi-account-campaign-modal .btn-create {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.multi-account-campaign-modal .btn-next:hover,
+.multi-account-campaign-modal .btn-create:hover {
+  background-color: #5a32a3;
+}
+
+.multi-account-campaign-modal .btn-next:disabled,
+.multi-account-campaign-modal .btn-create:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.multi-account-campaign-modal .empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.multi-account-campaign-modal .empty-state p {
+  margin: 0;
   font-size: 14px;
 }

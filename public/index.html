@@ -27,6 +27,9 @@
       <button class="rules-btn" title="Automated Rules">
         <p>Manage Rules</p>
       </button>
+      <button class="create-multi-account-campaign-btn" title="Create Campaign for Multiple Ad Accounts">
+        <p>📋 Create Campaign (Multi-Account)</p>
+      </button>
     </h1>
     <div class="header-controls">
       <span id="username-display"></span>
@@ -1788,6 +1791,123 @@
             <button class="btn-secondary multi-campaign-adset-back">← Back</button>
             <button class="btn-primary multi-campaign-adset-create">Create Ad Sets</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Account Campaign Creation Modal -->
+  <div class="multi-account-campaign-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Campaign for Multiple Ad Accounts</h2>
+        <button class="close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+          <div class="step-item active">
+            <span class="step-number">1</span>
+            <span>Select Accounts</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">2</span>
+            <span>Configure Campaign</span>
+          </div>
+        </div>
+
+        <!-- Step 1: Select Ad Accounts -->
+        <div class="step step-1 active">
+          <h3 class="section-title">Select Ad Accounts</h3>
+
+          <div class="search-box">
+            <input type="text" placeholder="Search ad accounts...">
+          </div>
+
+          <div class="selection-controls">
+            <button class="select-all-btn">Select All</button>
+            <button class="deselect-all-btn">Deselect All</button>
+          </div>
+
+          <div class="ad-accounts-list">
+            <!-- Ad accounts will be populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Campaign -->
+        <div class="step step-2">
+          <h3 class="section-title">Campaign Configuration</h3>
+
+          <div class="form-group">
+            <label for="campaign_name">Campaign Name *</label>
+            <input type="text" name="campaign_name" id="campaign_name" placeholder="Enter campaign name" required>
+          </div>
+
+          <div class="form-group">
+            <label for="objective">Campaign Objective *</label>
+            <select name="objective" id="objective" required>
+              <option value="">Select objective...</option>
+              <option value="OUTCOME_TRAFFIC">Traffic</option>
+              <option value="OUTCOME_ENGAGEMENT">Engagement</option>
+              <option value="OUTCOME_LEADS">Leads</option>
+              <option value="OUTCOME_SALES">Sales</option>
+              <option value="OUTCOME_AWARENESS">Awareness</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="status">Campaign Status</label>
+            <select name="status" id="status">
+              <option value="PAUSED">PAUSED</option>
+              <option value="ACTIVE">ACTIVE</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Special Ad Categories</label>
+            <div class="checkbox-group">
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_credit" id="special_ad_category_credit">
+                <label for="special_ad_category_credit">Credit</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_employment" id="special_ad_category_employment">
+                <label for="special_ad_category_employment">Employment</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_housing" id="special_ad_category_housing">
+                <label for="special_ad_category_housing">Housing</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="budget_type">Budget Type (Optional - CBO)</label>
+            <select name="budget_type" id="budget_type">
+              <option value="NONE">No Campaign Budget (CBO Off)</option>
+              <option value="DAILY">Daily Budget</option>
+              <option value="LIFETIME">Lifetime Budget</option>
+            </select>
+          </div>
+
+          <div class="form-group budget-amount-group" style="display: none;">
+            <label for="budget_amount">Budget Amount ($)</label>
+            <input type="number" name="budget_amount" id="budget_amount" placeholder="Enter budget amount" step="0.01" min="1">
+            <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+              💡 Campaign Budget Optimization - Budget managed at campaign level
+            </small>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="selected-count">0 account(s) selected</span>
+        <div class="footer-buttons">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-next">Next</button>
+          <button class="btn-back" style="display: none;">Back</button>
+          <button class="btn-create" style="display: none;">Create Campaign</button>
         </div>
       </div>
     </div>

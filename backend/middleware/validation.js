@@ -882,6 +882,64 @@ export const validateRequest = {
     }
   },
 
+  // Validate multi-account campaign creation
+  multiAccountCreateCampaign: (req, res, next) => {
+    const { ad_account_ids, campaign_name, objective, status, budget_type, budget_amount } = req.body;
+
+    // Validate ad_account_ids
+    if (!ad_account_ids || !Array.isArray(ad_account_ids) || ad_account_ids.length === 0) {
+      return res.status(400).json({ error: "ad_account_ids array is required and must not be empty" });
+    }
+
+    // Validate campaign_name
+    if (!campaign_name || typeof campaign_name !== 'string' || campaign_name.trim() === '') {
+      return res.status(400).json({ error: "campaign_name is required and must be a non-empty string" });
+    }
+
+    // Validate objective
+    const validObjectives = [
+      'OUTCOME_AWARENESS',
+      'OUTCOME_ENGAGEMENT',
+      'OUTCOME_LEADS',
+      'OUTCOME_SALES',
+      'OUTCOME_TRAFFIC'
+    ];
+
+    if (!objective || !validObjectives.includes(objective)) {
+      return res.status(400).json({
+        error: `objective is required and must be one of: ${validObjectives.join(', ')}`
+      });
+    }
+
+    // Validate status (optional, defaults to PAUSED)
+    if (status) {
+      const validStatuses = ['ACTIVE', 'PAUSED'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${validStatuses.join(', ')}`
+        });
+      }
+    }
+
+    // Validate budget if provided
+    if (budget_type && budget_type !== 'NONE') {
+      const validBudgetTypes = ['DAILY', 'LIFETIME'];
+      if (!validBudgetTypes.includes(budget_type)) {
+        return res.status(400).json({
+          error: `budget_type must be one of: ${validBudgetTypes.join(', ')}, NONE`
+        });
+      }
+
+      if (!budget_amount || parseFloat(budget_amount) <= 0) {
+        return res.status(400).json({
+          error: "budget_amount is required and must be greater than 0 when budget_type is specified"
+        });
+      }
+    }
+
+    next();
+  },
+
   // Validate creative upload from library
   uploadLibraryCreatives: (req, res, next) => {
     const { creativeIds, account_id } = req.body;
