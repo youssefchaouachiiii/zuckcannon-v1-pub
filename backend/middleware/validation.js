@@ -825,6 +825,121 @@ export const validateRequest = {
     next();
   },
 
+  // Validate multi-campaign ad set creation
+  multiCampaignCreateAdSet: (req, res, next) => {
+    // Validate campaign_ids
+    const { campaign_ids } = req.body;
+    if (!campaign_ids || !Array.isArray(campaign_ids) || campaign_ids.length === 0) {
+      return res.status(400).json({ error: "campaign_ids array is required and must not be empty" });
+    }
+
+    // Reuse single ad set validation logic, but make campaign_id optional since we use campaign_ids
+    const { campaign_id, ...restOfBody } = req.body;
+    const tempReq = { body: restOfBody }; // Create a temporary request object
+
+    // Temporarily remove campaign_id from required fields for validation purposes
+    const requiredFields = ["account_id", "name", "optimization_goal", "billing_event", "status"];
+    const missingFields = requiredFields.filter((field) => !tempReq.body[field]);
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        error: `Missing required fields: ${missingFields.join(", ")}`,
+      });
+    }
+
+    // Pass the original request to the existing validator, but handle the response inside this middleware
+    const tempRes = {
+      status: (code) => ({
+        json: (body) => {
+          // If the downstream validator finds an error, send it from here
+          res.status(code).json(body);
+        },
+      }),
+    };
+
+    // Create a mock next function to capture if validation passes
+    let validationError = null;
+    const mockNext = (err) => {
+      if (err) {
+        validationError = err;
+      }
+    };
+
+    // Create a temporary request object for the existing validator
+    const validationReq = { ...req };
+    // Add a dummy campaign_id to pass the createAdSet validator
+    // The actual campaign_ids array will be used in the endpoint
+    if (!validationReq.body.campaign_id && campaign_ids.length > 0) {
+      validationReq.body.campaign_id = campaign_ids[0];
+    }
+
+    // Run the existing createAdSet validator
+    validateRequest.createAdSet(validationReq, tempRes, mockNext);
+
+    // If validation passed (mockNext was called without error), call the real next()
+    if (!res.headersSent) {
+      next();
+    }
+  },
+
+  // Validate multi-account campaign creation
+  multiAccountCreateCampaign: (req, res, next) => {
+    const { ad_account_ids, campaign_name, objective, status, budget_type, budget_amount } = req.body;
+
+    // Validate ad_account_ids
+    if (!ad_account_ids || !Array.isArray(ad_account_ids) || ad_account_ids.length === 0) {
+      return res.status(400).json({ error: "ad_account_ids array is required and must not be empty" });
+    }
+
+    // Validate campaign_name
+    if (!campaign_name || typeof campaign_name !== 'string' || campaign_name.trim() === '') {
+      return res.status(400).json({ error: "campaign_name is required and must be a non-empty string" });
+    }
+
+    // Validate objective
+    const validObjectives = [
+      'OUTCOME_AWARENESS',
+      'OUTCOME_ENGAGEMENT',
+      'OUTCOME_LEADS',
+      'OUTCOME_SALES',
+      'OUTCOME_TRAFFIC'
+    ];
+
+    if (!objective || !validObjectives.includes(objective)) {
+      return res.status(400).json({
+        error: `objective is required and must be one of: ${validObjectives.join(', ')}`
+      });
+    }
+
+    // Validate status (optional, defaults to PAUSED)
+    if (status) {
+      const validStatuses = ['ACTIVE', 'PAUSED'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${validStatuses.join(', ')}`
+        });
+      }
+    }
+
+    // Validate budget if provided
+    if (budget_type && budget_type !== 'NONE') {
+      const validBudgetTypes = ['DAILY', 'LIFETIME'];
+      if (!validBudgetTypes.includes(budget_type)) {
+        return res.status(400).json({
+          error: `budget_type must be one of: ${validBudgetTypes.join(', ')}, NONE`
+        });
+      }
+
+      if (!budget_amount || parseFloat(budget_amount) <= 0) {
+        return res.status(400).json({
+          error: "budget_amount is required and must be greater than 0 when budget_type is specified"
+        });
+      }
+    }
+
+    next();
+  },
+
   // Validate creative upload from library
   uploadLibraryCreatives: (req, res, next) => {
     const { creativeIds, account_id } = req.body;

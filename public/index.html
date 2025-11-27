@@ -27,6 +27,9 @@
       <button class="rules-btn" title="Automated Rules">
         <p>Manage Rules</p>
       </button>
+      <button class="create-multi-account-campaign-btn" title="Create Campaign for Multiple Ad Accounts">
+        <p>📋 Create Campaign (Multi-Account)</p>
+      </button>
     </h1>
     <div class="header-controls">
       <span id="username-display"></span>
@@ -53,6 +56,7 @@
         <a href="#" class="search-icon-btn"><img src="icons/search-icon.svg" alt="Search" /></a>
       </div>
       <button class="create-new-campaign-btn">+ Create New Campaign</button>
+      <button class="create-multi-adset-btn">📋 Create Ad Set for Multiple Campaigns</button>
     </div>
 
     <!-- Column 2.5 - Campaign Creation -->
@@ -1659,6 +1663,252 @@
 
       <div class="modal-footer">
         <button type="button" class="btn-primary close-results">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Campaign Ad Set Creation Modal -->
+  <div class="multi-campaign-adset-modal" style="display: none;">
+    <div class="modal-content bulk-duplicate-content">
+      <div class="modal-header">
+        <h2>Create Ad Set for Multiple Campaigns</h2>
+        <button class="modal-close-btn multi-campaign-adset-close">&times;</button>
+      </div>
+
+      <div class="bulk-duplicate-body">
+        <!-- Step 1: Select Campaigns -->
+        <div class="bulk-duplicate-step" data-step="1">
+          <h3>Step 1: Select Campaigns</h3>
+          <p class="step-description">Choose which campaigns to create the ad set in</p>
+
+          <div class="campaign-selection-container">
+            <div class="search-box">
+              <input type="text" class="multi-campaign-adset-search" placeholder="Search campaigns..." />
+            </div>
+            <div class="multi-campaign-adset-list">
+              <!-- Campaigns will be populated dynamically -->
+            </div>
+          </div>
+
+          <p class="form-help-text" style="margin-top: 15px;">
+            Selected: <strong class="multi-campaign-adset-selected-count">0</strong> campaigns
+          </p>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adset-select-all">Select All</button>
+            <button class="btn-secondary multi-campaign-adset-deselect-all">Deselect All</button>
+            <button class="btn-secondary multi-campaign-adset-cancel">Cancel</button>
+            <button class="btn-primary multi-campaign-adset-next" disabled>Next: Configure Ad Set</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Ad Set -->
+        <div class="bulk-duplicate-step" data-step="2" style="display: none;">
+          <h3>Step 2: Configure Ad Set</h3>
+          <p class="step-description">Creating ad set for <strong class="selected-campaigns-summary"></strong></p>
+
+          <div class="adset-form-container multi-campaign-adset-form">
+            <input type="text" placeholder="Ad Set Name*" class="config-adset-name" required />
+
+            <!-- Status dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="status">
+                  <span class="dropdown-display">PAUSED</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options status">
+                  <li data-value="ACTIVE">ACTIVE</li>
+                  <li data-value="PAUSED">PAUSED</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Budget Type dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="adset-budget-type">
+                  <span class="dropdown-display placeholder" placeholder="Budget Type*">Budget Type*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options adset-budget-type">
+                  <li data-value="daily">Daily Budget</li>
+                  <li data-value="lifetime">Lifetime Budget</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Budget Amount Input -->
+            <div class="budget-input-wrapper" style="margin-top: 4px;">
+              <span class="currency-prefix">$</span>
+              <input type="number" placeholder="Enter budget amount*" class="config-adset-budget" step="0.01" min="1" required />
+              <span class="budget-type-suffix"></span>
+            </div>
+
+            <!-- Start Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Date & Time*</label>
+              <input type="datetime-local" class="config-start-datetime" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required />
+            </div>
+
+            <!-- End Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">
+                End Date & Time<span class="end-date-required-indicator" style="color: #dc3545; display: none;">*</span>
+                <span class="end-date-optional-indicator" style="color: #999;"> (Optional for Daily Budget)</span>
+              </label>
+              <input type="datetime-local" class="config-end-datetime" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+              <small style="display: block; margin-top: 4px; color: #666; font-size: 12px;">
+                Leave empty for ongoing campaign (Daily Budget only)
+              </small>
+            </div>
+
+            <!-- Targeting: Min/Max Age -->
+            <div class="targeting-age">
+              <input type="number" placeholder="Min Age*" class="min-age" required />
+              <input type="number" placeholder="Max Age*" class="max-age" required />
+            </div>
+
+            <!-- Country Selection -->
+            <div class="geo-selection-container">
+              <div class="country-selection">
+                <div class="selected-countries-container">
+                  <div class="selected-tags" id="selected-countries-multi"></div>
+                  <input type="text" placeholder="Search countries*" class="country-search-input" />
+                </div>
+                <ul class="country-suggestions" style="display: none;"></ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adset-back">← Back</button>
+            <button class="btn-primary multi-campaign-adset-create">Create Ad Sets</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Account Campaign Creation Modal -->
+  <div class="multi-account-campaign-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Campaign for Multiple Ad Accounts</h2>
+        <button class="close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+          <div class="step-item active">
+            <span class="step-number">1</span>
+            <span>Select Accounts</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">2</span>
+            <span>Configure Campaign</span>
+          </div>
+        </div>
+
+        <!-- Step 1: Select Ad Accounts -->
+        <div class="step step-1 active">
+          <h3 class="section-title">Select Ad Accounts</h3>
+
+          <div class="search-box">
+            <input type="text" placeholder="Search ad accounts...">
+          </div>
+
+          <div class="selection-controls">
+            <button class="select-all-btn">Select All</button>
+            <button class="deselect-all-btn">Deselect All</button>
+          </div>
+
+          <div class="ad-accounts-list">
+            <!-- Ad accounts will be populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Campaign -->
+        <div class="step step-2">
+          <h3 class="section-title">Campaign Configuration</h3>
+
+          <div class="form-group">
+            <label for="campaign_name">Campaign Name *</label>
+            <input type="text" name="campaign_name" id="campaign_name" placeholder="Enter campaign name" required>
+          </div>
+
+          <div class="form-group">
+            <label for="objective">Campaign Objective *</label>
+            <select name="objective" id="objective" required>
+              <option value="">Select objective...</option>
+              <option value="OUTCOME_TRAFFIC">Traffic</option>
+              <option value="OUTCOME_ENGAGEMENT">Engagement</option>
+              <option value="OUTCOME_LEADS">Leads</option>
+              <option value="OUTCOME_SALES">Sales</option>
+              <option value="OUTCOME_AWARENESS">Awareness</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="status">Campaign Status</label>
+            <select name="status" id="status">
+              <option value="PAUSED">PAUSED</option>
+              <option value="ACTIVE">ACTIVE</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Special Ad Categories</label>
+            <div class="checkbox-group">
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_credit" id="special_ad_category_credit">
+                <label for="special_ad_category_credit">Credit</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_employment" id="special_ad_category_employment">
+                <label for="special_ad_category_employment">Employment</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" name="special_ad_category_housing" id="special_ad_category_housing">
+                <label for="special_ad_category_housing">Housing</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="budget_type">Budget Type (Optional - CBO)</label>
+            <select name="budget_type" id="budget_type">
+              <option value="NONE">No Campaign Budget (CBO Off)</option>
+              <option value="DAILY">Daily Budget</option>
+              <option value="LIFETIME">Lifetime Budget</option>
+            </select>
+          </div>
+
+          <div class="form-group budget-amount-group" style="display: none;">
+            <label for="budget_amount">Budget Amount ($)</label>
+            <input type="number" name="budget_amount" id="budget_amount" placeholder="Enter budget amount" step="0.01" min="1">
+            <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+              💡 Campaign Budget Optimization - Budget managed at campaign level
+            </small>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="selected-count">0 account(s) selected</span>
+        <div class="footer-buttons">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-next">Next</button>
+          <button class="btn-back" style="display: none;">Back</button>
+          <button class="btn-create" style="display: none;">Create Campaign</button>
+        </div>
       </div>
     </div>
   </div>

@@ -2289,6 +2289,262 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   createAdSet();
 });
 
+// Create ad set across multiple campaigns
+app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.multiCampaignCreateAdSet, async (req, res) => {
+  const userAccessToken = req.user.facebook_access_token;
+  const { account_id, campaign_ids, ...adSetBody } = req.body;
+
+  if (!userAccessToken) {
+    return res.status(403).json({
+      error: "Facebook account not connected",
+      needsAuth: true,
+    });
+  }
+
+  const [firstCampaignId, ...remainingCampaignIds] = campaign_ids;
+  const normalizedAccountId = account_id.replace(/^act_/, "");
+  const adSetUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
+
+  const created_adsets = [];
+  const failed_adsets = [];
+  let baseAdSetId = null;
+
+  try {
+    // 1. Create the base ad set in the first campaign
+    const adSetPayload = {
+      ...adSetBody,
+      campaign_id: firstCampaignId,
+      access_token: userAccessToken,
+    };
+
+    // Convert budget to cents if provided
+    if (adSetPayload.daily_budget) {
+      adSetPayload.daily_budget = Math.round(parseFloat(adSetPayload.daily_budget) * 100);
+    }
+    if (adSetPayload.lifetime_budget) {
+      adSetPayload.lifetime_budget = Math.round(parseFloat(adSetPayload.lifetime_budget) * 100);
+    }
+
+    // The API expects targeting to be a JSON string
+    if (adSetPayload.targeting && typeof adSetPayload.targeting === 'object') {
+        adSetPayload.targeting = JSON.stringify(adSetPayload.targeting);
+    }
+
+    const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
+    baseAdSetId = createResponse.data.id;
+    created_adsets.push({
+      campaign_id: firstCampaignId,
+      adset_id: baseAdSetId,
+      status: "success",
+    });
+
+    // 2. If there are other campaigns, duplicate the ad set
+    if (remainingCampaignIds.length > 0) {
+      const copyOperations = remainingCampaignIds.map((campaignId) => {
+        const body = {
+          campaign_id: campaignId,
+          status: adSetBody.status || "PAUSED", // Default to paused for copies
+        };
+        // Use the base ad set ID for the copy operation
+        return MetaBatch.createBatchOperation("POST", `${baseAdSetId}/copies`, body);
+      });
+
+      const batchResults = await MetaBatch.executeChunkedBatchRequest(copyOperations, userAccessToken);
+
+      batchResults.forEach((result, index) => {
+        const campaignId = remainingCampaignIds[index];
+        if (result.success && result.data.id) {
+          created_adsets.push({
+            campaign_id: campaignId,
+            adset_id: result.data.id,
+            status: "success",
+          });
+        } else {
+          failed_adsets.push({
+            campaign_id: campaignId,
+            status: "failed",
+            error: result.error || { message: "Batch operation failed without specific error" },
+          });
+        }
+      });
+    }
+
+    // 3. Fetch and cache the new ad sets in the background (don't block response)
+    const allNewAdSetIds = created_adsets.map((adset) => adset.adset_id);
+    if (allNewAdSetIds.length > 0) {
+      fetchAndCacheAdSets(allNewAdSetIds, userAccessToken).catch((err) => {
+        console.error("Failed to cache new ad sets in background:", err.message);
+      });
+    }
+
+    res.json({
+      success: true,
+      base_adset_id: baseAdSetId,
+      created_adsets: created_adsets,
+      failed_adsets: failed_adsets,
+      total_created: created_adsets.length,
+      total_failed: failed_adsets.length,
+    });
+  } catch (error) {
+    console.error("Error creating multi-campaign ad sets:", error.response?.data || error.message);
+
+    // If the base ad set creation failed, report it and stop
+    if (!baseAdSetId) {
+      return res.status(error.response?.status || 500).json({
+        error: "Failed to create the base ad set.",
+        details: error.response?.data?.error || { message: error.message },
+      });
+    }
+
+    // If base creation succeeded but subsequent steps failed, return partial success
+    res.status(207).json({ // 207 Multi-Status is appropriate here
+      success: false,
+      message: "Partial failure during ad set duplication. The base ad set was created, but some copies failed.",
+      base_adset_id: baseAdSetId,
+      created_adsets: created_adsets,
+      failed_adsets: failed_adsets,
+      error: error.message,
+    });
+  }
+});
+
+// Create Campaign in Multiple Ad Accounts
+app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
+  const userAccessToken = req.user.facebook_access_token;
+  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, budget_type, budget_amount } = req.body;
+
+  if (!userAccessToken) {
+    return res.status(403).json({
+      error: "Facebook account not connected",
+      needsAuth: true,
+    });
+  }
+
+  if (!ad_account_ids || ad_account_ids.length === 0) {
+    return res.status(400).json({
+      error: "At least one ad account ID is required",
+    });
+  }
+
+  const results = [];
+
+  try {
+    // Create campaign in each ad account using batch API
+    const batchOperations = ad_account_ids.map((accountId) => {
+      const normalizedAccountId = accountId.replace(/^act_/, "");
+
+      // Build campaign payload
+      const campaignPayload = {
+        name: campaign_name,
+        objective: objective,
+        status: status || 'PAUSED',
+        access_token: userAccessToken,
+        // Always include special_ad_categories, defaulting to an empty array.
+        // The value must be a JSON string as per Meta API requirements.
+        special_ad_categories: JSON.stringify(special_ad_categories || []),
+        // Since we are not using a campaign-level budget, this field is required.
+        // Defaulting to 'false' is the safest option.
+        is_adset_budget_sharing_enabled: false,
+      };
+
+      // Budget (daily_budget, lifetime_budget) is set at the Ad Set level,
+      // not at the Campaign level in this application's architecture.
+      // It is intentionally omitted here to maintain consistency.
+
+      return MetaBatch.createBatchOperation(
+        "POST",
+        `act_${normalizedAccountId}/campaigns`,
+        campaignPayload
+      );
+    });
+
+    // Execute batch request
+    const batchResults = await MetaBatch.executeChunkedBatchRequest(batchOperations, userAccessToken);
+
+    // Process results
+    batchResults.forEach((result, index) => {
+      const accountId = ad_account_ids[index];
+
+      if (result.success && result.data.id) {
+        results.push({
+          success: true,
+          ad_account_id: accountId,
+          campaign_id: result.data.id,
+        });
+      } else {
+        results.push({
+          success: false,
+          ad_account_id: accountId,
+          error: result.error || { message: "Batch operation failed without specific error" },
+        });
+      }
+    });
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    // If all succeeded
+    if (failCount === 0) {
+      return res.json({
+        success: true,
+        message: `Campaign created successfully in ${successCount} account(s)`,
+        results: results,
+        total_created: successCount,
+        total_failed: failCount,
+      });
+    }
+
+    // If some succeeded, some failed
+    if (successCount > 0) {
+      return res.status(207).json({ // 207 Multi-Status
+        success: true,
+        message: `Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`,
+        results: results,
+        total_created: successCount,
+        total_failed: failCount,
+      });
+    }
+
+    // If all failed
+    return res.status(500).json({
+      success: false,
+      error: "Failed to create campaign in all accounts",
+      results: results,
+      total_created: successCount,
+      total_failed: failCount,
+    });
+
+  } catch (error) {
+    console.error("Error creating multi-account campaigns:", error.response?.data || error.message);
+
+    return res.status(error.response?.status || 500).json({
+      error: "Failed to create campaigns",
+      details: error.response?.data?.error || { message: error.message },
+      results: results,
+    });
+  }
+});
+
+// Helper to fetch and cache new ad sets
+async function fetchAndCacheAdSets(adSetIds, accessToken) {
+  if (!adSetIds || adSetIds.length === 0) return;
+
+  const operations = adSetIds.map((id) =>
+    MetaBatch.createBatchOperation("GET", `${id}?fields=id,name,campaign_id,status,optimization_goal,billing_event,daily_budget,lifetime_budget,created_time`)
+  );
+
+  const results = await MetaBatch.executeChunkedBatchRequest(operations, accessToken);
+
+  const adSetsToCache = results
+    .filter((res) => res.success && res.data)
+    .map((res) => res.data);
+
+  if (adSetsToCache.length > 0) {
+    await FacebookCacheDB.saveAdSets(adSetsToCache);
+    console.log(`Successfully cached ${adSetsToCache.length} new ad sets.`);
+  }
+}
+
 app.post("/api/duplicate-ad-set", async (req, res) => {
   const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body;
   const userAccessToken = req.user?.facebook_access_token;
