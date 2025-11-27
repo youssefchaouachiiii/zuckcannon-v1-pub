@@ -10018,10 +10018,66 @@ function setupMultiCampaignAdSetModal() {
         summary.textContent = `${selectedCampaignIds.length} campaign${selectedCampaignIds.length > 1 ? 's' : ''} (${campaignNames.join(', ')})`;
       }
 
+      // Check for special ad categories
+      const hasSpecialAdCategory = allCampaigns
+        .filter(c => selectedCampaignIds.includes(c.id))
+        .some(c => {
+          const campaignElement = c.element;
+          const specialCategories = campaignElement?.dataset?.specialAdCategories;
+          if (specialCategories) {
+            try {
+              const categories = JSON.parse(specialCategories);
+              return categories && categories.length > 0;
+            } catch (e) {
+              return false;
+            }
+          }
+          return false;
+        });
+
       // Initialize dropdowns for step 2
       setTimeout(() => {
         new CustomDropdown('.multi-campaign-adset-form .custom-dropdown');
         initializeGeoSelectionForModal();
+
+        // Handle special ad category age restrictions
+        const minAgeInput = document.querySelector('.multi-campaign-adset-form .min-age');
+        const maxAgeInput = document.querySelector('.multi-campaign-adset-form .max-age');
+
+        if (hasSpecialAdCategory) {
+          if (minAgeInput) {
+            minAgeInput.value = '18';
+            minAgeInput.disabled = true;
+            minAgeInput.style.backgroundColor = '#f5f5f5';
+          }
+          if (maxAgeInput) {
+            maxAgeInput.value = '65';
+            maxAgeInput.disabled = true;
+            maxAgeInput.style.backgroundColor = '#f5f5f5';
+          }
+
+          // Show warning message
+          const ageContainer = document.querySelector('.multi-campaign-adset-form .targeting-age');
+          if (ageContainer && !ageContainer.querySelector('.age-warning')) {
+            const warning = document.createElement('p');
+            warning.className = 'age-warning';
+            warning.style.cssText = 'color: #ff9800; font-size: 13px; margin-top: 8px; background: #fff3e0; padding: 8px; border-radius: 4px; border-left: 3px solid #ff9800;';
+            warning.textContent = '⚠️ Special Ad Category detected: Age must be 18-65 for selected campaigns';
+            ageContainer.appendChild(warning);
+          }
+        } else {
+          if (minAgeInput) {
+            minAgeInput.disabled = false;
+            minAgeInput.style.backgroundColor = '';
+          }
+          if (maxAgeInput) {
+            maxAgeInput.disabled = false;
+            maxAgeInput.style.backgroundColor = '';
+          }
+          // Remove warning if exists
+          const warning = document.querySelector('.age-warning');
+          if (warning) warning.remove();
+        }
       }, 100);
 
       showStep(2);
@@ -10147,9 +10203,32 @@ function setupMultiCampaignAdSetModal() {
       payload.end_time = endDate;
     }
 
-    // Age targeting
-    payload.targeting.age_min = parseInt(form.querySelector('.min-age').value);
-    payload.targeting.age_max = parseInt(form.querySelector('.max-age').value);
+    // Check if any selected campaign has special ad categories
+    const hasSpecialAdCategory = allCampaigns
+      .filter(c => selectedCampaignIds.includes(c.id))
+      .some(c => {
+        const campaignElement = c.element;
+        const specialCategories = campaignElement?.dataset?.specialAdCategories;
+        if (specialCategories) {
+          try {
+            const categories = JSON.parse(specialCategories);
+            return categories && categories.length > 0;
+          } catch (e) {
+            return false;
+          }
+        }
+        return false;
+      });
+
+    // Age targeting - Force 18-65 for special ad categories
+    if (hasSpecialAdCategory) {
+      payload.targeting.age_min = 18;
+      payload.targeting.age_max = 65;
+      console.log('[Multi-Campaign AdSet] Special ad category detected. Using age 18-65.');
+    } else {
+      payload.targeting.age_min = parseInt(form.querySelector('.min-age').value);
+      payload.targeting.age_max = parseInt(form.querySelector('.max-age').value);
+    }
 
     // Country targeting
     const countryTags = form.querySelectorAll('#selected-countries-multi .tag');
