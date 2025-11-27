@@ -10326,15 +10326,398 @@ function setupMultiCampaignAdSetModal() {
   }
 }
 
+// Setup Multi-Account Campaign Modal
+function setupMultiAccountCampaignModal() {
+  console.log('[Multi-Account Campaign] Initializing modal...');
+
+  const modal = document.querySelector('.multi-account-campaign-modal');
+  const openBtn = document.querySelector('.create-multi-account-campaign-btn');
+  const closeBtn = modal?.querySelector('.close-btn');
+  const cancelBtn = modal?.querySelector('.btn-cancel');
+  const nextBtn = modal?.querySelector('.btn-next');
+  const backBtn = modal?.querySelector('.btn-back');
+  const createBtn = modal?.querySelector('.btn-create');
+
+  if (!modal || !openBtn) {
+    console.warn('[Multi-Account Campaign] Modal or button not found');
+    return;
+  }
+
+  const step1 = modal.querySelector('.step-1');
+  const step2 = modal.querySelector('.step-2');
+  const stepIndicator1 = modal.querySelector('.step-indicator .step-item:nth-child(1)');
+  const stepIndicator2 = modal.querySelector('.step-indicator .step-item:nth-child(2)');
+
+  const searchInput = modal.querySelector('.search-box input');
+  const selectAllBtn = modal.querySelector('.select-all-btn');
+  const deselectAllBtn = modal.querySelector('.deselect-all-btn');
+  const adAccountsList = modal.querySelector('.ad-accounts-list');
+  const selectedCountSpan = modal.querySelector('.selected-count');
+
+  let currentStep = 1;
+  let selectedAdAccounts = [];
+
+  // Open modal
+  openBtn.addEventListener('click', () => {
+    console.log('[Multi-Account Campaign] Opening modal...');
+
+    // Reset to step 1
+    currentStep = 1;
+    showStep(1);
+
+    // Populate ad accounts from DOM
+    populateAdAccounts();
+
+    // Show modal
+    modal.style.display = 'block';
+  });
+
+  // Close modal
+  const closeModal = () => {
+    modal.style.display = 'none';
+    resetModal();
+  };
+
+  closeBtn?.addEventListener('click', closeModal);
+  cancelBtn?.addEventListener('click', closeModal);
+
+  // Close on overlay click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeModal();
+    }
+  });
+
+  // Step navigation
+  function showStep(step) {
+    currentStep = step;
+
+    if (step === 1) {
+      step1?.classList.add('active');
+      step2?.classList.remove('active');
+      stepIndicator1?.classList.add('active');
+      stepIndicator2?.classList.remove('active');
+
+      if (nextBtn) nextBtn.style.display = 'block';
+      if (backBtn) backBtn.style.display = 'none';
+      if (createBtn) createBtn.style.display = 'none';
+    } else if (step === 2) {
+      step1?.classList.remove('active');
+      step2?.classList.add('active');
+      stepIndicator1?.classList.remove('active');
+      stepIndicator2?.classList.add('active');
+
+      if (nextBtn) nextBtn.style.display = 'none';
+      if (backBtn) backBtn.style.display = 'block';
+      if (createBtn) createBtn.style.display = 'block';
+    }
+
+    updateSelectedCount();
+  }
+
+  nextBtn?.addEventListener('click', () => {
+    if (selectedAdAccounts.length === 0) {
+      showToast('Please select at least one ad account', 'error');
+      return;
+    }
+    showStep(2);
+  });
+
+  backBtn?.addEventListener('click', () => {
+    showStep(1);
+  });
+
+  // Populate ad accounts from DOM
+  function populateAdAccounts() {
+    if (!adAccountsList) return;
+
+    // Get all ad accounts from the global state or dropdown
+    const accounts = [];
+
+    // Try to get from the ad account dropdown in the UI
+    const adAccountDropdowns = document.querySelectorAll('.custom-dropdown[data-type="adaccount"]');
+
+    if (adAccountDropdowns.length > 0) {
+      // Get from dropdown options
+      const dropdown = adAccountDropdowns[0];
+      const options = dropdown.querySelectorAll('.dropdown-option');
+
+      options.forEach(option => {
+        const accountId = option.dataset.value;
+        const accountName = option.textContent.trim();
+
+        if (accountId && accountName && accountId !== 'null') {
+          accounts.push({
+            id: accountId,
+            name: accountName
+          });
+        }
+      });
+    }
+
+    console.log('[Multi-Account Campaign] Found ad accounts:', accounts.length);
+
+    if (accounts.length === 0) {
+      adAccountsList.innerHTML = '<div class="empty-state"><p>No ad accounts available</p></div>';
+      return;
+    }
+
+    // Render ad accounts
+    adAccountsList.innerHTML = '';
+    accounts.forEach(account => {
+      const item = document.createElement('div');
+      item.className = 'ad-account-item';
+      item.dataset.accountId = account.id;
+
+      item.innerHTML = `
+        <input type="checkbox" id="account-${account.id}" data-account-id="${account.id}">
+        <div class="ad-account-info">
+          <div class="ad-account-name">${account.name}</div>
+          <div class="ad-account-id">${account.id}</div>
+        </div>
+      `;
+
+      // Toggle checkbox on item click
+      item.addEventListener('click', (e) => {
+        if (e.target.type !== 'checkbox') {
+          const checkbox = item.querySelector('input[type="checkbox"]');
+          checkbox.checked = !checkbox.checked;
+          updateSelectedAccounts();
+        }
+      });
+
+      // Update on checkbox change
+      const checkbox = item.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener('change', updateSelectedAccounts);
+
+      adAccountsList.appendChild(item);
+    });
+  }
+
+  // Update selected accounts
+  function updateSelectedAccounts() {
+    const checkboxes = adAccountsList?.querySelectorAll('input[type="checkbox"]:checked') || [];
+    selectedAdAccounts = Array.from(checkboxes).map(cb => ({
+      id: cb.dataset.accountId,
+      name: cb.closest('.ad-account-item')?.querySelector('.ad-account-name')?.textContent || ''
+    }));
+
+    updateSelectedCount();
+
+    // Enable/disable next button
+    if (nextBtn) {
+      nextBtn.disabled = selectedAdAccounts.length === 0;
+    }
+  }
+
+  function updateSelectedCount() {
+    if (selectedCountSpan) {
+      selectedCountSpan.textContent = `${selectedAdAccounts.length} account(s) selected`;
+    }
+  }
+
+  // Search functionality
+  searchInput?.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const items = adAccountsList?.querySelectorAll('.ad-account-item') || [];
+
+    items.forEach(item => {
+      const name = item.querySelector('.ad-account-name')?.textContent.toLowerCase() || '';
+      const id = item.querySelector('.ad-account-id')?.textContent.toLowerCase() || '';
+
+      if (name.includes(searchTerm) || id.includes(searchTerm)) {
+        item.style.display = 'flex';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+  });
+
+  // Select all
+  selectAllBtn?.addEventListener('click', () => {
+    const checkboxes = adAccountsList?.querySelectorAll('input[type="checkbox"]') || [];
+    const visibleCheckboxes = Array.from(checkboxes).filter(cb => {
+      const item = cb.closest('.ad-account-item');
+      return item && item.style.display !== 'none';
+    });
+
+    visibleCheckboxes.forEach(cb => {
+      cb.checked = true;
+    });
+
+    updateSelectedAccounts();
+  });
+
+  // Deselect all
+  deselectAllBtn?.addEventListener('click', () => {
+    const checkboxes = adAccountsList?.querySelectorAll('input[type="checkbox"]') || [];
+    checkboxes.forEach(cb => {
+      cb.checked = false;
+    });
+
+    updateSelectedAccounts();
+  });
+
+  // Create campaign
+  createBtn?.addEventListener('click', async () => {
+    if (selectedAdAccounts.length === 0) {
+      showToast('Please select at least one ad account', 'error');
+      return;
+    }
+
+    // Get form values
+    const campaignName = modal.querySelector('input[name="campaign_name"]')?.value.trim();
+    const objective = modal.querySelector('select[name="objective"]')?.value;
+    const status = modal.querySelector('select[name="status"]')?.value;
+    const budgetType = modal.querySelector('select[name="budget_type"]')?.value;
+    const budgetAmount = modal.querySelector('input[name="budget_amount"]')?.value;
+
+    // Get special ad categories
+    const specialAdCategories = [];
+    if (modal.querySelector('input[name="special_ad_category_credit"]')?.checked) {
+      specialAdCategories.push('CREDIT');
+    }
+    if (modal.querySelector('input[name="special_ad_category_employment"]')?.checked) {
+      specialAdCategories.push('EMPLOYMENT');
+    }
+    if (modal.querySelector('input[name="special_ad_category_housing"]')?.checked) {
+      specialAdCategories.push('HOUSING');
+    }
+
+    // Validate
+    if (!campaignName) {
+      showToast('Please enter a campaign name', 'error');
+      return;
+    }
+
+    if (!objective) {
+      showToast('Please select an objective', 'error');
+      return;
+    }
+
+    // Build payload
+    const payload = {
+      ad_account_ids: selectedAdAccounts.map(a => a.id),
+      campaign_name: campaignName,
+      objective: objective,
+      status: status || 'PAUSED',
+      special_ad_categories: specialAdCategories
+    };
+
+    // Add budget if selected
+    if (budgetType && budgetType !== 'NONE') {
+      if (!budgetAmount || parseFloat(budgetAmount) <= 0) {
+        showToast('Please enter a valid budget amount', 'error');
+        return;
+      }
+
+      payload.budget_type = budgetType;
+      payload.budget_amount = parseFloat(budgetAmount) * 100; // Convert to cents
+    }
+
+    console.log('[Multi-Account Campaign] Creating campaign with payload:', payload);
+
+    // Disable button
+    createBtn.disabled = true;
+    createBtn.textContent = 'Creating...';
+
+    try {
+      const response = await fetch('/api/create-campaign-multiple', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log('[Multi-Account Campaign] Success:', result);
+
+        const successCount = result.results?.filter(r => r.success).length || 0;
+        const failCount = result.results?.filter(r => !r.success).length || 0;
+
+        if (failCount === 0) {
+          showToast(`Campaign created successfully in ${successCount} account(s)`, 'success');
+        } else {
+          showToast(`Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`, 'warning');
+        }
+
+        closeModal();
+
+        // Refresh data
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        console.error('[Multi-Account Campaign] Error:', result);
+        showToast(result.error || 'Failed to create campaign', 'error');
+      }
+    } catch (error) {
+      console.error('[Multi-Account Campaign] Request failed:', error);
+      showToast('Request failed. Please try again.', 'error');
+    } finally {
+      createBtn.disabled = false;
+      createBtn.textContent = 'Create Campaign';
+    }
+  });
+
+  // Reset modal
+  function resetModal() {
+    currentStep = 1;
+    selectedAdAccounts = [];
+
+    // Reset step 1
+    if (searchInput) searchInput.value = '';
+    const checkboxes = adAccountsList?.querySelectorAll('input[type="checkbox"]') || [];
+    checkboxes.forEach(cb => {
+      cb.checked = false;
+    });
+
+    // Reset step 2 form
+    const form = modal.querySelector('.step-2');
+    if (form) {
+      form.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+        input.value = '';
+      });
+      form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+      });
+      form.querySelectorAll('select').forEach(select => {
+        select.selectedIndex = 0;
+      });
+    }
+
+    updateSelectedCount();
+  }
+
+  // Show budget input based on budget type selection
+  const budgetTypeSelect = modal?.querySelector('select[name="budget_type"]');
+  const budgetAmountGroup = modal?.querySelector('.budget-amount-group');
+
+  budgetTypeSelect?.addEventListener('change', (e) => {
+    if (e.target.value === 'NONE' || !e.target.value) {
+      if (budgetAmountGroup) budgetAmountGroup.style.display = 'none';
+    } else {
+      if (budgetAmountGroup) budgetAmountGroup.style.display = 'block';
+    }
+  });
+
+  console.log('[Multi-Account Campaign] Modal initialized successfully');
+}
+
 // Initialize bulk duplication listeners when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     setupBulkCampaignDuplicateListeners();
     setupBulkAdSetDuplicateListeners();
     setupMultiCampaignAdSetModal();
+    setupMultiAccountCampaignModal();
   });
 } else {
   setupBulkCampaignDuplicateListeners();
   setupBulkAdSetDuplicateListeners();
   setupMultiCampaignAdSetModal();
+  setupMultiAccountCampaignModal();
 }

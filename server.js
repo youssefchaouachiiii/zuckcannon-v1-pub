@@ -2408,6 +2408,127 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
   }
 });
 
+// Create Campaign in Multiple Ad Accounts
+app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
+  const userAccessToken = req.user.facebook_access_token;
+  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, budget_type, budget_amount } = req.body;
+
+  if (!userAccessToken) {
+    return res.status(403).json({
+      error: "Facebook account not connected",
+      needsAuth: true,
+    });
+  }
+
+  if (!ad_account_ids || ad_account_ids.length === 0) {
+    return res.status(400).json({
+      error: "At least one ad account ID is required",
+    });
+  }
+
+  const results = [];
+
+  try {
+    // Create campaign in each ad account using batch API
+    const batchOperations = ad_account_ids.map((accountId) => {
+      const normalizedAccountId = accountId.replace(/^act_/, "");
+
+      // Build campaign payload
+      const campaignPayload = {
+        name: campaign_name,
+        objective: objective,
+        status: status || 'PAUSED',
+        access_token: userAccessToken,
+      };
+
+      // Add special ad categories if provided
+      if (special_ad_categories && special_ad_categories.length > 0) {
+        campaignPayload.special_ad_categories = JSON.stringify(special_ad_categories);
+      }
+
+      // Add budget if provided
+      if (budget_type && budget_type !== 'NONE' && budget_amount) {
+        if (budget_type === 'DAILY') {
+          campaignPayload.daily_budget = Math.round(budget_amount);
+        } else if (budget_type === 'LIFETIME') {
+          campaignPayload.lifetime_budget = Math.round(budget_amount);
+        }
+      }
+
+      return MetaBatch.createBatchOperation(
+        "POST",
+        `act_${normalizedAccountId}/campaigns`,
+        campaignPayload
+      );
+    });
+
+    // Execute batch request
+    const batchResults = await MetaBatch.executeChunkedBatchRequest(batchOperations, userAccessToken);
+
+    // Process results
+    batchResults.forEach((result, index) => {
+      const accountId = ad_account_ids[index];
+
+      if (result.success && result.data.id) {
+        results.push({
+          success: true,
+          ad_account_id: accountId,
+          campaign_id: result.data.id,
+        });
+      } else {
+        results.push({
+          success: false,
+          ad_account_id: accountId,
+          error: result.error || { message: "Batch operation failed without specific error" },
+        });
+      }
+    });
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    // If all succeeded
+    if (failCount === 0) {
+      return res.json({
+        success: true,
+        message: `Campaign created successfully in ${successCount} account(s)`,
+        results: results,
+        total_created: successCount,
+        total_failed: failCount,
+      });
+    }
+
+    // If some succeeded, some failed
+    if (successCount > 0) {
+      return res.status(207).json({ // 207 Multi-Status
+        success: true,
+        message: `Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`,
+        results: results,
+        total_created: successCount,
+        total_failed: failCount,
+      });
+    }
+
+    // If all failed
+    return res.status(500).json({
+      success: false,
+      error: "Failed to create campaign in all accounts",
+      results: results,
+      total_created: successCount,
+      total_failed: failCount,
+    });
+
+  } catch (error) {
+    console.error("Error creating multi-account campaigns:", error.response?.data || error.message);
+
+    return res.status(error.response?.status || 500).json({
+      error: "Failed to create campaigns",
+      details: error.response?.data?.error || { message: error.message },
+      results: results,
+    });
+  }
+});
+
 // Helper to fetch and cache new ad sets
 async function fetchAndCacheAdSets(adSetIds, accessToken) {
   if (!adSetIds || adSetIds.length === 0) return;
