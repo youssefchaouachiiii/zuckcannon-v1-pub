@@ -867,8 +867,10 @@ export const validateRequest = {
 
     // Create a temporary request object for the existing validator
     const validationReq = { ...req };
-    if (validationReq.body.campaign_id) {
-      delete validationReq.body.campaign_id; // Remove campaign_id as it's not needed
+    // Add a dummy campaign_id to pass the createAdSet validator
+    // The actual campaign_ids array will be used in the endpoint
+    if (!validationReq.body.campaign_id && campaign_ids.length > 0) {
+      validationReq.body.campaign_id = campaign_ids[0];
     }
 
     // Run the existing createAdSet validator
