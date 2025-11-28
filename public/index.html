@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="app.css?v=20251129-no-copy-suffix" />
   <link rel="icon" type="image/x-icon" href="icons/favi.png">
 
 </head>
@@ -26,6 +26,9 @@
       </button>
       <button class="rules-btn" title="Automated Rules">
         <p>Manage Rules</p>
+      </button>
+      <button class="create-multi-account-campaign-btn" title="Create Campaign for Multiple Ad Accounts">
+        <p>+ Create Campaign (Multi-Account)</p>
       </button>
     </h1>
     <div class="header-controls">
@@ -53,6 +56,7 @@
         <a href="#" class="search-icon-btn"><img src="icons/search-icon.svg" alt="Search" /></a>
       </div>
       <button class="create-new-campaign-btn">+ Create New Campaign</button>
+      <button class="create-multi-adset-btn">+ Create Ad Set for Multiple Campaigns</button>
     </div>
 
     <!-- Column 2.5 - Campaign Creation -->
@@ -109,7 +113,7 @@
         <!-- <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
-              <span class="dropdown-display placeholder" placeholder="Bid Strategy (Optional)">Bid Strategy
+              <span class="dropdown-display placeholder" placeholder="Bid Strategy">Bid Strategy
                 (Optional)</span>
               <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
@@ -187,8 +191,8 @@
           to Existing <strong>Ad Set</strong>
         <li class="action" data-next-column=".upload-column" data-col-id="3" data-action-type="duplicate-existing">
           Duplicate Existing <strong>Ad Set</strong></li>
-        <!-- <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-adset-multi">
-          Duplicate Existing <strong>Ad Set</strong> for Multiple Ad Accounts</li> -->
+        <li class="action" data-next-column="" data-col-id="3" data-action-type="duplicate-adset-multi">
+          Duplicate Existing <strong>Ad Set</strong> for Multiple Ad Accounts</li>
       </ul>
     </div>
     <!-- Upload Column -->
@@ -238,7 +242,7 @@
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="pages">
-                <span class="dropdown-display placeholder">Page (Optional)</span>
+                <span class="dropdown-display placeholder">Page</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -252,7 +256,7 @@
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="pixel">
-                <span class="dropdown-display placeholder">Pixel (Optional)</span>
+                <span class="dropdown-display placeholder">Pixel </span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -264,7 +268,7 @@
 
           <!-- Custom Event Type Selection -->
           <div class="event-type-container" style="opacity: 1;">
-            <input type="text" placeholder="Custom Event Type (Optional)" data-container="adset-form-container"
+            <input type="text" placeholder="Custom Event Type " data-container="adset-form-container"
               class="config-event-type" readonly>
             <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
             <ul class="event-type-suggestions" style="display: none;"></ul>
@@ -840,7 +844,7 @@
         <!-- <div class="dropdown-container">
           <div class="custom-dropdown">
             <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
-              <span class="dropdown-display">Bid Strategy (Optional)</span>
+              <span class="dropdown-display">Bid Strategy</span>
               <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                   stroke-linejoin="round" />
@@ -1077,12 +1081,29 @@
             <button class="btn-secondary bulk-adset-select-all">Select All</button>
             <button class="btn-secondary bulk-adset-deselect-all">Deselect All</button>
             <button class="btn-secondary bulk-adset-back-to-list">Back</button>
+            <button class="btn-primary bulk-adset-next-to-campaigns" disabled>Next: Select Campaigns</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Select Campaigns -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Select Target Campaign for Each Account</h3>
+          <p class="step-description">Choose which campaign to place the ad set in for each account</p>
+
+          <div class="campaign-selection-container">
+            <div class="bulk-campaign-mappings-list">
+              <!-- Campaign selectors for each account will be populated here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary bulk-adset-back-to-accounts">Back</button>
             <button class="btn-primary bulk-adset-start" disabled>Start Duplication</button>
           </div>
         </div>
 
-        <!-- Step 3: Progress -->
-        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+        <!-- Step 4: Progress -->
+        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
           <h3>Duplicating Ad Set...</h3>
           <p class="step-description">Creating ad sets across multiple accounts. Please wait...</p>
 
@@ -1101,8 +1122,8 @@
           </div>
         </div>
 
-        <!-- Step 4: Results -->
-        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
+        <!-- Step 5: Results -->
+        <div class="bulk-duplicate-step" data-step="5" style="display: none;">
           <h3>Duplication Complete!</h3>
 
           <div class="bulk-results-container">
@@ -1646,8 +1667,639 @@
     </div>
   </div>
 
-  <script src="error-handler.js"></script>
-  <script src="script.js"></script>
+  <!-- Multi-Campaign Ad Set Creation Modal -->
+  <div class="multi-campaign-adset-modal" style="display: none;">
+    <div class="modal-content bulk-duplicate-content">
+      <div class="modal-header">
+        <h2>Create Ad Set for Multiple Campaigns</h2>
+        <button class="modal-close-btn multi-campaign-adset-close">&times;</button>
+      </div>
+
+      <div class="bulk-duplicate-body">
+        <!-- Step 1: Select Campaigns -->
+        <div class="bulk-duplicate-step" data-step="1">
+          <h3>Step 1: Select Campaigns</h3>
+          <p class="step-description">Choose which campaigns to create the ad set in</p>
+          <div
+            style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; font-size: 13px; margin-bottom: 16px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #0d47a1;">
+              <strong>💡 Tip:</strong> For best results, select campaigns that have:
+            <ul style="margin: 8px 0 0 20px; padding: 0;">
+              <li>Same objective (e.g., all TRAFFIC or all CONVERSIONS)</li>
+              <li>Similar special ad categories</li>
+              <li>Compatible targeting locations</li>
+            </ul>
+            Mixing different campaign types may cause creation failures.
+            </p>
+          </div>
+
+          <div class="campaign-selection-container">
+            <div class="search-box">
+              <input type="text" class="multi-campaign-adset-search" placeholder="Search campaigns..." />
+            </div>
+            <div class="multi-campaign-adset-list">
+              <!-- Campaigns will be populated dynamically -->
+            </div>
+          </div>
+
+          <p class="form-help-text" style="margin-top: 15px;">
+            Selected: <strong class="multi-campaign-adset-selected-count">0</strong> campaigns
+          </p>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adset-select-all">Select All</button>
+            <button class="btn-secondary multi-campaign-adset-deselect-all">Deselect All</button>
+            <button class="btn-secondary multi-campaign-adset-cancel">Cancel</button>
+            <button class="btn-primary multi-campaign-adset-next" disabled>Next: Configure Ad Set</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Ad Set -->
+        <div class="bulk-duplicate-step" data-step="2" style="display: none;">
+          <h3>Step 2: Configure Ad Set</h3>
+          <p class="step-description">Creating ad set for <strong class="selected-campaigns-summary"></strong></p>
+
+          <div class="adset-form-container multi-campaign-adset-form">
+            <input type="text" placeholder="Ad Set Name*" class="config-adset-name" required />
+
+            <!-- Status dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="status">
+                  <span class="dropdown-display" data-value="PAUSED">PAUSED</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options status">
+                  <li data-value="ACTIVE">ACTIVE</li>
+                  <li data-value="PAUSED">PAUSED</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Optimization Goal dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="optimization-goal">
+                  <span class="dropdown-display placeholder">Optimization Goal (Optional)</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options optimization-goal">
+                  <li data-value="LINK_CLICKS">Link Clicks</li>
+                  <li data-value="IMPRESSIONS">Impressions</li>
+                  <li data-value="REACH">Reach</li>
+                  <li data-value="POST_ENGAGEMENT">Post Engagement</li>
+                  <li data-value="THRUPLAY">ThruPlay (Video Views)</li>
+                  <li data-value="LEAD_GENERATION">Lead Generation</li>
+                  <li data-value="OFFSITE_CONVERSIONS">Offsite Conversions</li>
+                  <li data-value="APP_INSTALLS">App Installs</li>
+                  <li data-value="ENGAGED_USERS">Engaged Users (App Events)</li>
+                  <li data-value="PAGE_LIKES">Page Likes</li>
+                  <li data-value="EVENT_RESPONSES">Event Responses</li>
+                  <li data-value="VISIT_INSTAGRAM_PROFILE">Visit Instagram Profile</li>
+                  <li data-value="VALUE">Value (Max Purchase Value)</li>
+                  <li data-value="CONVERSATIONS">Conversations (Messaging)</li>
+                  <li data-value="LANDING_PAGE_VIEWS">Landing Page Views</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Billing Event dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="billing-event">
+                  <span class="dropdown-display placeholder">Billing Event (Optional)</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options billing-event">
+                  <li data-value="IMPRESSIONS">Impressions</li>
+                  <li data-value="LINK_CLICKS">Link Clicks</li>
+                  <li data-value="APP_INSTALLS">App Installs</li>
+                  <li data-value="POST_ENGAGEMENT">Post Engagement</li>
+                  <li data-value="PAGE_LIKES">Page Likes</li>
+                  <li data-value="THRUPLAY">ThruPlay (Video Views)</li>
+                  <li data-value="OFFER_CLAIMS">Offer Claims</li>
+                  <li data-value="PURCHASE">Purchase</li>
+                  <li data-value="LISTING_INTERACTION">Listing Interaction</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Page dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="pages-multi">
+                  <span class="dropdown-display placeholder">Page (Optional)</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options pages-multi"></ul>
+              </div>
+            </div>
+
+            <!-- Pixel dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="pixel-multi">
+                  <span class="dropdown-display placeholder">Pixel (Optional)</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options pixel-multi"></ul>
+              </div>
+            </div>
+
+            <!-- Custom Event Type Selection -->
+            <div class="event-type-container-multi" style="opacity: 1;">
+              <input type="text" placeholder="Custom Event Type" class="config-event-type-multi" readonly>
+              <input type="text" placeholder="Type to search events..." class="event-type-search-multi"
+                style="display: none;">
+              <ul class="event-type-suggestions-multi" style="display: none;"></ul>
+            </div>
+
+            <!-- Bid Strategy dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="adset-bid-strategy">
+                  <span class="dropdown-display placeholder">Bid Strategy</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options adset-bid-strategy">
+                  <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+                  <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+                  <li data-value="COST_CAP">Cost Cap</li>
+                  <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Bid Amount Input (for strategies with cap/cost) -->
+            <div class="budget-input-wrapper cost-per-result-multi" style="display: none;">
+              <span class="currency-prefix">$</span>
+              <input type="number" placeholder="12.50" class="config-cost-per-result-goal-multi" step="0.01" min="0" />
+              <span class="currency-suffix">per result</span>
+            </div>
+
+            <!-- Budget Type dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="adset-budget-type">
+                  <span class="dropdown-display placeholder" placeholder="Budget Type*">Budget Type*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options adset-budget-type">
+                  <li data-value="daily">Daily Budget</li>
+                  <li data-value="lifetime">Lifetime Budget</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Budget Amount Input -->
+            <div class="budget-input-wrapper" style="margin-top: 4px;">
+              <span class="currency-prefix">$</span>
+              <input type="number" placeholder="Enter budget amount*" class="config-adset-budget" step="0.01" min="1"
+                required />
+              <span class="budget-type-suffix"></span>
+            </div>
+
+            <!-- Start Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Start Date &
+                Time*</label>
+              <input type="datetime-local" class="config-start-datetime"
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required />
+            </div>
+
+            <!-- End Date & Time -->
+            <div style="margin-top: 10px;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">
+                End Date & Time<span class="end-date-required-indicator" style="color: #dc3545; display: none;">*</span>
+                <span class="end-date-optional-indicator" style="color: #999;"> (Optional for Daily Budget)</span>
+              </label>
+              <input type="datetime-local" class="config-end-datetime"
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+              <small style="display: block; margin-top: 4px; color: #666; font-size: 12px;">
+                Leave empty for ongoing campaign (Daily Budget only)
+              </small>
+            </div>
+
+            <!-- Ad Scheduling Section -->
+            <div class="ad-scheduling-container-multi"
+              style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0; font-size: 16px; color: #333;">Ad Scheduling (Optional)</h3>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" class="enable-scheduling-checkbox-multi" style="cursor: pointer;">
+                  <span style="font-size: 14px; color: #666;">Enable Scheduling</span>
+                </label>
+              </div>
+              <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads
+                should run.</p>
+
+              <div class="scheduling-controls-multi" style="display: none;">
+                <!-- Schedule List -->
+                <div class="schedule-list-multi" style="margin-top: 15px;">
+                  <!-- Schedule items will be added here -->
+                </div>
+
+                <!-- Add Schedule Button -->
+                <button type="button" class="add-schedule-btn-multi"
+                  style="margin-top: 10px; padding: 8px 16px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                  + Add Schedule
+                </button>
+              </div>
+            </div>
+
+            <!-- Targeting: Min/Max Age -->
+            <div class="targeting-age">
+              <label style="display: block; width: 100%; font-size: 13px; color: #666; margin-bottom: 4px;">Age*</label>
+              <div style="width: 100%;">
+                <input style="width: 48%;" type="number" placeholder="Min Age*" class="min-age" required />
+                <input style="width: 48%;" type="number" placeholder="Max Age*" class="max-age" required />
+              </div>
+            </div>
+
+            <!-- Country Selection -->
+            <div class="geo-selection-container">
+              <div class="country-selection">
+                <div class="selected-countries-container">
+                  <div class="selected-tags" id="selected-countries-multi"></div>
+                  <input type="text" placeholder="Search countries*" class="country-search-input" />
+                </div>
+                <ul class="country-suggestions" style="display: none;"></ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adset-back">← Back</button>
+            <button class="btn-primary multi-campaign-adset-create">Create Ad Sets</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Success & Creative Upload -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Step 3: Ad Creatives</h3>
+
+          <div class="success-banner"
+            style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+            <p style="margin: 0; color: #155724; font-size: 15px;">
+              ✅ <span id="multi-campaign-adset-success-count">Ad sets created successfully</span>
+            </p>
+          </div>
+
+          <p class="step-description" style="margin-bottom: 20px;">
+            Now upload creatives and add ads to these newly created ad sets.
+          </p>
+
+          <div
+            style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #856404;">
+              <strong>💡 Note:</strong> The same ads will be created in all successful ad sets. You can skip this step
+              and add ads later if needed.
+            </p>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-primary multi-campaign-upload-creatives" style="background: #28a745; border: none;">
+              📤 Continue to Upload Creatives
+            </button>
+            <button class="btn-secondary multi-campaign-skip-ads">Skip for Now</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Creative Upload within Modal -->
+        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
+          <h3>Step 4: Upload Creatives</h3>
+
+          <div
+            style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #0d47a1;">
+              <strong>📤 Upload files:</strong> Drag & drop images/videos or paste Google Drive links
+            </p>
+          </div>
+
+          <div class="multi-campaign-creative-upload-container">
+            <!-- File upload area -->
+            <div class="file-drop-zone"
+              style="border: 2px dashed #ddd; border-radius: 8px; padding: 40px 20px; text-align: center; background: #fafafa; margin-bottom: 20px;">
+              <p class="drop-zone-text" style="color: #666; margin-bottom: 15px;">
+                Drag & drop <strong>images and videos</strong> here <br /><br />or
+              </p>
+              <input type="file" multiple accept="image/*,video/*" class="multi-campaign-file-input"
+                style="display: none;" />
+              <button class="continue-btn multi-campaign-browse-btn"
+                style="padding: 10px 20px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                Browse Files
+              </button>
+              <div class="gdrive-input-container" style="margin-top: 20px;">
+                <p style="margin: 15px 0 10px 0; color: #666; font-size: 14px;">or</p>
+                <div style="display: flex; align-items: center; gap: 8px; max-width: 400px; margin: 0 auto;">
+                  <input type="text" class="multi-campaign-gdrive-input" placeholder="Paste Google Drive link..."
+                    style="flex: 1; padding: 8px 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px;">
+                  <button class="multi-campaign-gdrive-fetch-btn"
+                    style="padding: 8px 12px; background: #103dee; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; border-radius: 4px;">
+                    <img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;">
+                    Fetch
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Uploaded files list -->
+            <div class="multi-campaign-uploaded-files-list" style="display: none; margin-bottom: 20px;">
+              <!-- Files will be populated here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-creative-back">← Back</button>
+            <button class="btn-primary multi-campaign-creative-continue" disabled>Continue to Ad Copy</button>
+          </div>
+        </div>
+
+        <!-- Step 5: Ad Copy within Modal -->
+        <div class="bulk-duplicate-step" data-step="5" style="display: none;">
+          <h3>Step 5: Ad Copy</h3>
+
+          <div
+            style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #0d47a1;">
+              <strong>✍️ Ad Copy:</strong> This copy will be used for all ads across all ad sets
+            </p>
+          </div>
+
+          <div class="adset-form-container multi-campaign-ad-copy-form">
+            <textarea placeholder="Primary Text*" class="multi-campaign-primary-text" required rows="6"></textarea>
+
+            <input type="text" placeholder="Headline*" class="multi-campaign-headline" required />
+
+            <!-- Page dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="page-multi-campaign">
+                  <span class="dropdown-display placeholder">Page*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options pages-multi-campaign">
+                </ul>
+              </div>
+            </div>
+
+            <!-- Call to Action dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="cta-multi-campaign">
+                  <span class="dropdown-display" data-value="LEARN_MORE">Learn more</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options cta-multi-campaign">
+                  <li class="cta-option" data-value="NO_BUTTON">No button</li>
+                  <li class="cta-option" data-value="LEARN_MORE">Learn more</li>
+                  <li class="cta-option" data-value="SHOP_NOW">Shop now</li>
+                  <li class="cta-option" data-value="SIGN_UP">Sign up</li>
+                  <li class="cta-option" data-value="DOWNLOAD">Download</li>
+                  <li class="cta-option" data-value="APPLY_NOW">Apply now</li>
+                  <li class="cta-option" data-value="BOOK_TRAVEL">Book travel</li>
+                  <li class="cta-option" data-value="CONTACT_US">Contact us</li>
+                  <li class="cta-option" data-value="GET_QUOTE">Get quote</li>
+                  <li class="cta-option" data-value="SUBSCRIBE">Subscribe</li>
+                </ul>
+              </div>
+            </div>
+
+            <input type="url" placeholder="Destination URL*" class="multi-campaign-destination-url" required />
+
+            <input type="text" placeholder="Description (Optional)" class="multi-campaign-description" />
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adcopy-back">← Back</button>
+            <button class="btn-primary multi-campaign-create-all-ads">Create Ads for All Ad Sets</button>
+          </div>
+        </div>
+
+        <!-- Step 6: Creating Ads Progress -->
+        <div class="bulk-duplicate-step" data-step="6" style="display: none;">
+          <h3>Creating Ads...</h3>
+
+          <div class="multi-campaign-ads-progress" style="padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div class="spinner"
+                style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #103dee; border-radius: 50%; animation: spin 1s linear infinite;">
+              </div>
+              <p style="margin-top: 15px; color: #666;">Creating ads across all ad sets...</p>
+            </div>
+
+            <div class="multi-campaign-ads-progress-details" style="max-height: 300px; overflow-y: auto;">
+              <!-- Progress items will be added here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 7: Final Success -->
+        <div class="bulk-duplicate-step" data-step="7" style="display: none;">
+          <h3>✅ Complete!</h3>
+
+          <div class="multi-campaign-final-summary" style="padding: 20px; text-align: center;">
+            <!-- Summary will be populated here -->
+          </div>
+
+          <div class="bulk-actions" style="justify-content: center; gap: 15px;">
+            <button class="btn-secondary multi-campaign-view-ads-manager"
+              style="background: #1877f2; color: white; border: none;">
+              📊 View in Ads Manager
+            </button>
+            <button class="btn-primary multi-campaign-done">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  </div>
+  </div>
+  </div>
+
+  <!-- Multi-Account Campaign Creation Modal -->
+  <div class="multi-account-campaign-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Campaign for Multiple Ad Accounts</h2>
+        <button class="close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+          <div class="step-item active">
+            <span class="step-number">1</span>
+            <span>Select Accounts</span>
+          </div>
+          <div class="step-item">
+            <span class="step-number">2</span>
+            <span>Configure Campaign</span>
+          </div>
+        </div>
+
+        <!-- Step 1: Select Ad Accounts -->
+        <div class="step step-1 active">
+          <h3 class="section-title">Select Ad Accounts</h3>
+
+          <div class="search-box">
+            <input type="text" placeholder="Search ad accounts...">
+          </div>
+
+          <div class="selection-controls">
+            <button class="select-all-btn">Select All</button>
+            <button class="deselect-all-btn">Deselect All</button>
+          </div>
+
+          <div class="ad-accounts-list">
+            <!-- Ad accounts will be populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Step 2: Configure Campaign -->
+        <div class="step step-2">
+          <h3 class="section-title">Campaign Configuration</h3>
+
+          <div class="form-group">
+            <label for="campaign_name">Campaign Name *</label>
+            <input type="text" name="campaign_name" id="campaign_name" placeholder="Enter campaign name" required>
+          </div>
+
+          <div class="form-group">
+            <label for="objective">Campaign Objective *</label>
+            <select name="objective" id="objective" required>
+              <option value="">Select objective...</option>
+              <option value="OUTCOME_TRAFFIC">Traffic</option>
+              <option value="OUTCOME_ENGAGEMENT">Engagement</option>
+              <option value="OUTCOME_LEADS">Leads</option>
+              <option value="OUTCOME_SALES">Sales</option>
+              <option value="OUTCOME_AWARENESS">Awareness</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="status">Campaign Status</label>
+            <select name="status" id="status">
+              <option value="PAUSED">PAUSED</option>
+              <option value="ACTIVE">ACTIVE</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="budget_type">Campaign Budget Type (Optional - CBO)</label>
+            <select name="budget_type" id="budget_type">
+              <option value="NONE">No Campaign Budget (CBO Off)</option>
+              <option value="DAILY">Daily Budget</option>
+              <option value="LIFETIME">Lifetime Budget</option>
+            </select>
+          </div>
+
+          <div class="form-group budget-amount-group" style="display: none;">
+            <label for="budget_amount">Budget Amount ($)</label>
+            <input type="number" name="budget_amount" id="budget_amount" placeholder="Enter budget amount" step="0.01"
+              min="1">
+            <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+              💡 Campaign Budget Optimization - Budget managed at campaign level
+            </small>
+          </div>
+
+          <!-- Special Categories dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="multi-campaign-special-categories">
+                <span class="dropdown-display placeholder" placeholder="Special Ad Categories (Optional)">Special Ad
+                  Categories (Optional)</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options multi-campaign-special-categories" data-multiple="true">
+                <li data-value="">None - If none of the categories apply</li>
+                <li data-value="EMPLOYMENT">Employment</li>
+                <li data-value="HOUSING">Housing</li>
+                <li data-value="FINANCIAL_PRODUCTS_SERVICES">Financial Products & Services</li>
+                <li data-value="ISSUES_ELECTIONS_POLITICS">Issues, Elections, Politics</li>
+                <li data-value="ONLINE_GAMBLING_AND_GAMING">Online Gambling & Gaming</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Special Ad Category Country dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="multi-campaign-special-country">
+                <span class="dropdown-display placeholder" placeholder="Special Ad Category Country (Optional)">Special
+                  Ad
+                  Category Country (Optional)</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options multi-campaign-special-country" data-multiple="true">
+                <li data-value="">None</li>
+                <!-- Countries will be populated dynamically from fb-locations.json -->
+              </ul>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="selected-count">0 account(s) selected</span>
+        <div class="footer-buttons">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-next">Next</button>
+          <button class="btn-back" style="display: none;">Back</button>
+          <button class="btn-create" style="display: none;">Create Campaign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="error-handler.js?v=20251129-no-copy-suffix"></script>
+  <script src="script.js?v=20251129-no-copy-suffix"></script>
   <script>
     setTimeout(() => {
       if (typeof setupMetaDataUpdates === 'function') {
