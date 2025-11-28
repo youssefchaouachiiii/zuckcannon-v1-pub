@@ -157,6 +157,12 @@ function parseBatchResponse(batchResponse) {
           result.success = false;
           result.error = result.data.error;
         }
+
+        // Normalize response formats - Meta returns different field names for copy operations
+        // Standardize to 'id' field for consistency
+        if (result.data && !result.data.error) {
+          result.data.id = result.data.id || result.data.copied_adset_id || result.data.copied_campaign_id || result.data.copied_ad_id;
+        }
       } catch (e) {
         result.body = response.body;
       }
