@@ -2364,19 +2364,22 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 
       batchResults.forEach((result, index) => {
         const campaignId = remainingCampaignIds[index];
-        if (result.success && result.data.id) {
+        // Check for both id and copied_adset_id to handle different Meta API response formats
+        const adsetId = result.data?.id || result.data?.copied_adset_id;
+
+        if (result.success && adsetId) {
           created_adsets.push({
             campaign_id: campaignId,
-            adset_id: result.data.id,
+            adset_id: adsetId,
             status: "success",
           });
         } else {
-          console.error(`Failed to duplicate ad set to campaign ${campaignId}:`, result.error);
+          console.error(`Failed to duplicate ad set to campaign ${campaignId}:`, result.error || "Unknown error");
 
           failed_adsets.push({
             campaign_id: campaignId,
             status: "failed",
-            error: result.error,
+            error: result.error || { message: "Unknown error - no response data" },
           });
         }
       });
