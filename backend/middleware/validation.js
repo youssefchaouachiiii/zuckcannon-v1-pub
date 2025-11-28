@@ -833,13 +833,9 @@ export const validateRequest = {
       return res.status(400).json({ error: "campaign_ids array is required and must not be empty" });
     }
 
-    // Reuse single ad set validation logic, but make campaign_id optional since we use campaign_ids
-    const { campaign_id, ...restOfBody } = req.body;
-    const tempReq = { body: restOfBody }; // Create a temporary request object
-
-    // Temporarily remove campaign_id from required fields for validation purposes
-    const requiredFields = ["account_id", "name", "optimization_goal", "billing_event", "status"];
-    const missingFields = requiredFields.filter((field) => !tempReq.body[field]);
+    // Required fields for multi-campaign ad set creation
+    const requiredFields = ["account_id", "name", "status"];
+    const missingFields = requiredFields.filter((field) => !req.body[field]);
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -847,39 +843,147 @@ export const validateRequest = {
       });
     }
 
-    // Pass the original request to the existing validator, but handle the response inside this middleware
-    const tempRes = {
-      status: (code) => ({
-        json: (body) => {
-          // If the downstream validator finds an error, send it from here
-          res.status(code).json(body);
-        },
-      }),
-    };
+    // Validate status
+    const validStatuses = ["ACTIVE", "PAUSED"];
+    if (!validStatuses.includes(req.body.status)) {
+      return res.status(400).json({
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
 
-    // Create a mock next function to capture if validation passes
-    let validationError = null;
-    const mockNext = (err) => {
-      if (err) {
-        validationError = err;
+    // Budget validation - at least one budget type is required
+    if (!req.body.daily_budget && !req.body.lifetime_budget) {
+      return res.status(400).json({
+        error: "Either daily_budget or lifetime_budget is required",
+      });
+    }
+
+    // Validate budget values if provided
+    if (req.body.daily_budget) {
+      if (isNaN(parseFloat(req.body.daily_budget)) || parseFloat(req.body.daily_budget) <= 0) {
+        return res.status(400).json({ error: "daily_budget must be a valid number greater than 0" });
       }
-    };
-
-    // Create a temporary request object for the existing validator
-    const validationReq = { ...req };
-    // Add a dummy campaign_id to pass the createAdSet validator
-    // The actual campaign_ids array will be used in the endpoint
-    if (!validationReq.body.campaign_id && campaign_ids.length > 0) {
-      validationReq.body.campaign_id = campaign_ids[0];
     }
 
-    // Run the existing createAdSet validator
-    validateRequest.createAdSet(validationReq, tempRes, mockNext);
-
-    // If validation passed (mockNext was called without error), call the real next()
-    if (!res.headersSent) {
-      next();
+    if (req.body.lifetime_budget) {
+      if (isNaN(parseFloat(req.body.lifetime_budget)) || parseFloat(req.body.lifetime_budget) <= 0) {
+        return res.status(400).json({ error: "lifetime_budget must be a valid number greater than 0" });
+      }
     }
+
+    // Validate that both budget types are not provided at the same time
+    if (req.body.daily_budget && req.body.lifetime_budget) {
+      return res.status(400).json({
+        error: "Cannot specify both daily_budget and lifetime_budget",
+      });
+    }
+
+    // Validate end_time is required when lifetime_budget is specified
+    if (req.body.lifetime_budget && !req.body.end_time) {
+      return res.status(400).json({
+        error: "end_time is required when using lifetime_budget",
+      });
+    }
+
+    // Validate optimization_goal if provided (optional)
+    if (req.body.optimization_goal) {
+      const validOptimizationGoals = [
+        "NONE",
+        "APP_INSTALLS",
+        "AD_RECALL_LIFT",
+        "ENGAGED_USERS",
+        "EVENT_RESPONSES",
+        "IMPRESSIONS",
+        "LEAD_GENERATION",
+        "QUALITY_LEAD",
+        "LINK_CLICKS",
+        "OFFSITE_CONVERSIONS",
+        "PAGE_LIKES",
+        "POST_ENGAGEMENT",
+        "QUALITY_CALL",
+        "REACH",
+        "LANDING_PAGE_VIEWS",
+        "VISIT_INSTAGRAM_PROFILE",
+        "VALUE",
+        "THRUPLAY",
+        "DERIVED_EVENTS",
+        "APP_INSTALLS_AND_OFFSITE_CONVERSIONS",
+        "CONVERSATIONS",
+        "IN_APP_VALUE",
+        "MESSAGING_PURCHASE_CONVERSION",
+        "SUBSCRIBERS",
+        "REMINDERS_SET",
+        "MEANINGFUL_CALL_ATTEMPT",
+        "PROFILE_VISIT",
+        "MESSAGING_APPOINTMENT_CONVERSION",
+      ];
+
+      if (!validOptimizationGoals.includes(req.body.optimization_goal)) {
+        return res.status(400).json({
+          error: `Invalid optimization_goal. Must be one of: ${validOptimizationGoals.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate billing_event if provided (optional)
+    if (req.body.billing_event) {
+      const validBillingEvents = ["APP_INSTALLS", "CLICKS", "IMPRESSIONS", "LINK_CLICKS", "NONE", "OFFER_CLAIMS", "PAGE_LIKES", "POST_ENGAGEMENT", "THRUPLAY", "PURCHASE", "LISTING_INTERACTION"];
+
+      if (!validBillingEvents.includes(req.body.billing_event)) {
+        return res.status(400).json({
+          error: `Invalid billing_event. Must be one of: ${validBillingEvents.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate bid_strategy if provided (optional)
+    if (req.body.bid_strategy) {
+      const validBidStrategies = ["LOWEST_COST_WITHOUT_CAP", "LOWEST_COST_WITH_BID_CAP", "COST_CAP", "LOWEST_COST_WITH_MIN_ROAS"];
+
+      if (!validBidStrategies.includes(req.body.bid_strategy)) {
+        return res.status(400).json({
+          error: `Invalid bid_strategy. Must be one of: ${validBidStrategies.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate start_time and end_time if provided
+    if (req.body.start_time && isNaN(Date.parse(req.body.start_time))) {
+      return res.status(400).json({ error: "start_time must be a valid ISO 8601 datetime" });
+    }
+
+    if (req.body.end_time && isNaN(Date.parse(req.body.end_time))) {
+      return res.status(400).json({ error: "end_time must be a valid ISO 8601 datetime" });
+    }
+
+    // Validate age targeting if provided
+    if (req.body.min_age !== undefined) {
+      const minAge = parseInt(req.body.min_age);
+      if (isNaN(minAge) || minAge < 13 || minAge > 65) {
+        return res.status(400).json({
+          error: "min_age must be a number between 13 and 65",
+        });
+      }
+    }
+
+    if (req.body.max_age !== undefined) {
+      const maxAge = parseInt(req.body.max_age);
+      if (isNaN(maxAge) || maxAge < 13 || maxAge > 65) {
+        return res.status(400).json({
+          error: "max_age must be a number between 13 and 65",
+        });
+      }
+    }
+
+    if (req.body.min_age && req.body.max_age) {
+      if (parseInt(req.body.min_age) > parseInt(req.body.max_age)) {
+        return res.status(400).json({
+          error: "min_age cannot be greater than max_age",
+        });
+      }
+    }
+
+    next();
   },
 
   // Validate multi-account campaign creation
@@ -892,47 +996,41 @@ export const validateRequest = {
     }
 
     // Validate campaign_name
-    if (!campaign_name || typeof campaign_name !== 'string' || campaign_name.trim() === '') {
+    if (!campaign_name || typeof campaign_name !== "string" || campaign_name.trim() === "") {
       return res.status(400).json({ error: "campaign_name is required and must be a non-empty string" });
     }
 
     // Validate objective
-    const validObjectives = [
-      'OUTCOME_AWARENESS',
-      'OUTCOME_ENGAGEMENT',
-      'OUTCOME_LEADS',
-      'OUTCOME_SALES',
-      'OUTCOME_TRAFFIC'
-    ];
+    const validObjectives = ["OUTCOME_AWARENESS", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS", "OUTCOME_SALES", "OUTCOME_TRAFFIC"];
 
     if (!objective || !validObjectives.includes(objective)) {
       return res.status(400).json({
-        error: `objective is required and must be one of: ${validObjectives.join(', ')}`
+        error: `objective is required and must be one of: ${validObjectives.join(", ")}`,
       });
     }
 
     // Validate status (optional, defaults to PAUSED)
     if (status) {
-      const validStatuses = ['ACTIVE', 'PAUSED'];
+      const validStatuses = ["ACTIVE", "PAUSED"];
       if (!validStatuses.includes(status)) {
         return res.status(400).json({
-          error: `status must be one of: ${validStatuses.join(', ')}`
+          error: `status must be one of: ${validStatuses.join(", ")}`,
         });
       }
     }
 
     // Validate budget if provided
-    if (budget_type && budget_type !== 'NONE') {
-      const validBudgetTypes = ['DAILY', 'LIFETIME'];
+    if (budget_type && budget_type !== "NONE") {
+      const validBudgetTypes = ["DAILY", "LIFETIME"];
       if (!validBudgetTypes.includes(budget_type)) {
         return res.status(400).json({
-          error: `budget_type must be one of: ${validBudgetTypes.join(', ')}, NONE`
+          error: `budget_type must be one of: ${validBudgetTypes.join(", ")}, NONE`,
         });
       }
 
       if (!budget_amount || parseFloat(budget_amount) <= 0) {
         return res.status(400).json({
-          error: "budget_amount is required and must be greater than 0 when budget_type is specified"
+          error: "budget_amount is required and must be greater than 0 when budget_type is specified",
         });
       }
     }
