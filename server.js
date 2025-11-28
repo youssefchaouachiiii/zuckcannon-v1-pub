@@ -2349,23 +2349,26 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       status: "success",
     });
 
-    // 2. If there are other campaigns, duplicate the ad set
+    // 2. If there are other campaigns, create new ad sets with the same settings
     if (remainingCampaignIds.length > 0) {
-      const copyOperations = remainingCampaignIds.map((campaignId) => {
+      // Create new ad sets (not copies) to avoid "Copy of..." prefix
+      const createOperations = remainingCampaignIds.map((campaignId) => {
         const body = {
+          ...adSetPayload,
           campaign_id: campaignId,
-          status: adSetBody.status || "PAUSED", // Default to paused for copies
+          access_token: userAccessToken,
         };
-        // Use the base ad set ID for the copy operation
-        return MetaBatch.createBatchOperation("POST", `${baseAdSetId}/copies`, body);
+        // Remove the access_token from body since it's already in URL params for batch
+        delete body.access_token;
+
+        return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/adsets`, body);
       });
 
-      const batchResults = await MetaBatch.executeChunkedBatchRequest(copyOperations, userAccessToken);
+      const batchResults = await MetaBatch.executeChunkedBatchRequest(createOperations, userAccessToken);
 
       batchResults.forEach((result, index) => {
         const campaignId = remainingCampaignIds[index];
-        // Check for both id and copied_adset_id to handle different Meta API response formats
-        const adsetId = result.data?.id || result.data?.copied_adset_id;
+        const adsetId = result.data?.id;
 
         if (result.success && adsetId) {
           created_adsets.push({
@@ -2374,7 +2377,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
             status: "success",
           });
         } else {
-          console.error(`Failed to duplicate ad set to campaign ${campaignId}:`, result.error || "Unknown error");
+          console.error(`Failed to create ad set in campaign ${campaignId}:`, result.error || "Unknown error");
 
           failed_adsets.push({
             campaign_id: campaignId,
