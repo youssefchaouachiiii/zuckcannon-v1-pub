@@ -877,7 +877,7 @@ async function fetchUserAdAccounts(userAccessToken) {
         Authorization: `Bearer ${userAccessToken}`,
       },
       params: {
-        fields: "name,id,account_id",
+        fields: "name,id,account_id,business{id,name}",
       },
     });
     return { adAccounts: adAccResponse.data.data };
