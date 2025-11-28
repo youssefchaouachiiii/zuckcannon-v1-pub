@@ -10,6 +10,54 @@ body {
   color: #333;
 }
 
+/* Modal Close Warning Toast */
+.modal-close-warning {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #ff6b6b;
+  color: white;
+  padding: 16px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  animation: slideDown 0.3s ease-out, slideUp 0.3s ease-in 2.7s;
+  pointer-events: none;
+}
+
+.modal-close-warning::before {
+  content: "⚠";
+  font-size: 20px;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+}
+
 /* Header */
 header {
   padding: 20px 40px;
@@ -1626,6 +1674,164 @@ h2 {
 .duplicate-adset-dialog input[type="text"]:focus {
   outline: none;
   border-color: #103dee;
+}
+
+/* Campaign Compatibility Warning */
+.campaign-compatibility-warning {
+  color: #dc3545;
+  font-size: 13px;
+  margin: 0 0 16px 0;
+  background: #ffe6e6;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 4px solid #dc3545;
+  line-height: 1.5;
+}
+
+/* Age Section in Multi-Campaign Modal */
+.multi-campaign-adset-form .targeting-age {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.multi-campaign-adset-form .targeting-age label {
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 0;
+}
+
+.multi-campaign-adset-form .targeting-age input {
+  width: calc(50% - 4px);
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.multi-campaign-adset-form .targeting-age input:focus {
+  outline: none;
+  border-color: #4caf50;
+}
+
+/* Age Warning for Special Ad Categories */
+.age-warning {
+  color: #ff9800;
+  font-size: 13px;
+  margin-top: 8px;
+  background: #fff3e0;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #ff9800;
+  line-height: 1.5;
+}
+
+/* Event Type Container for Multi-Campaign Modal */
+.event-type-container-multi {
+  position: relative;
+  margin-top: 4px;
+}
+
+.event-type-container-multi input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.event-type-container-multi .config-event-type-multi {
+  cursor: pointer;
+}
+
+.event-type-container-multi .event-type-search-multi {
+  margin-top: 0;
+}
+
+.event-type-suggestions-multi {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.event-type-suggestions-multi li {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.event-type-suggestions-multi li:hover {
+  background: #f5f5f5;
+}
+
+.event-type-suggestions-multi .event-description {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* Cost Per Result Input for Multi-Campaign Modal */
+.cost-per-result-multi {
+  margin-top: 4px;
+}
+
+/* Ad Scheduling Container for Multi-Campaign Modal */
+.ad-scheduling-container-multi {
+  margin-top: 20px;
+}
+
+.schedule-item-multi {
+  margin-top: 15px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+}
+
+.remove-schedule-btn-multi:hover {
+  background: #c82333 !important;
+}
+
+/* Multi-Campaign Modal - Campaign List Styling */
+.multi-campaign-adset-list .account-item label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px;
+}
+
+.multi-campaign-adset-list .account-item label input[type="checkbox"] {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+/* Account Mismatch Warning */
+.account-mismatch-warning {
+  color: #dc3545;
+  font-size: 13px;
+  margin: 10px 0;
+  background: #ffe6e6;
+  padding: 10px;
+  border-radius: 4px;
+  border-left: 4px solid #dc3545;
+  line-height: 1.5;
+  font-weight: 500;
 }
 
 .duplicate-adset-dialog .dialog-close-btn {
@@ -3910,6 +4116,10 @@ h2 {
   border-radius: 4px;
 }
 
+.config-adset-name {
+  padding: 12px 16px;
+}
+
 .duplicate-choice-modal .btn-primary {
   background: #103dee;
   color: white;
@@ -4398,6 +4608,91 @@ input.bulk-adset-name {
   margin-bottom: 8px;
 }
 
+/* Dropdown containers in multi-account modal */
+.multi-account-campaign-modal .dropdown-container {
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.multi-account-campaign-modal .custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.multi-account-campaign-modal .dropdown-selected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected:hover {
+  border-color: #6f42c1;
+}
+
+.multi-account-campaign-modal .dropdown-display {
+  font-size: 14px;
+  color: #333;
+}
+
+.multi-account-campaign-modal .dropdown-display.placeholder {
+  color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options.show ~ .dropdown-selected .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.multi-account-campaign-modal .dropdown-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: none;
+}
+
+.multi-account-campaign-modal .dropdown-options.show {
+  display: block;
+}
+
+.multi-account-campaign-modal .dropdown-options li {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.15s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options li:hover {
+  background-color: #f5f5f5;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected:hover {
+  background-color: #5a35a0;
+}
+
 .multi-account-campaign-modal .form-group input,
 .multi-account-campaign-modal .form-group select {
   width: 100%;
@@ -4524,4 +4819,320 @@ input.bulk-adset-name {
 .multi-account-campaign-modal .empty-state p {
   margin: 0;
   font-size: 14px;
+}
+
+/* Dropdown styling for multi-account campaign modal */
+.multi-account-campaign-modal .dropdown-container {
+  margin-bottom: 20px;
+}
+
+.multi-account-campaign-modal .custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.multi-account-campaign-modal .dropdown-selected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected:hover {
+  border-color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-selected.open {
+  border-color: #6f42c1;
+  box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.1);
+}
+
+.multi-account-campaign-modal .dropdown-display {
+  flex: 1;
+  color: #333;
+}
+
+.multi-account-campaign-modal .dropdown-display.placeholder {
+  color: #999;
+}
+
+.multi-account-campaign-modal .dropdown-arrow {
+  margin-left: 8px;
+  transition: transform 0.2s ease;
+}
+
+.multi-account-campaign-modal .dropdown-selected.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.multi-account-campaign-modal .dropdown-options {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.multi-account-campaign-modal .dropdown-options.show {
+  display: block;
+}
+
+.multi-account-campaign-modal .dropdown-options li {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.15s ease;
+}
+
+.multi-account-campaign-modal .dropdown-options li:hover {
+  background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected {
+  background-color: #e8e0f5;
+  color: #6f42c1;
+  font-weight: 500;
+}
+
+.multi-account-campaign-modal .dropdown-options li.selected:hover {
+  background-color: #dcd0f0;
+}
+
+/* Multi-Campaign Ad Set Modal - Step 5 Ad Copy Form Styles */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .multi-campaign-ad-copy-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+/* Text inputs and textareas */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="text"],
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="url"],
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  background: white;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="text"]:focus,
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="url"]:focus,
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] textarea:focus {
+  outline: none;
+  border-color: #103dee;
+  box-shadow: 0 0 0 3px rgba(16, 61, 238, 0.1);
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="text"]::placeholder,
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[type="url"]::placeholder,
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] textarea::placeholder {
+  color: #999;
+}
+
+/* Primary text textarea */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .multi-campaign-primary-text {
+  min-height: 100px;
+  max-height: 200px;
+  resize: vertical;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+/* Dropdown containers */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-container {
+  position: relative;
+}
+
+/* Custom dropdown selected state */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-selected {
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-selected:hover {
+  border-color: #bbb;
+  background: #fafafa;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-selected.open {
+  border-color: #103dee;
+  box-shadow: 0 0 0 3px rgba(16, 61, 238, 0.1);
+}
+
+/* Dropdown display text */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-display {
+  font-size: 14px;
+  color: #333;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-display.placeholder {
+  color: #999;
+}
+
+/* Dropdown arrow */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-arrow {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .custom-dropdown .dropdown-selected.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+/* Dropdown options list */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .multi-campaign-ad-copy-form .dropdown-options {
+  max-height: 250px;
+  overflow-y: auto;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  margin-top: -1px;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options::-webkit-scrollbar-thumb:hover {
+  background: #103dee;
+}
+
+/* Dropdown option items */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options li {
+  padding: 12px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options li:last-child {
+  border-bottom: none;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options li:hover {
+  background-color: #f0f4ff;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .dropdown-options li.selected {
+  background-color: #e8f2ff;
+  color: #103dee;
+  font-weight: 500;
+}
+
+/* Action buttons styling */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .bulk-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 20px 0 0 0;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .btn-secondary {
+  padding: 12px 24px;
+  background: #f8f9fa;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .btn-secondary:hover {
+  background: #e9ecef;
+  border-color: #bbb;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .btn-primary {
+  padding: 12px 24px;
+  background: #103dee;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .btn-primary:hover {
+  background: #0d32c4;
+  box-shadow: 0 2px 8px rgba(16, 61, 238, 0.3);
+}
+
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Required field indicator */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] input[required]::placeholder::after,
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] textarea[required]::placeholder::after {
+  content: " *";
+  color: #dc3545;
+}
+
+/* Empty/error state */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] .empty-input {
+  border-color: #dc3545 !important;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1) !important;
+}
+
+/* Form field labels (if needed) */
+.multi-campaign-adset-modal .bulk-duplicate-step[data-step="5"] label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 6px;
 }
