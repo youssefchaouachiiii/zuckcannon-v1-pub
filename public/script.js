@@ -4,6 +4,40 @@ let campaignAdSets = {};
 let campaignSelectGroup = null; // Store the SingleSelectGroup instance for campaigns
 
 // ============================================
+// MODAL CLOSE WARNING UTILITY
+// ============================================
+
+/**
+ * Show a warning notification when user tries to close modal by clicking outside
+ * This prevents accidental data loss
+ */
+let warningTimeout = null;
+function showModalCloseWarning() {
+  // Prevent multiple calls within short time window (debounce)
+  if (warningTimeout) {
+    return; // Already showing a warning
+  }
+
+  // Remove any existing warning first
+  const existingWarnings = document.querySelectorAll(".modal-close-warning");
+  existingWarnings.forEach((w) => w.remove());
+
+  // Create warning element
+  const warning = document.createElement("div");
+  warning.className = "modal-close-warning";
+  warning.textContent = "Please use the close button (×) to exit the modal";
+  document.body.appendChild(warning);
+
+  // Set timeout flag to prevent multiple warnings
+  warningTimeout = setTimeout(() => {
+    if (warning.parentNode) {
+      warning.remove();
+    }
+    warningTimeout = null; // Clear the flag
+  }, 3000);
+}
+
+// ============================================
 // CAMPAIGN OBJECTIVE TO OPTIMIZATION GOAL MAPPING
 // ============================================
 
@@ -1159,10 +1193,10 @@ class SingleSelectGroup {
       this.duplicateAdSet(adSet.id, nameInput.value.trim(), dialog.dataset.deepCopy === "true");
     };
 
-    // Close dialog on background click or close button click
+    // Prevent dialog close on background click - show warning instead
     dialog.onclick = (e) => {
       if (e.target === dialog) {
-        dialog.style.display = "none";
+        showModalCloseWarning();
       }
     };
 
@@ -2208,10 +2242,10 @@ SingleSelectGroup.prototype.showDuplicateCampaignDialog = function (campaign) {
     this.duplicateCampaign(campaign.id, nameInput.value.trim(), dialog.dataset.deepCopy === "true", campaign.account_id);
   };
 
-  // Close dialog on background click or close button click
+  // Prevent dialog close on background click - show warning instead
   dialog.onclick = (e) => {
     if (e.target === dialog) {
-      dialog.style.display = "none";
+      showModalCloseWarning();
     }
   };
   const closeBtn = dialog.querySelector(".dialog-close-btn");
@@ -4744,12 +4778,20 @@ class CreativeLibrary {
     const closeBtn = this.modal.querySelector(".modal-close-btn");
     closeBtn.addEventListener("click", () => this.closeLibrary());
 
-    // Click outside modal to close
+    // Prevent click outside modal to close - show warning instead
     this.modal.addEventListener("click", (e) => {
       if (e.target === this.modal) {
-        this.closeLibrary();
+        showModalCloseWarning();
       }
     });
+
+    // Prevent clicks inside modal content from bubbling
+    const modalContent = this.modal.querySelector(".modal-content");
+    if (modalContent) {
+      modalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
 
     // Search functionality
     const searchInput = this.modal.querySelector(".library-search");
@@ -6356,10 +6398,10 @@ function openCreateCampaignDialog() {
     };
   }
 
-  // Close dialog on background click
+  // Prevent dialog close on background click - show warning instead
   dialog.onclick = (e) => {
     if (e.target === dialog) {
-      hideCampaignCreationColumn();
+      showModalCloseWarning();
     }
   };
 
@@ -6839,9 +6881,17 @@ function setupBulkUploadListeners() {
   if (modal) {
     modal.addEventListener("click", (e) => {
       if (e.target === modal) {
-        modal.style.display = "none";
+        showModalCloseWarning();
       }
     });
+
+    // Prevent clicks inside modal content from bubbling
+    const modalContent = modal.querySelector(".modal-content");
+    if (modalContent) {
+      modalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
   }
 
   // Select/Deselect all
@@ -7430,7 +7480,7 @@ class AutomatedRulesManager {
 
     this.choiceModal.addEventListener("click", (e) => {
       if (e.target === this.choiceModal) {
-        closeChoiceModal();
+        showModalCloseWarning();
       }
     });
     this.choiceModal.querySelector(".dialog-close-btn").addEventListener("click", closeChoiceModal);
@@ -7462,12 +7512,28 @@ class AutomatedRulesManager {
 
     // Click outside to close
     this.rulesModal.addEventListener("click", (e) => {
-      if (e.target === this.rulesModal) this.closeModal();
+      if (e.target === this.rulesModal) showModalCloseWarning();
     });
 
+    // Prevent clicks inside rules modal content from bubbling
+    const rulesModalContent = this.rulesModal.querySelector(".modal-content");
+    if (rulesModalContent) {
+      rulesModalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
+
     this.editorModal.addEventListener("click", (e) => {
-      if (e.target === this.editorModal) this.closeEditor();
+      if (e.target === this.editorModal) showModalCloseWarning();
     });
+
+    // Prevent clicks inside editor modal content from bubbling
+    const editorModalContent = this.editorModal.querySelector(".modal-content");
+    if (editorModalContent) {
+      editorModalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
 
     // Create rule button (single account)
     this.rulesModal.querySelector(".create-rule-btn").addEventListener("click", () => {
@@ -9152,6 +9218,12 @@ function setupBulkCampaignDuplicateListeners() {
   const modal = document.querySelector(".bulk-duplicate-campaign-modal");
   if (!modal) return;
 
+  // Prevent double initialization
+  if (modal.dataset.initialized === "true") {
+    return;
+  }
+  modal.dataset.initialized = "true";
+
   // Close button
   const closeBtn = modal.querySelector(".bulk-duplicate-campaign-close");
   if (closeBtn) {
@@ -9160,12 +9232,20 @@ function setupBulkCampaignDuplicateListeners() {
     });
   }
 
-  // Click outside to close
+  // Prevent click outside to close - show warning instead
   modal.addEventListener("click", (e) => {
     if (e.target === modal) {
-      modal.style.display = "none";
+      showModalCloseWarning();
     }
   });
+
+  // Prevent clicks inside modal content from bubbling
+  const modalContent = modal.querySelector(".modal-content");
+  if (modalContent) {
+    modalContent.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
 
   // Campaign name input
   const nameInput = modal.querySelector(".bulk-campaign-name");
@@ -9702,6 +9782,12 @@ function setupBulkAdSetDuplicateListeners() {
   const modal = document.querySelector(".bulk-duplicate-adset-modal");
   if (!modal) return;
 
+  // Prevent double initialization
+  if (modal.dataset.initialized === "true") {
+    return;
+  }
+  modal.dataset.initialized = "true";
+
   // Close button
   const closeBtn = modal.querySelector(".bulk-duplicate-adset-close");
   if (closeBtn) {
@@ -9710,12 +9796,20 @@ function setupBulkAdSetDuplicateListeners() {
     });
   }
 
-  // Click outside to close
+  // Prevent click outside to close - show warning instead
   modal.addEventListener("click", (e) => {
     if (e.target === modal) {
-      modal.style.display = "none";
+      showModalCloseWarning();
     }
   });
+
+  // Prevent clicks inside modal content from bubbling
+  const modalContent = modal.querySelector(".modal-content");
+  if (modalContent) {
+    modalContent.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
 
   // Ad set name input
   const nameInput = modal.querySelector(".bulk-adset-name");
@@ -9816,6 +9910,16 @@ function setupMultiCampaignAdSetModal() {
   console.log("[Multi-Campaign AdSet] Initializing modal...");
 
   const modal = document.querySelector(".multi-campaign-adset-modal");
+
+  // Prevent double initialization
+  if (modal && modal.dataset.initialized === "true") {
+    console.log("[Multi-Campaign AdSet] Already initialized, skipping...");
+    return;
+  }
+
+  if (modal) {
+    modal.dataset.initialized = "true";
+  }
   const openBtn = document.querySelector(".create-multi-adset-btn");
   const closeBtn = document.querySelector(".multi-campaign-adset-close");
   const cancelBtn = document.querySelector(".multi-campaign-adset-cancel");
@@ -9928,6 +10032,23 @@ function setupMultiCampaignAdSetModal() {
 
   if (closeBtn) closeBtn.addEventListener("click", closeModal);
   if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+
+  // Prevent click outside to close - show warning instead
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        showModalCloseWarning();
+      }
+    });
+
+    // Prevent clicks inside modal content from bubbling
+    const modalContent = modal.querySelector(".modal-content");
+    if (modalContent) {
+      modalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
+  }
 
   // Populate campaign list
   function populateCampaignList(campaigns) {
@@ -10798,16 +10919,24 @@ function setupMultiAccountCampaignModal() {
 
   const modal = document.querySelector(".multi-account-campaign-modal");
   const openBtn = document.querySelector(".create-multi-account-campaign-btn");
-  const closeBtn = modal?.querySelector(".close-btn");
-  const cancelBtn = modal?.querySelector(".btn-cancel");
-  const nextBtn = modal?.querySelector(".btn-next");
-  const backBtn = modal?.querySelector(".btn-back");
-  const createBtn = modal?.querySelector(".btn-create");
 
   if (!modal || !openBtn) {
     console.warn("[Multi-Account Campaign] Modal or button not found");
     return;
   }
+
+  // Prevent double initialization
+  if (modal.dataset.initialized === "true") {
+    console.log("[Multi-Account Campaign] Already initialized, skipping...");
+    return;
+  }
+  modal.dataset.initialized = "true";
+
+  const closeBtn = modal.querySelector(".close-btn");
+  const cancelBtn = modal.querySelector(".btn-cancel");
+  const nextBtn = modal.querySelector(".btn-next");
+  const backBtn = modal.querySelector(".btn-back");
+  const createBtn = modal.querySelector(".btn-create");
 
   const step1 = modal.querySelector(".step-1");
   const step2 = modal.querySelector(".step-2");
@@ -10853,12 +10982,20 @@ function setupMultiAccountCampaignModal() {
   closeBtn?.addEventListener("click", closeModal);
   cancelBtn?.addEventListener("click", closeModal);
 
-  // Close on overlay click
+  // Prevent close on overlay click - show warning instead
   modal.addEventListener("click", (e) => {
     if (e.target === modal) {
-      closeModal();
+      showModalCloseWarning();
     }
   });
+
+  // Prevent clicks inside modal content from bubbling
+  const modalContent = modal.querySelector(".modal-content");
+  if (modalContent) {
+    modalContent.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
 
   // Step navigation
   function showStep(step) {
