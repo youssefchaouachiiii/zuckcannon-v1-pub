@@ -2785,39 +2785,103 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (deep_copy && totalAdsCount > 0) {
         console.log(`Duplicating ${totalAdsCount} ads to new ad set ${newAdSetId}`);
 
-        // Use batch requests for ads
-        const FormData = (await import("form-data")).default;
-        const batchOperations = adsData.map((ad) => ({
-          method: "POST",
-          relative_url: `${ad.id}/copies`,
-          body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
-        }));
+        // For cross-account, we need to fetch full ad details and recreate them
+        // Cannot use /copies endpoint across accounts
+        console.log("⚠️ Cross-account ad duplication: fetching full ad details...");
 
-        // Send in chunks
+        const FormData = (await import("form-data")).default;
+        const batchOperations = [];
+
+        // Fetch full details for each ad
+        for (const ad of adsData) {
+          try {
+            const adDetailsUrl = `https://graph.facebook.com/${api_version}/${ad.id}`;
+            const adDetailsResponse = await axios.get(adDetailsUrl, {
+              params: {
+                fields: "name,adcreatives{id,name,object_story_spec,image_url,image_hash,video_id,thumbnail_url}",
+                access_token: userAccessToken,
+              },
+            });
+
+            const sourceAd = adDetailsResponse.data;
+            const adCreative = sourceAd.adcreatives?.data?.[0];
+
+            if (!adCreative) {
+              console.log(`⚠️ Ad ${ad.id} has no creative, skipping...`);
+              continue;
+            }
+
+            // Build batch operation to create new ad with creative
+            // We need to create ad creative first, then ad
+            const createAdCreativeOp = {
+              name: `create_creative_${ad.id}`,
+              method: "POST",
+              relative_url: `act_${normalizedAccountId}/adcreatives`,
+              body: `name=${encodeURIComponent(adCreative.name || `${ad.name} Creative`)}&object_story_spec=${encodeURIComponent(JSON.stringify(adCreative.object_story_spec || {}))}`,
+            };
+
+            const createAdOp = {
+              name: `create_ad_${ad.id}`,
+              method: "POST",
+              relative_url: `act_${normalizedAccountId}/ads`,
+              body: `name=${encodeURIComponent(sourceAd.name || ad.name)}&adset_id=${newAdSetId}&creative={creative_id:{result=create_creative_${ad.id}:$.id}}&status=${status_option || "PAUSED"}`,
+            };
+
+            batchOperations.push(createAdCreativeOp);
+            batchOperations.push(createAdOp);
+
+          } catch (err) {
+            console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
+          }
+        }
+
+        if (batchOperations.length === 0) {
+          console.log("⚠️ No ads to duplicate (no creatives found)");
+          return res.json({
+            success: true,
+            mode: "cross_account_sync",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            message: "Ad set created successfully, but no ads could be duplicated (no creatives found)",
+          });
+        }
+
+        // Send batch operations in chunks
         const chunkSize = 50;
-        const batchIds = [];
 
         for (let i = 0; i < batchOperations.length; i += chunkSize) {
           const chunk = batchOperations.slice(i, i + chunkSize);
           const formData = new FormData();
           formData.append("access_token", userAccessToken);
           formData.append("batch", JSON.stringify(chunk));
-          formData.append("is_parallel", "true");
 
-          const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+          try {
+            const batchResponse = await axios.post(
+              `https://graph.facebook.com/${api_version}/`,
+              formData,
+              { headers: formData.getHeaders(), timeout: 30000 }
+            );
 
-          const batchId = batchResponse.data?.id || batchResponse.data?.async_batch_request_id || null;
-          batchIds.push(batchId);
+            console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
+
+            // For synchronous batch (not async), response is immediate
+            const batchResults = batchResponse.data;
+            if (Array.isArray(batchResults)) {
+              console.log(`Batch results: ${batchResults.filter(r => r.code === 200).length}/${batchResults.length} successful`);
+            }
+
+          } catch (err) {
+            console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
+          }
         }
 
         return res.json({
           success: true,
-          mode: "cross_account_async",
+          mode: "cross_account_sync_batch",
           id: newAdSetId,
           original_id: ad_set_id,
-          batchRequestIds: batchIds,
-          adsCount: totalAdsCount,
-          message: `Ad set created in target account. ${totalAdsCount} ads are being duplicated asynchronously.`,
+          adsCount: batchOperations.length / 2, // Each ad = 2 operations (creative + ad)
+          message: `Ad set created in target account. ${batchOperations.length / 2} ads duplicated via batch request.`,
         });
       }
 
