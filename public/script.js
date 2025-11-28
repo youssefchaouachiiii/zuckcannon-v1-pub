@@ -9758,7 +9758,7 @@ async function loadCampaignsForSelectedAccounts() {
         return false;
       }
 
-      // Check special ad categories match
+      // Check special ad categories compatibility
       let campaignCategories = campaign.special_ad_categories || [];
       try {
         if (typeof campaignCategories === 'string') {
@@ -9772,12 +9772,26 @@ async function loadCampaignsForSelectedAccounts() {
         campaignCategories = [];
       }
 
-      // Compare arrays
-      if (campaignCategories.length !== sourceSpecialCategories.length) {
+      // Rule: Source has special categories -> Campaign must have the SAME categories
+      // Rule: Source has NO special categories -> Campaign must also have NO special categories
+      const sourceHasCategories = sourceSpecialCategories.length > 0;
+      const campaignHasCategories = campaignCategories.length > 0;
+
+      // Both must have the same "has categories" state
+      if (sourceHasCategories !== campaignHasCategories) {
         return false;
       }
 
-      return campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
+      // If both have categories, they must be exactly the same
+      if (sourceHasCategories && campaignHasCategories) {
+        if (campaignCategories.length !== sourceSpecialCategories.length) {
+          return false;
+        }
+        return campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
+      }
+
+      // If both have no categories, they're compatible
+      return true;
     };
 
     // Group campaigns by account_id with compatibility filtering
@@ -10881,201 +10895,34 @@ function setupMultiCampaignAdSetModal() {
     }
   }
 
-  // Populate campaign list
-  // Track selected group for preventing incompatible selections
-  let selectedGroupKey = null;
-
-  // Get campaign compatibility key for grouping
-  function getCampaignCompatibilityKey(campaign) {
-    const objective = campaign.element?.dataset?.objective || 'UNKNOWN';
-    let specialCategories = campaign.element?.dataset?.specialAdCategories || '[]';
-
-    // Parse and normalize special categories
-    try {
-      let categories = JSON.parse(specialCategories);
-      if (!Array.isArray(categories)) categories = [];
-      categories.sort(); // Ensure consistent order
-      specialCategories = JSON.stringify(categories);
-    } catch (e) {
-      specialCategories = '[]';
-    }
-
-    return `${objective}|${specialCategories}`;
-  }
-
-  // Group campaigns by compatibility
-  function groupCampaignsByCompatibility(campaigns) {
-    const groups = {};
-
-    campaigns.forEach(campaign => {
-      const key = getCampaignCompatibilityKey(campaign);
-      if (!groups[key]) {
-        const objective = campaign.element?.dataset?.objective || 'Unknown';
-        let specialCategories = [];
-        try {
-          specialCategories = JSON.parse(campaign.element?.dataset?.specialAdCategories || '[]');
-        } catch (e) {
-          specialCategories = [];
-        }
-
-        groups[key] = {
-          key: key,
-          objective: objective,
-          specialCategories: specialCategories,
-          campaigns: []
-        };
-      }
-      groups[key].campaigns.push(campaign);
-    });
-
-    return Object.values(groups);
-  }
-
-  // Populate campaign list with visual grouping
+  // Populate campaign list (simple version without grouping)
   function populateCampaignList(campaigns) {
     const listContainer = document.querySelector(".multi-campaign-adset-list");
     listContainer.innerHTML = "";
 
-    // Group campaigns
-    const groups = groupCampaignsByCompatibility(campaigns);
-
-    // Render each group
-    groups.forEach(group => {
-      const groupDiv = document.createElement("div");
-      groupDiv.className = "campaign-group";
-      groupDiv.dataset.groupKey = group.key;
-
-      // Group header
-      const headerDiv = document.createElement("div");
-      headerDiv.className = "group-header";
-
-      const specialCatText = group.specialCategories.length > 0
-        ? ` (${group.specialCategories.join(', ')})`
-        : ' (No Special Categories)';
-
-      headerDiv.innerHTML = `
-        <span class="group-icon">📁</span>
-        <span class="group-title">${getObjectiveFriendlyName(group.objective)}${specialCatText}</span>
-        <span class="group-count">(${group.campaigns.length} campaign${group.campaigns.length > 1 ? 's' : ''})</span>
+    campaigns.forEach((campaign) => {
+      const item = document.createElement("div");
+      item.className = "account-item";
+      item.innerHTML = `
+        <label>
+          <input type="checkbox" value="${campaign.id}"
+                 data-campaign-name="${campaign.name}"
+                 data-account-id="${campaign.accountId || ""}"
+                 data-objective="${campaign.element?.dataset?.objective || ""}"
+                 data-special-ad-categories="${campaign.element?.dataset?.specialAdCategories || '[]'}">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-weight: 500;">${campaign.name}</span>
+            <small style="color: #666; font-size: 11px;">${campaign.accountName || "Unknown Account"} • ${campaign.status}</small>
+          </div>
+        </label>
       `;
-
-      // Group campaigns
-      const campaignsDiv = document.createElement("div");
-      campaignsDiv.className = "group-campaigns";
-
-      group.campaigns.forEach((campaign) => {
-        const item = document.createElement("div");
-        item.className = "account-item";
-        item.dataset.groupKey = group.key;
-        item.innerHTML = `
-          <label>
-            <input type="checkbox" value="${campaign.id}"
-                   data-campaign-name="${campaign.name}"
-                   data-account-id="${campaign.accountId || ""}"
-                   data-group-key="${group.key}">
-            <div style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-weight: 500;">${campaign.name}</span>
-              <small style="color: #666; font-size: 11px;">${campaign.accountName || "Unknown Account"} • ${campaign.status}</small>
-            </div>
-          </label>
-        `;
-        campaignsDiv.appendChild(item);
-      });
-
-      groupDiv.appendChild(headerDiv);
-      groupDiv.appendChild(campaignsDiv);
-      listContainer.appendChild(groupDiv);
+      listContainer.appendChild(item);
     });
 
-    // Attach checkbox listeners with group validation
+    // Attach checkbox listeners
     const checkboxes = listContainer.querySelectorAll('input[type="checkbox"]');
     checkboxes.forEach((cb) => {
-      cb.addEventListener("change", handleCampaignSelection);
-    });
-  }
-
-  // Handle campaign selection with group restriction
-  function handleCampaignSelection(event) {
-    const checkbox = event.target;
-    const groupKey = checkbox.dataset.groupKey;
-
-    if (checkbox.checked) {
-      // First selection - set the selected group
-      if (selectedGroupKey === null) {
-        selectedGroupKey = groupKey;
-        disableIncompatibleGroups(groupKey);
-      }
-      // Check if trying to select from different group
-      else if (selectedGroupKey !== groupKey) {
-        checkbox.checked = false;
-        window.showError?.(
-          '⚠️ Cannot select campaigns from different groups!\n\n' +
-          'You can only select campaigns with:\n' +
-          '• Same objective\n' +
-          '• Same special ad categories\n\n' +
-          'Please deselect all to choose from a different group.',
-          6000
-        );
-        return;
-      }
-    } else {
-      // If unchecking, check if any campaigns still selected in this group
-      const remainingChecked = document.querySelectorAll(
-        `.multi-campaign-adset-list input[type="checkbox"][data-group-key="${groupKey}"]:checked`
-      );
-
-      if (remainingChecked.length === 0) {
-        // No more selections, re-enable all groups
-        selectedGroupKey = null;
-        enableAllGroups();
-      }
-    }
-
-    updateSelectedCount();
-  }
-
-  // Disable groups that are incompatible with selected group
-  function disableIncompatibleGroups(selectedGroupKey) {
-    document.querySelectorAll('.campaign-group').forEach(group => {
-      if (group.dataset.groupKey !== selectedGroupKey) {
-        group.classList.add('disabled');
-        group.querySelector('.group-header').classList.add('disabled');
-        group.querySelector('.group-campaigns').classList.add('disabled');
-
-        // Disable checkboxes
-        group.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-          cb.disabled = true;
-        });
-
-        // Add incompatible badge
-        const items = group.querySelectorAll('.account-item');
-        items.forEach(item => {
-          if (!item.querySelector('.incompatible-badge')) {
-            const badge = document.createElement('span');
-            badge.className = 'incompatible-badge';
-            badge.textContent = 'Incompatible';
-            badge.style.cssText = 'display: inline-block; margin-left: 8px; padding: 2px 8px; background: #ff9800; color: white; font-size: 11px; border-radius: 12px;';
-            item.querySelector('label').appendChild(badge);
-          }
-        });
-      }
-    });
-  }
-
-  // Re-enable all groups
-  function enableAllGroups() {
-    document.querySelectorAll('.campaign-group').forEach(group => {
-      group.classList.remove('disabled');
-      group.querySelector('.group-header')?.classList.remove('disabled');
-      group.querySelector('.group-campaigns')?.classList.remove('disabled');
-
-      // Enable checkboxes
-      group.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.disabled = false;
-      });
-
-      // Remove incompatible badges
-      group.querySelectorAll('.incompatible-badge').forEach(badge => badge.remove());
+      cb.addEventListener("change", updateSelectedCount);
     });
   }
 
@@ -11086,50 +10933,21 @@ function setupMultiCampaignAdSetModal() {
       const filtered = allCampaigns.filter((c) => c.name.toLowerCase().includes(query) || c.status.toLowerCase().includes(query));
       populateCampaignList(filtered);
 
-      // Restore checked state and group locking
+      // Restore checked state
       const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
       checkboxes.forEach((cb) => {
         if (selectedCampaignIds.includes(cb.value)) {
           cb.checked = true;
         }
       });
-
-      // Restore group locking if there are selections
-      if (selectedGroupKey !== null) {
-        disableIncompatibleGroups(selectedGroupKey);
-      }
     });
   }
 
-  // Select/Deselect All with group respect
+  // Select/Deselect All
   if (selectAllBtn) {
     selectAllBtn.addEventListener("click", () => {
-      // Only select from enabled groups (not disabled)
-      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]:not(:disabled)');
-
-      if (checkboxes.length > 0) {
-        // If no group is locked yet, select first group only
-        if (selectedGroupKey === null && checkboxes.length > 0) {
-          const firstGroupKey = checkboxes[0].dataset.groupKey;
-          selectedGroupKey = firstGroupKey;
-
-          checkboxes.forEach((cb) => {
-            if (cb.dataset.groupKey === firstGroupKey) {
-              cb.checked = true;
-            }
-          });
-
-          disableIncompatibleGroups(firstGroupKey);
-        } else {
-          // Group already locked, select all from that group
-          checkboxes.forEach((cb) => {
-            if (cb.dataset.groupKey === selectedGroupKey) {
-              cb.checked = true;
-            }
-          });
-        }
-      }
-
+      const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
+      checkboxes.forEach((cb) => (cb.checked = true));
       updateSelectedCount();
     });
   }
@@ -11138,11 +10956,6 @@ function setupMultiCampaignAdSetModal() {
     deselectAllBtn.addEventListener("click", () => {
       const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]');
       checkboxes.forEach((cb) => (cb.checked = false));
-
-      // Reset group locking
-      selectedGroupKey = null;
-      enableAllGroups();
-
       updateSelectedCount();
     });
   }
@@ -11155,31 +10968,9 @@ function setupMultiCampaignAdSetModal() {
     const countEl = document.querySelector(".multi-campaign-adset-selected-count");
     if (countEl) countEl.textContent = selectedCampaignIds.length;
 
-    // Check if campaigns are from different accounts
-    const selectedAccountIds = [...new Set(Array.from(checkboxes).map((cb) => cb.dataset.accountId))];
-    const warningEl = document.querySelector(".account-mismatch-warning");
-
-    if (selectedAccountIds.length > 1 && selectedAccountIds[0] !== "") {
-      // Show warning if multiple accounts detected
-      if (!warningEl) {
-        const warning = document.createElement("div");
-        warning.className = "account-mismatch-warning";
-        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-        warning.textContent = "⚠️ Warning: You've selected campaigns from different ad accounts. This will cause creation failures. Please select campaigns from the same account only.";
-        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
-        if (formHelp) {
-          formHelp.parentNode.insertBefore(warning, formHelp);
-        }
-      }
-      // Disable next button
-      if (nextBtn) nextBtn.disabled = true;
-    } else {
-      // Remove warning if it exists
-      if (warningEl) warningEl.remove();
-      // Enable/disable next button based on selection count
-      if (nextBtn) {
-        nextBtn.disabled = selectedCampaignIds.length === 0;
-      }
+    // Enable/disable next button based on selection count only
+    if (nextBtn) {
+      nextBtn.disabled = selectedCampaignIds.length === 0;
     }
   }
 
@@ -11188,27 +10979,102 @@ function setupMultiCampaignAdSetModal() {
     nextBtn.addEventListener("click", () => {
       console.log("[Multi-Campaign AdSet] Moving to step 2. Selected campaigns:", selectedCampaignIds);
 
-      // Update summary
+      // VALIDATION ON SUBMIT
       const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]:checked');
+      const selectedCampaigns = allCampaigns.filter((c) => selectedCampaignIds.includes(c.id));
+
+      // Remove any existing warnings
+      const existingWarning = document.querySelector(".account-mismatch-warning");
+      if (existingWarning) existingWarning.remove();
+
+      // VALIDATION 1: Check all campaigns from same account
+      const accountIds = [...new Set(Array.from(checkboxes).map((cb) => cb.dataset.accountId))];
+      if (accountIds.length > 1 && accountIds[0] !== "") {
+        const warning = document.createElement("div");
+        warning.className = "account-mismatch-warning";
+        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+        warning.textContent = "⚠️ Warning: You've selected campaigns from different ad accounts. This will cause creation failures. Please select campaigns from the same account only.";
+        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+        if (formHelp) {
+          formHelp.parentNode.insertBefore(warning, formHelp);
+        }
+        return; // Stop here, don't proceed
+      }
+
+      // VALIDATION 2: Check all campaigns have same objective
+      const objectives = [...new Set(selectedCampaigns.map((c) => c.element?.dataset?.objective || "UNKNOWN"))];
+      if (objectives.length > 1) {
+        const warning = document.createElement("div");
+        warning.className = "account-mismatch-warning";
+        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+        warning.textContent = `⚠️ Warning: You've selected campaigns with different objectives (${objectives.map(o => getObjectiveFriendlyName(o)).join(", ")}). This will cause creation failures. Please select campaigns with the same objective.`;
+        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+        if (formHelp) {
+          formHelp.parentNode.insertBefore(warning, formHelp);
+        }
+        return; // Stop here, don't proceed
+      }
+
+      // VALIDATION 3: Check special ad categories compatibility
+      // Rule: Either ALL campaigns have special ad categories, or NONE have them
+      const campaignsWithSpecialCat = [];
+      const campaignsWithoutSpecialCat = [];
+
+      selectedCampaigns.forEach((c) => {
+        const specialCategoriesStr = c.element?.dataset?.specialAdCategories || '[]';
+        try {
+          const categories = JSON.parse(specialCategoriesStr);
+          if (Array.isArray(categories) && categories.length > 0) {
+            campaignsWithSpecialCat.push({ name: c.name, categories });
+          } else {
+            campaignsWithoutSpecialCat.push(c.name);
+          }
+        } catch (e) {
+          campaignsWithoutSpecialCat.push(c.name);
+        }
+      });
+
+      // If we have both (some with, some without), show error
+      if (campaignsWithSpecialCat.length > 0 && campaignsWithoutSpecialCat.length > 0) {
+        const warning = document.createElement("div");
+        warning.className = "account-mismatch-warning";
+        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+        warning.innerHTML = `⚠️ Warning: Mixed special ad category settings detected.<br><br>` +
+          `Campaigns WITH special ad categories (${campaignsWithSpecialCat.length}): ${campaignsWithSpecialCat.map(c => c.name).join(", ")}<br><br>` +
+          `Campaigns WITHOUT special ad categories (${campaignsWithoutSpecialCat.length}): ${campaignsWithoutSpecialCat.join(", ")}<br><br>` +
+          `Please select campaigns that either ALL have special ad categories or NONE have them.`;
+        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+        if (formHelp) {
+          formHelp.parentNode.insertBefore(warning, formHelp);
+        }
+        return; // Stop here, don't proceed
+      }
+
+      // If all campaigns have special ad categories, check they all have the SAME categories
+      if (campaignsWithSpecialCat.length > 0) {
+        const firstCampaignCats = JSON.stringify(campaignsWithSpecialCat[0].categories.sort());
+        const allSame = campaignsWithSpecialCat.every(c => JSON.stringify(c.categories.sort()) === firstCampaignCats);
+
+        if (!allSame) {
+          const warning = document.createElement("div");
+          warning.className = "account-mismatch-warning";
+          warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+          warning.innerHTML = `⚠️ Warning: Campaigns have different special ad categories.<br><br>` +
+            campaignsWithSpecialCat.map(c => `• ${c.name}: ${c.categories.join(", ")}`).join('<br>') + '<br><br>' +
+            `Please select campaigns with the same special ad categories.`;
+          const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+          if (formHelp) {
+            formHelp.parentNode.insertBefore(warning, formHelp);
+          }
+          return; // Stop here, don't proceed
+        }
+      }
+
+      // ALL VALIDATIONS PASSED - Proceed to Step 2
       const campaignNames = Array.from(checkboxes).map((cb) => cb.dataset.campaignName);
       const summary = document.querySelector(".selected-campaigns-summary");
       if (summary) {
         summary.textContent = `${selectedCampaignIds.length} campaign${selectedCampaignIds.length > 1 ? "s" : ""} (${campaignNames.join(", ")})`;
-      }
-
-      // Show campaign compatibility warnings
-      const selectedCampaigns = allCampaigns.filter((c) => selectedCampaignIds.includes(c.id));
-      const objectives = [...new Set(selectedCampaigns.map((c) => c.element?.dataset?.objective || "UNKNOWN"))];
-
-      if (objectives.length > 1) {
-        const warningDiv = document.createElement("div");
-        warningDiv.className = "campaign-compatibility-warning";
-        warningDiv.style.cssText = 'style="color: rgb(255, 152, 0); font-size: 13px; margin-top: 8px; background: rgb(255, 243, 224); padding: 8px; border-radius: 4px; border-left: 3px solid rgb(255, 152, 0);';
-        warningDiv.textContent = `⚠️ Warning: Selected campaigns have different objectives (${objectives.join(", ")}). This may cause ad set creation failures. Consider selecting campaigns with the same objective.`;
-        const form = document.querySelector(".multi-campaign-adset-form");
-        if (form && !form.querySelector(".campaign-compatibility-warning")) {
-          form.insertBefore(warningDiv, form.firstChild);
-        }
       }
 
       // Check for special ad categories
