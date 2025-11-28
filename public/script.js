@@ -3,6 +3,16 @@ let pixelList;
 let campaignAdSets = {};
 let campaignSelectGroup = null; // Store the SingleSelectGroup instance for campaigns
 
+// Global storage for multi-campaign ad set creation results
+window.multiCampaignAdSetResults = {
+  isActive: false,
+  account_id: null,
+  created_adsets: [],
+  failed_adsets: [],
+  total_created: 0,
+  total_failed: 0,
+};
+
 // ============================================
 // MODAL CLOSE WARNING UTILITY
 // ============================================
@@ -1485,6 +1495,7 @@ class CustomDropdown {
     display.textContent = option.textContent;
     switch (dropdownType) {
       case "pixel":
+      case "pixel-multi":
         const pixelId = option.dataset.pixelId || option.getAttribute("data-pixel-id") || "";
         const pixelAccountId = option.dataset.pixelAccountId || option.getAttribute("data-pixel-account-id") || "";
         display.dataset.pixelid = pixelId;
@@ -1492,13 +1503,16 @@ class CustomDropdown {
         break;
       case "pages":
       case "page":
-        const pageId = option.dataset.pageId || option.getAttribute("data-page-id") || "";
+      case "page-multi-campaign":
+      case "pages-multi-campaign":
+        const pageId = option.dataset.pageId || option.getAttribute("data-page-id") || option.dataset.value || "";
         display.dataset.value = pageId;
         break;
       case "status":
         display.dataset.value = option.dataset.value || option.textContent;
         break;
       case "cta":
+      case "cta-multi-campaign":
         display.dataset.value = option.dataset.value || "";
         break;
       default:
@@ -3707,6 +3721,17 @@ class FileUploadHandler {
   createAds() {
     console.log("[createAds] Method called!");
 
+    // Check if we're in multi-campaign mode
+    const isMultiCampaignMode = window.multiCampaignAdSetResults?.isActive && window.multiCampaignAdSetResults?.created_adsets?.length > 0;
+
+    if (isMultiCampaignMode) {
+      console.log("[createAds] Multi-campaign mode detected. Creating ads for multiple ad sets.");
+      this.createAdsForMultipleCampaigns();
+      return;
+    }
+
+    console.log("[createAds] Single campaign mode. Proceeding with standard flow.");
+
     // show loading state
     const button = document.querySelector(".create-ads-button");
     if (!button) {
@@ -3841,6 +3866,125 @@ class FileUploadHandler {
       button.disabled = false;
       button.style.opacity = "1";
       button.textContent = "Create Ads";
+    }
+  }
+
+  async createAdsForMultipleCampaigns() {
+    console.log("[createAdsForMultipleCampaigns] Starting multi-campaign ad creation");
+
+    const button = document.querySelector(".create-ads-button");
+    if (button) {
+      animatedEllipsis.start(button, "Creating Ads for Multiple Campaigns");
+      button.disabled = true;
+      button.style.opacity = "0.6";
+    }
+
+    // Add file names to each asset for ad naming
+    const assetsWithNames = appState.getState().uploadedAssets.map((asset) => {
+      const fileName = asset.file;
+      const nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf(".")) || fileName;
+      return {
+        value: asset,
+        adName: nameWithoutExtension,
+      };
+    });
+
+    const adCopyData = appState.getState().adCopyData;
+    const accountId = window.multiCampaignAdSetResults.account_id;
+    const createdAdSets = window.multiCampaignAdSetResults.created_adsets;
+
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    const errors = [];
+
+    try {
+      // Create ads for each ad set sequentially to avoid overwhelming the API
+      for (const adsetInfo of createdAdSets) {
+        console.log(`[createAdsForMultipleCampaigns] Creating ads for campaign ${adsetInfo.campaign_id}, adset ${adsetInfo.adset_id}`);
+
+        const payload = {
+          name: `Ad for ${adsetInfo.adset_id}`,
+          page_id: adCopyData.pageId,
+          message: adCopyData.primaryText,
+          headline: adCopyData.headline,
+          type: adCopyData.cta,
+          link: adCopyData.destinationUrl,
+          description: adCopyData.description,
+          account_id: accountId,
+          adset_id: adsetInfo.adset_id,
+          format: "mixed",
+          assets: assetsWithNames,
+        };
+
+        try {
+          const response = await fetch("/api/create-ad-creative", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          // Count successes and failures for this ad set
+          const successful = data.filter((result) => result.status === "fulfilled");
+          const failed = data.filter((result) => result.status === "rejected");
+
+          totalSuccess += successful.length;
+          totalFailed += failed.length;
+
+          if (failed.length > 0) {
+            failed.forEach((f) => {
+              const errorMsg = f.reason?.message || f.reason || "Unknown error";
+              errors.push(`Campaign ${adsetInfo.campaign_id}: ${errorMsg}`);
+            });
+          }
+        } catch (err) {
+          console.error(`Error creating ads for adset ${adsetInfo.adset_id}:`, err);
+          const adsCount = assetsWithNames.length;
+          totalFailed += adsCount;
+          errors.push(`Campaign ${adsetInfo.campaign_id}: ${err.message}`);
+        }
+      }
+
+      // Show results
+      if (totalSuccess > 0) {
+        this.showSuccessScreen(totalSuccess, totalFailed, errors);
+        console.log(`[createAdsForMultipleCampaigns] Completed: ${totalSuccess} ads created, ${totalFailed} failed`);
+
+        // Show summary notification
+        if (totalFailed === 0) {
+          window.showSuccess?.(`✅ Created ${totalSuccess} ads across ${createdAdSets.length} ad sets!`, 5000);
+        } else {
+          window.showError?.(`⚠️ Created ${totalSuccess} ads, but ${totalFailed} failed. Check details below.`, 8000);
+        }
+      } else {
+        // All failed
+        if (button) {
+          animatedEllipsis.stop(button);
+          button.disabled = false;
+          button.style.opacity = "1";
+          button.textContent = "Create Ads";
+        }
+        window.showError?.(`Failed to create ads across all ad sets. ${errors.slice(0, 3).join("; ")}`, 10000);
+      }
+
+      // Reset multi-campaign mode
+      window.multiCampaignAdSetResults.isActive = false;
+    } catch (err) {
+      console.error("[createAdsForMultipleCampaigns] Fatal error:", err);
+      if (button) {
+        animatedEllipsis.stop(button);
+        button.disabled = false;
+        button.style.opacity = "1";
+        button.textContent = "Create Ads";
+      }
+      window.showError?.(`Error creating ads: ${err.message}`, 8000);
     }
   }
 
@@ -9929,6 +10073,24 @@ function setupMultiCampaignAdSetModal() {
   const backBtn = document.querySelector(".multi-campaign-adset-back");
   const createBtn = document.querySelector(".multi-campaign-adset-create");
   const searchInput = document.querySelector(".multi-campaign-adset-search");
+  const uploadCreativesBtn = document.querySelector(".multi-campaign-upload-creatives");
+  const skipAdsBtn = document.querySelector(".multi-campaign-skip-ads");
+  const doneBtn = document.querySelector(".multi-campaign-done");
+
+  // Step 4 (Creative Upload) elements
+  const browseBtnMulti = document.querySelector(".multi-campaign-browse-btn");
+  const fileInputMulti = document.querySelector(".multi-campaign-file-input");
+  const gdriveFetchBtnMulti = document.querySelector(".multi-campaign-gdrive-fetch-btn");
+  const gdriveInputMulti = document.querySelector(".multi-campaign-gdrive-input");
+  const creativeBackBtn = document.querySelector(".multi-campaign-creative-back");
+  const creativeContinueBtn = document.querySelector(".multi-campaign-creative-continue");
+
+  // Step 5 (Ad Copy) elements
+  const adCopyBackBtn = document.querySelector(".multi-campaign-adcopy-back");
+  const createAllAdsBtn = document.querySelector(".multi-campaign-create-all-ads");
+
+  // Store uploaded files for multi-campaign flow
+  let multiCampaignUploadedFiles = [];
 
   console.log("[Multi-Campaign AdSet] Elements found:", {
     modal: !!modal,
@@ -10028,10 +10190,551 @@ function setupMultiCampaignAdSetModal() {
     modal.style.display = "none";
     selectedCampaignIds = [];
     resetForm();
+    // Reset multi-campaign results when closing modal
+    window.multiCampaignAdSetResults = {
+      isActive: false,
+      account_id: null,
+      created_adsets: [],
+      failed_adsets: [],
+      total_created: 0,
+      total_failed: 0,
+    };
   };
 
   if (closeBtn) closeBtn.addEventListener("click", closeModal);
   if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+
+  // Handle "Upload Creatives & Add Ads" button - Move to Step 4
+  if (uploadCreativesBtn) {
+    uploadCreativesBtn.addEventListener("click", () => {
+      console.log("[Multi-Campaign AdSet] Moving to Step 4 - Creative Upload");
+      showStep(4);
+    });
+  }
+
+  // Handle "Skip for Now" button
+  if (skipAdsBtn) {
+    skipAdsBtn.addEventListener("click", () => {
+      console.log("[Multi-Campaign AdSet] Skipping ad creation");
+
+      // Show final success message
+      window.showSuccess?.(`Ad sets created successfully! You can add ads to them later from the campaigns view.`, 5000);
+
+      // Close modal
+      closeModal();
+    });
+  }
+
+  // Handle "Done" button on final step
+  if (doneBtn) {
+    doneBtn.addEventListener("click", () => {
+      closeModal();
+      // Optionally reload or refresh campaigns
+      window.showSuccess?.("Process completed successfully!", 3000);
+    });
+  }
+
+  // Step 4: Creative Upload Handlers
+  if (browseBtnMulti && fileInputMulti) {
+    browseBtnMulti.addEventListener("click", () => {
+      fileInputMulti.click();
+    });
+
+    fileInputMulti.addEventListener("change", (e) => {
+      handleMultiCampaignFileUpload(e.target.files, true);
+    });
+  }
+
+  // Add drag and drop support
+  const dropZone = document.querySelector(".multi-campaign-creative-upload-container .file-drop-zone");
+  if (dropZone) {
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.style.background = "#e3f2fd";
+    });
+
+    dropZone.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      dropZone.style.background = "#fafafa";
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.style.background = "#fafafa";
+      handleMultiCampaignFileUpload(e.dataTransfer.files, true);
+    });
+  }
+
+  if (gdriveFetchBtnMulti && gdriveInputMulti) {
+    gdriveFetchBtnMulti.addEventListener("click", async () => {
+      const link = gdriveInputMulti.value.trim();
+      if (!link) {
+        window.showError?.("Please enter a Google Drive link", 3000);
+        return;
+      }
+
+      // Extract file/folder ID from Google Drive link
+      const fileIdMatch = link.match(/\/(?:d|folders)\/([a-zA-Z0-9-_]+)/);
+      const fileId = fileIdMatch ? fileIdMatch[1] : null;
+
+      if (!fileId) {
+        window.showError?.("Invalid Google Drive link. Please paste a valid Google Drive file or folder link.", 5000);
+        return;
+      }
+
+      gdriveFetchBtnMulti.disabled = true;
+      gdriveFetchBtnMulti.textContent = "Fetching...";
+
+      try {
+        const response = await fetch(`/api/fetch-google-data?folderId=${fileId}`);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch Google Drive files");
+        }
+
+        const data = await response.json();
+
+        if (data.files && data.files.length > 0) {
+          const mediaFiles = [];
+          const skippedFiles = [];
+
+          data.files.forEach((file) => {
+            const isImage = file.mimeType && file.mimeType.startsWith("image/");
+            const isVideo = file.mimeType && file.mimeType.startsWith("video/");
+
+            if (isImage || isVideo) {
+              const processedFile = {
+                name: file.name,
+                size: file.size || 0,
+                type: file.mimeType || "unknown",
+                source: "gdrive",
+                gdrive_id: file.id,
+                gdrive_link: link,
+                status: "pending",
+              };
+              mediaFiles.push(processedFile);
+            } else {
+              skippedFiles.push(file);
+            }
+          });
+
+          if (skippedFiles.length > 0) {
+            const skippedNames = skippedFiles
+              .slice(0, 3)
+              .map((f) => f.name)
+              .join(", ");
+            const moreText = skippedFiles.length > 3 ? ` and ${skippedFiles.length - 3} more` : "";
+            window.showError?.(`Only images and videos are supported. Skipped: ${skippedNames}${moreText}`, 5000);
+          }
+
+          if (mediaFiles.length === 0) {
+            window.showError?.("No supported media files (images or videos) found in the provided Google Drive link.", 5000);
+          } else {
+            // Append the files with Google Drive metadata
+            multiCampaignUploadedFiles = [...multiCampaignUploadedFiles, ...mediaFiles];
+
+            // Re-render all files in the list using the helper function
+            const filesList = document.querySelector(".multi-campaign-uploaded-files-list");
+            filesList.style.display = "block";
+            filesList.innerHTML = "";
+
+            multiCampaignUploadedFiles.forEach((file, index) => {
+              const fileItem = document.createElement("div");
+              fileItem.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; background: #f9f9f9;";
+
+              const fileName = document.createElement("span");
+              const fileLabel = file.source === "gdrive" ? `${file.name} (from Google Drive)` : file.name;
+              fileName.textContent = fileLabel;
+              fileName.style.cssText = "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+
+              const removeBtn = document.createElement("button");
+              removeBtn.textContent = "×";
+              removeBtn.style.cssText = "background: #dc3545; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 18px; line-height: 1;";
+              removeBtn.addEventListener("click", () => {
+                multiCampaignUploadedFiles.splice(index, 1);
+                handleMultiCampaignFileUpload(multiCampaignUploadedFiles);
+              });
+
+              fileItem.appendChild(fileName);
+              fileItem.appendChild(removeBtn);
+              filesList.appendChild(fileItem);
+            });
+
+            // Enable continue button
+            if (creativeContinueBtn) {
+              creativeContinueBtn.disabled = false;
+            }
+
+            window.showSuccess?.(`${mediaFiles.length} file(s) fetched from Google Drive!`, 3000);
+            gdriveInputMulti.value = "";
+          }
+        } else {
+          window.showError?.("No files found in the provided Google Drive link.", 4000);
+        }
+      } catch (err) {
+        console.error("Error fetching from Google Drive:", err);
+        window.showError?.("Failed to fetch from Google Drive. Please make sure the link is publicly accessible or check your permissions.", 6000);
+      } finally {
+        gdriveFetchBtnMulti.disabled = false;
+        gdriveFetchBtnMulti.innerHTML = '<img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;"> Fetch';
+      }
+    });
+  }
+
+  if (creativeBackBtn) {
+    creativeBackBtn.addEventListener("click", () => {
+      showStep(3);
+      multiCampaignUploadedFiles = [];
+    });
+  }
+
+  if (creativeContinueBtn) {
+    creativeContinueBtn.addEventListener("click", () => {
+      if (multiCampaignUploadedFiles.length > 0) {
+        showStep(5);
+        // Initialize pages dropdown and CustomDropdown for Step 5 after showing the step
+        setTimeout(() => {
+          // First populate the pages
+          populatePagesForMultiCampaign();
+
+          // Then initialize CustomDropdown with the correct selector (string, not element)
+          const dropdowns = document.querySelectorAll(".multi-campaign-ad-copy-form .custom-dropdown");
+          let needsInit = false;
+
+          dropdowns.forEach((dropdown) => {
+            if (!dropdown.dataset.initialized) {
+              needsInit = true;
+            }
+          });
+
+          if (needsInit) {
+            // Initialize all dropdowns in the form at once
+            new CustomDropdown(".multi-campaign-ad-copy-form .custom-dropdown");
+
+            // Mark them as initialized
+            dropdowns.forEach((dropdown) => {
+              dropdown.dataset.initialized = "true";
+            });
+          }
+        }, 150);
+      }
+    });
+  }
+
+  // Step 5: Ad Copy Handlers
+  if (adCopyBackBtn) {
+    adCopyBackBtn.addEventListener("click", () => {
+      showStep(4);
+    });
+  }
+
+  if (createAllAdsBtn) {
+    createAllAdsBtn.addEventListener("click", () => {
+      createAdsForMultiCampaignFlow();
+    });
+  }
+
+  // Helper function to handle file uploads
+  function handleMultiCampaignFileUpload(files, append = false) {
+    if (!files || files.length === 0) return;
+
+    const filesList = document.querySelector(".multi-campaign-uploaded-files-list");
+    filesList.style.display = "block";
+
+    if (append) {
+      // Append new files to existing ones
+      multiCampaignUploadedFiles = [...multiCampaignUploadedFiles, ...Array.from(files)];
+    } else {
+      // Replace all files (used when re-rendering after removal)
+      multiCampaignUploadedFiles = Array.from(files);
+    }
+
+    // Clear and re-render the list
+    filesList.innerHTML = "";
+
+    multiCampaignUploadedFiles.forEach((file, index) => {
+      const fileItem = document.createElement("div");
+      fileItem.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; background: #f9f9f9;";
+
+      const fileName = document.createElement("span");
+      const fileLabel = file.source === "gdrive" ? `${file.name} (from Google Drive)` : file.name;
+      fileName.textContent = fileLabel;
+      fileName.style.cssText = "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "×";
+      removeBtn.style.cssText = "background: #dc3545; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 18px; line-height: 1;";
+      removeBtn.addEventListener("click", () => {
+        multiCampaignUploadedFiles.splice(index, 1);
+        handleMultiCampaignFileUpload(multiCampaignUploadedFiles);
+      });
+
+      fileItem.appendChild(fileName);
+      fileItem.appendChild(removeBtn);
+      filesList.appendChild(fileItem);
+    });
+
+    // Enable continue button
+    if (creativeContinueBtn) {
+      creativeContinueBtn.disabled = multiCampaignUploadedFiles.length === 0;
+    }
+  }
+
+  // Helper function to populate pages for multi-campaign
+  function populatePagesForMultiCampaign() {
+    const pagesDropdown = document.querySelector(".pages-multi-campaign");
+    if (!pagesDropdown) {
+      console.error("[Multi-Campaign] Pages dropdown not found");
+      return;
+    }
+
+    pagesDropdown.innerHTML = "";
+
+    if (window.metaData && window.metaData.pages && window.metaData.pages.length > 0) {
+      window.metaData.pages.forEach((page) => {
+        const li = document.createElement("li");
+        // Use data-page-id to match the CustomDropdown expectations for "pages" dropdown type
+        li.setAttribute("data-page-id", page.id);
+        li.dataset.value = page.id; // Also set data-value as fallback
+        li.textContent = page.name;
+        pagesDropdown.appendChild(li);
+      });
+      console.log("[Multi-Campaign] Populated", window.metaData.pages.length, "pages");
+    } else {
+      console.warn("[Multi-Campaign] No pages found in metaData");
+      // Add a placeholder message
+      const li = document.createElement("li");
+      li.textContent = "No pages available";
+      li.style.color = "#999";
+      li.style.cursor = "default";
+      pagesDropdown.appendChild(li);
+    }
+  }
+
+  // Helper function to create ads for all ad sets
+  async function createAdsForMultiCampaignFlow() {
+    console.log("[Multi-Campaign] Starting ad creation for all ad sets");
+
+    // Show progress step
+    showStep(6);
+
+    const progressDetails = document.querySelector(".multi-campaign-ads-progress-details");
+    progressDetails.innerHTML = "";
+
+    // Get ad copy data
+    const primaryText = document.querySelector(".multi-campaign-primary-text").value;
+    const headline = document.querySelector(".multi-campaign-headline").value;
+    const destinationUrl = document.querySelector(".multi-campaign-destination-url").value;
+    const description = document.querySelector(".multi-campaign-description").value;
+
+    const pageDropdown = document.querySelector('[data-dropdown="page-multi-campaign"] .dropdown-display');
+    const ctaDropdown = document.querySelector('[data-dropdown="cta-multi-campaign"] .dropdown-display');
+
+    const pageId = pageDropdown?.dataset.value;
+    const cta = ctaDropdown?.dataset.value || "LEARN_MORE";
+
+    // Validate
+    if (!primaryText || !headline || !destinationUrl || !pageId) {
+      window.showError?.("Please fill in all required fields", 4000);
+      showStep(5);
+      return;
+    }
+
+    // Upload creatives first
+    let uploadedAssets = [];
+    try {
+      console.log("[Multi-Campaign] Uploaded files count:", multiCampaignUploadedFiles.length);
+      console.log(
+        "[Multi-Campaign] Uploaded files:",
+        multiCampaignUploadedFiles.map((f) => f.name)
+      );
+      uploadedAssets = await uploadMultiCampaignCreatives();
+      console.log("[Multi-Campaign] Uploaded assets count:", uploadedAssets.length);
+    } catch (err) {
+      window.showError?.(`Failed to upload creatives: ${err.message}`, 6000);
+      showStep(5);
+      return;
+    }
+
+    const accountId = window.multiCampaignAdSetResults.account_id;
+    const createdAdSets = window.multiCampaignAdSetResults.created_adsets;
+    console.log("[Multi-Campaign] Creating ads for", createdAdSets.length, "ad sets with", uploadedAssets.length, "assets each");
+
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    const results = [];
+
+    // Create ads for each ad set
+    for (const adsetInfo of createdAdSets) {
+      const progressItem = document.createElement("div");
+      progressItem.style.cssText = "padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;";
+      progressItem.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>Campaign ${adsetInfo.campaign_id.substring(0, 10)}...</span>
+          <span class="status" style="color: #666;">Creating...</span>
+        </div>
+      `;
+      progressDetails.appendChild(progressItem);
+
+      try {
+        // Prepare assets with names
+        const assetsWithNames = uploadedAssets.map((asset, idx) => ({
+          value: asset,
+          adName: multiCampaignUploadedFiles[idx]?.name.replace(/\.[^/.]+$/, "") || `Ad ${idx + 1}`,
+        }));
+
+        const payload = {
+          name: `Ads for AdSet ${adsetInfo.adset_id}`,
+          page_id: pageId,
+          message: primaryText,
+          headline: headline,
+          type: cta,
+          link: destinationUrl,
+          description: description,
+          account_id: accountId,
+          adset_id: adsetInfo.adset_id,
+          format: "mixed",
+          assets: assetsWithNames,
+        };
+
+        const response = await fetch("/api/create-ad-creative", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        const successful = data.filter((r) => r.status === "fulfilled").length;
+        const failed = data.filter((r) => r.status === "rejected").length;
+
+        totalSuccess += successful;
+        totalFailed += failed;
+
+        const statusSpan = progressItem.querySelector(".status");
+        if (failed === 0) {
+          statusSpan.textContent = `✅ ${successful} ads created`;
+          statusSpan.style.color = "#28a745";
+        } else {
+          statusSpan.textContent = `⚠️ ${successful} succeeded, ${failed} failed`;
+          statusSpan.style.color = "#ffc107";
+        }
+
+        results.push({ success: true, succeeded: successful, failed: failed });
+      } catch (err) {
+        console.error(`Error creating ads for adset ${adsetInfo.adset_id}:`, err);
+        totalFailed += uploadedAssets.length;
+
+        const statusSpan = progressItem.querySelector(".status");
+        statusSpan.textContent = `❌ Failed`;
+        statusSpan.style.color = "#dc3545";
+
+        results.push({ success: false, error: err.message });
+      }
+    }
+
+    // Show final summary
+    showFinalSummary(totalSuccess, totalFailed);
+  }
+
+  // Helper function to upload creatives
+  async function uploadMultiCampaignCreatives() {
+    const accountId = window.multiCampaignAdSetResults.account_id;
+
+    // Check if files are from Google Drive or regular upload
+    const hasGDriveFiles = multiCampaignUploadedFiles.some((file) => file.source === "gdrive");
+
+    if (hasGDriveFiles) {
+      // Handle Google Drive files - download and upload them
+      const gdriveFileIds = multiCampaignUploadedFiles.filter((file) => file.source === "gdrive").map((file) => file.gdrive_id);
+
+      const response = await fetch("/api/download-and-upload-google-files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileIds: gdriveFileIds,
+          account_id: accountId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to upload Google Drive files");
+      }
+
+      const data = await response.json();
+      return data.uploadedAssets || data.results || [];
+    } else {
+      // Handle regular file uploads
+      const formData = new FormData();
+
+      multiCampaignUploadedFiles.forEach((file) => {
+        formData.append("creatives", file);
+      });
+      formData.append("account_id", accountId);
+
+      const response = await fetch("/api/upload-creative", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to upload media");
+      }
+
+      const data = await response.json();
+      return data.uploadedAssets || data.results || [];
+    }
+  }
+
+  // Helper function to show final summary
+  function showFinalSummary(successCount, failCount) {
+    showStep(7);
+
+    const summary = document.querySelector(".multi-campaign-final-summary");
+    const totalAdSets = window.multiCampaignAdSetResults.total_created;
+    const accountId = window.multiCampaignAdSetResults.account_id;
+    const createdAdSets = window.multiCampaignAdSetResults.created_adsets;
+
+    summary.innerHTML = `
+      <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+      <h2 style="color: #28a745; margin-bottom: 20px;">Ads Created Successfully!</h2>
+      <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <div style="font-size: 18px; margin-bottom: 10px;">
+          <strong>${totalAdSets}</strong> Ad Sets Created
+        </div>
+        <div style="font-size: 18px; margin-bottom: 10px;">
+          <strong style="color: #28a745;">${successCount}</strong> Ads Created Successfully
+        </div>
+        ${failCount > 0 ? `<div style="font-size: 18px; color: #dc3545;"><strong>${failCount}</strong> Ads Failed</div>` : ""}
+      </div>
+    `;
+
+    // Setup View in Ads Manager button
+    const viewAdsManagerBtn = document.querySelector(".multi-campaign-view-ads-manager");
+    if (viewAdsManagerBtn) {
+      // Get business_id from the selected ad account
+      const adAccount = window.metaData?.adAccounts?.find((acc) => acc.id === accountId || acc.account_id === accountId.replace("act_", ""));
+      const businessId = adAccount?.business?.id || "964913537226100";
+
+      // Get all campaign IDs from created ad sets
+      const campaignIds = createdAdSets.map((adset) => adset.campaign_id).join("%2C");
+
+      // Construct Ads Manager URL with all campaigns selected
+      const adsManagerUrl = `https://adsmanager.facebook.com/adsmanager/manage/adsets?act=${accountId}&business_id=${businessId}&selected_campaign_ids=${campaignIds}`;
+
+      console.log("[Multi-Campaign] Ads Manager URL:", adsManagerUrl);
+      console.log("[Multi-Campaign] Campaign IDs:", campaignIds);
+
+      viewAdsManagerBtn.onclick = () => {
+        window.open(adsManagerUrl, "_blank");
+      };
+    }
+
+    // Reset state
+    window.multiCampaignAdSetResults.isActive = false;
+    multiCampaignUploadedFiles = [];
+  }
 
   // Prevent click outside to close - show warning instead
   if (modal) {
@@ -10297,7 +11000,17 @@ function setupMultiCampaignAdSetModal() {
         }
 
         // Show success/partial success message
-        const { total_created, total_failed, failed_adsets } = data;
+        const { total_created, total_failed, failed_adsets, created_adsets } = data;
+
+        // Store results in global object for use in creative upload flow
+        window.multiCampaignAdSetResults = {
+          isActive: true,
+          account_id: payload.account_id,
+          created_adsets: created_adsets || [],
+          failed_adsets: failed_adsets || [],
+          total_created: total_created,
+          total_failed: total_failed,
+        };
 
         if (total_failed > 0) {
           // Build detailed error message
@@ -10313,10 +11026,29 @@ function setupMultiCampaignAdSetModal() {
 
           window.showError?.(errorMessage, 12000);
         } else {
-          window.showSuccess?.(`✅ ${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!`, 5000);
+          window.showSuccess?.(`✅ ${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!`, 3000);
         }
 
-        closeModal();
+        // Update success count in Step 3 UI
+        const successCountEl = document.getElementById("multi-campaign-adset-success-count");
+        if (successCountEl) {
+          // Show ad set names instead of count for better UX
+          const adsetNames = created_adsets
+            .map((adset) => {
+              const campaign = allCampaigns.find((c) => c.id === adset.campaign_id);
+              return campaign ? campaign.name : `Campaign ${adset.campaign_id}`;
+            })
+            .join(", ");
+
+          if (total_created === 1) {
+            successCountEl.textContent = `Ad set created successfully for: ${adsetNames}`;
+          } else {
+            successCountEl.textContent = `Ad sets created successfully for: ${adsetNames}`;
+          }
+        }
+
+        // Show Step 3 instead of closing modal
+        showStep(3);
       } catch (error) {
         console.error("[Multi-Campaign AdSet] Error:", error);
         window.showError?.(`Error: ${error.message}`, 6000);

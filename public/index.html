@@ -1954,8 +1954,206 @@
             <button class="btn-primary multi-campaign-adset-create">Create Ad Sets</button>
           </div>
         </div>
+
+        <!-- Step 3: Success & Creative Upload -->
+        <div class="bulk-duplicate-step" data-step="3" style="display: none;">
+          <h3>Step 3: Ad Creatives</h3>
+
+          <div class="success-banner"
+            style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+            <p style="margin: 0; color: #155724; font-size: 15px;">
+              ✅ <span id="multi-campaign-adset-success-count">Ad sets created successfully</span>
+            </p>
+          </div>
+
+          <p class="step-description" style="margin-bottom: 20px;">
+            Now upload creatives and add ads to these newly created ad sets.
+          </p>
+
+          <div
+            style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #856404;">
+              <strong>💡 Note:</strong> The same ads will be created in all successful ad sets. You can skip this step
+              and add ads later if needed.
+            </p>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-primary multi-campaign-upload-creatives" style="background: #28a745; border: none;">
+              📤 Continue to Upload Creatives
+            </button>
+            <button class="btn-secondary multi-campaign-skip-ads">Skip for Now</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Creative Upload within Modal -->
+        <div class="bulk-duplicate-step" data-step="4" style="display: none;">
+          <h3>Step 4: Upload Creatives</h3>
+
+          <div
+            style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #0d47a1;">
+              <strong>📤 Upload files:</strong> Drag & drop images/videos or paste Google Drive links
+            </p>
+          </div>
+
+          <div class="multi-campaign-creative-upload-container">
+            <!-- File upload area -->
+            <div class="file-drop-zone"
+              style="border: 2px dashed #ddd; border-radius: 8px; padding: 40px 20px; text-align: center; background: #fafafa; margin-bottom: 20px;">
+              <p class="drop-zone-text" style="color: #666; margin-bottom: 15px;">
+                Drag & drop <strong>images and videos</strong> here <br /><br />or
+              </p>
+              <input type="file" multiple accept="image/*,video/*" class="multi-campaign-file-input"
+                style="display: none;" />
+              <button class="continue-btn multi-campaign-browse-btn"
+                style="padding: 10px 20px; background: #103dee; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+                Browse Files
+              </button>
+              <div class="gdrive-input-container" style="margin-top: 20px;">
+                <p style="margin: 15px 0 10px 0; color: #666; font-size: 14px;">or</p>
+                <div style="display: flex; align-items: center; gap: 8px; max-width: 400px; margin: 0 auto;">
+                  <input type="text" class="multi-campaign-gdrive-input" placeholder="Paste Google Drive link..."
+                    style="flex: 1; padding: 8px 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px;">
+                  <button class="multi-campaign-gdrive-fetch-btn"
+                    style="padding: 8px 12px; background: #103dee; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; border-radius: 4px;">
+                    <img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;">
+                    Fetch
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Uploaded files list -->
+            <div class="multi-campaign-uploaded-files-list" style="display: none; margin-bottom: 20px;">
+              <!-- Files will be populated here -->
+            </div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-creative-back">← Back</button>
+            <button class="btn-primary multi-campaign-creative-continue" disabled>Continue to Ad Copy</button>
+          </div>
+        </div>
+
+        <!-- Step 5: Ad Copy within Modal -->
+        <div class="bulk-duplicate-step" data-step="5" style="display: none;">
+          <h3>Step 5: Ad Copy</h3>
+
+          <div
+            style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px; color: #0d47a1;">
+              <strong>✍️ Ad Copy:</strong> This copy will be used for all ads across all ad sets
+            </p>
+          </div>
+
+          <div class="adset-form-container multi-campaign-ad-copy-form">
+            <textarea placeholder="Primary Text*" class="multi-campaign-primary-text" required rows="6"></textarea>
+
+            <input type="text" placeholder="Headline*" class="multi-campaign-headline" required />
+
+            <!-- Page dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="page-multi-campaign">
+                  <span class="dropdown-display placeholder">Page*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options pages-multi-campaign">
+                </ul>
+              </div>
+            </div>
+
+            <!-- Call to Action dropdown -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="cta-multi-campaign">
+                  <span class="dropdown-display" data-value="LEARN_MORE">Learn more</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options cta-multi-campaign">
+                  <li class="cta-option" data-value="NO_BUTTON">No button</li>
+                  <li class="cta-option" data-value="LEARN_MORE">Learn more</li>
+                  <li class="cta-option" data-value="SHOP_NOW">Shop now</li>
+                  <li class="cta-option" data-value="SIGN_UP">Sign up</li>
+                  <li class="cta-option" data-value="DOWNLOAD">Download</li>
+                  <li class="cta-option" data-value="APPLY_NOW">Apply now</li>
+                  <li class="cta-option" data-value="BOOK_TRAVEL">Book travel</li>
+                  <li class="cta-option" data-value="CONTACT_US">Contact us</li>
+                  <li class="cta-option" data-value="GET_QUOTE">Get quote</li>
+                  <li class="cta-option" data-value="SUBSCRIBE">Subscribe</li>
+                </ul>
+              </div>
+            </div>
+
+            <input type="url" placeholder="Destination URL*" class="multi-campaign-destination-url" required />
+
+            <input type="text" placeholder="Description (Optional)" class="multi-campaign-description" />
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-secondary multi-campaign-adcopy-back">← Back</button>
+            <button class="btn-primary multi-campaign-create-all-ads">Create Ads for All Ad Sets</button>
+          </div>
+        </div>
+
+        <!-- Step 6: Creating Ads Progress -->
+        <div class="bulk-duplicate-step" data-step="6" style="display: none;">
+          <h3>Creating Ads...</h3>
+
+          <div class="multi-campaign-ads-progress" style="padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div class="spinner"
+                style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #103dee; border-radius: 50%; animation: spin 1s linear infinite;">
+              </div>
+              <p style="margin-top: 15px; color: #666;">Creating ads across all ad sets...</p>
+            </div>
+
+            <div class="multi-campaign-ads-progress-details" style="max-height: 300px; overflow-y: auto;">
+              <!-- Progress items will be added here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 7: Final Success -->
+        <div class="bulk-duplicate-step" data-step="7" style="display: none;">
+          <h3>✅ Complete!</h3>
+
+          <div class="multi-campaign-final-summary" style="padding: 20px; text-align: center;">
+            <!-- Summary will be populated here -->
+          </div>
+
+          <div class="bulk-actions" style="justify-content: center; gap: 15px;">
+            <button class="btn-secondary multi-campaign-view-ads-manager"
+              style="background: #1877f2; color: white; border: none;">
+              📊 View in Ads Manager
+            </button>
+            <button class="btn-primary multi-campaign-done">Done</button>
+          </div>
+        </div>
       </div>
     </div>
+  </div>
+
+  <style>
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  </div>
+  </div>
   </div>
 
   <!-- Multi-Account Campaign Creation Modal -->
