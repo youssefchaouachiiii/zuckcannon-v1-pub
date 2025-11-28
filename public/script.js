@@ -9753,44 +9753,11 @@ async function loadCampaignsForSelectedAccounts() {
     const isCampaignCompatible = (campaign) => {
       if (!sourceObjective) return true; // No filtering if source objective unknown
 
-      // Check objective match
+      // Only filter by objective - special ad categories will show warning but allow selection
       if (campaign.objective !== sourceObjective) {
         return false;
       }
 
-      // Check special ad categories compatibility
-      let campaignCategories = campaign.special_ad_categories || [];
-      try {
-        if (typeof campaignCategories === 'string') {
-          campaignCategories = JSON.parse(campaignCategories);
-        }
-        if (!Array.isArray(campaignCategories)) {
-          campaignCategories = [];
-        }
-        campaignCategories.sort();
-      } catch (e) {
-        campaignCategories = [];
-      }
-
-      // Rule: Source has special categories -> Campaign must have the SAME categories
-      // Rule: Source has NO special categories -> Campaign must also have NO special categories
-      const sourceHasCategories = sourceSpecialCategories.length > 0;
-      const campaignHasCategories = campaignCategories.length > 0;
-
-      // Both must have the same "has categories" state
-      if (sourceHasCategories !== campaignHasCategories) {
-        return false;
-      }
-
-      // If both have categories, they must be exactly the same
-      if (sourceHasCategories && campaignHasCategories) {
-        if (campaignCategories.length !== sourceSpecialCategories.length) {
-          return false;
-        }
-        return campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
-      }
-
-      // If both have no categories, they're compatible
       return true;
     };
 
@@ -9819,14 +9786,10 @@ async function loadCampaignsForSelectedAccounts() {
       const filterBanner = document.createElement("div");
       filterBanner.style.cssText = "background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px; font-size: 13px;";
 
-      const specialCatText = sourceSpecialCategories.length > 0
-        ? ` and Special Categories: ${sourceSpecialCategories.join(', ')}`
-        : ' and No Special Categories';
-
       filterBanner.innerHTML = `
         <strong>📌 Filtering Applied:</strong><br>
         Only showing campaigns compatible with <strong>${sourceCampaign.name}</strong><br>
-        <small style="color: #666;">Objective: ${getObjectiveFriendlyName(sourceObjective)}${specialCatText}</small>
+        <small style="color: #666;">Objective: ${getObjectiveFriendlyName(sourceObjective)}</small>
       `;
       mappingsList.appendChild(filterBanner);
     }
@@ -9853,10 +9816,7 @@ async function loadCampaignsForSelectedAccounts() {
           warningMessage = '<p style="color: #dc3545; font-size: 13px; margin-top: 8px;">⚠ No campaigns found in this account. Create a campaign first.</p>';
         } else {
           const objectiveName = getObjectiveFriendlyName(sourceObjective);
-          const specialCatText = sourceSpecialCategories.length > 0
-            ? ` and special categories (${sourceSpecialCategories.join(', ')})`
-            : ' and no special categories';
-          warningMessage = `<p style="color: #ff9800; font-size: 13px; margin-top: 8px;">⚠ No compatible campaigns found. This account has ${allCampaignsRaw.length} campaign(s), but none match the required objective (${objectiveName})${specialCatText}.</p>`;
+          warningMessage = `<p style="color: #ff9800; font-size: 13px; margin-top: 8px;">⚠ No compatible campaigns found. This account has ${allCampaignsRaw.length} campaign(s), but none match the required objective (${objectiveName}).</p>`;
         }
       } else {
         campaigns.forEach((campaign) => {
@@ -9905,6 +9865,119 @@ function validateCampaignSelection() {
 
   startBtn.disabled = selectedCount < requiredCount;
   startBtn.textContent = selectedCount < requiredCount ? `Select campaigns for all accounts (${selectedCount}/${requiredCount})` : `Start Duplication (${requiredCount} account${requiredCount !== 1 ? "s" : ""})`;
+
+  // Check for special ad categories compatibility (soft warning)
+  const mappingsList = document.querySelector(".bulk-campaign-mappings-list");
+  if (!mappingsList) return;
+
+  // Remove existing warning
+  const existingWarning = mappingsList.querySelector(".bulk-duplicate-special-cat-warning");
+  if (existingWarning) existingWarning.remove();
+
+  // Only check if all campaigns are selected
+  if (selectedCount < requiredCount) return;
+
+  // Get source campaign special ad categories
+  const sourceCampaign = bulkAdSetDuplicateData.sourceCampaign;
+  let sourceSpecialCategories = sourceCampaign?.special_ad_categories || [];
+  try {
+    if (typeof sourceSpecialCategories === 'string') {
+      sourceSpecialCategories = JSON.parse(sourceSpecialCategories);
+    }
+    if (!Array.isArray(sourceSpecialCategories)) {
+      sourceSpecialCategories = [];
+    }
+    sourceSpecialCategories.sort();
+  } catch (e) {
+    sourceSpecialCategories = [];
+  }
+
+  // Get all selected campaigns
+  const allCampaigns = window.allCampaignsCache || [];
+  const selectedCampaigns = Object.values(bulkAdSetDuplicateData.campaignMapping).map((campaignId) => {
+    return allCampaigns.find((c) => c.id === campaignId);
+  }).filter(Boolean);
+
+  // Check special ad categories compatibility
+  const campaignsWithSpecialCat = [];
+  const campaignsWithoutSpecialCat = [];
+  const campaignsDifferentCat = [];
+
+  selectedCampaigns.forEach((campaign) => {
+    let campaignCategories = campaign.special_ad_categories || [];
+    try {
+      if (typeof campaignCategories === 'string') {
+        campaignCategories = JSON.parse(campaignCategories);
+      }
+      if (!Array.isArray(campaignCategories)) {
+        campaignCategories = [];
+      }
+      campaignCategories.sort();
+    } catch (e) {
+      campaignCategories = [];
+    }
+
+    if (campaignCategories.length > 0) {
+      // Check if categories match source
+      const categoriesMatch = campaignCategories.length === sourceSpecialCategories.length &&
+        campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
+
+      if (categoriesMatch) {
+        campaignsWithSpecialCat.push({ name: campaign.name, categories: campaignCategories });
+      } else {
+        campaignsDifferentCat.push({ name: campaign.name, categories: campaignCategories });
+      }
+    } else {
+      campaignsWithoutSpecialCat.push(campaign.name);
+    }
+  });
+
+  let showWarning = false;
+  let warningMessage = '';
+
+  // Check 1: Source has categories, but some target campaigns don't
+  if (sourceSpecialCategories.length > 0 && campaignsWithoutSpecialCat.length > 0) {
+    showWarning = true;
+    warningMessage = `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
+      `Source campaign has special categories: <strong>${sourceSpecialCategories.join(', ')}</strong><br><br>` +
+      `But ${campaignsWithoutSpecialCat.length} target campaign(s) have NO special categories:<br>` +
+      `${campaignsWithoutSpecialCat.map(name => `• ${name}`).join('<br>')}<br><br>` +
+      `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
+  }
+  // Check 2: Source has no categories, but some target campaigns do
+  else if (sourceSpecialCategories.length === 0 && (campaignsWithSpecialCat.length > 0 || campaignsDifferentCat.length > 0)) {
+    showWarning = true;
+    const allWithCategories = [...campaignsWithSpecialCat, ...campaignsDifferentCat];
+    warningMessage = `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
+      `Source campaign has NO special categories.<br><br>` +
+      `But ${allWithCategories.length} target campaign(s) have special categories:<br>` +
+      allWithCategories.map(c => `• ${c.name}: ${c.categories.join(', ')}`).join('<br>') + '<br><br>' +
+      `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
+  }
+  // Check 3: Different categories among selected campaigns
+  else if (campaignsDifferentCat.length > 0) {
+    showWarning = true;
+    warningMessage = `⚠️ Warning: Different special ad categories detected.<br><br>` +
+      `Source: ${sourceSpecialCategories.length > 0 ? sourceSpecialCategories.join(', ') : 'No special categories'}<br><br>` +
+      `Target campaigns with different categories (${campaignsDifferentCat.length}):<br>` +
+      campaignsDifferentCat.map(c => `• ${c.name}: ${c.categories.join(', ')}`).join('<br>') + '<br><br>' +
+      `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
+  }
+
+  if (showWarning) {
+    const warning = document.createElement("div");
+    warning.className = "bulk-duplicate-special-cat-warning";
+    warning.style.cssText = "color: #ff9800; font-size: 13px; margin: 16px 0; background: #fff3e0; padding: 12px; border-radius: 4px; border-left: 4px solid #ff9800;";
+    warning.innerHTML = warningMessage;
+
+    // Insert warning at the top of mappings list (after filter banner if exists)
+    const filterBanner = mappingsList.querySelector('div[style*="background: #e3f2fd"]');
+    if (filterBanner) {
+      filterBanner.after(warning);
+    } else {
+      mappingsList.insertBefore(warning, mappingsList.firstChild);
+    }
+  }
 }
 
 async function startBulkAdSetDuplication() {
