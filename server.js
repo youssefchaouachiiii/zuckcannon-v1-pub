@@ -2789,6 +2789,22 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         // Cannot use /copies endpoint across accounts
         console.log("⚠️ Cross-account ad duplication: fetching full ad details...");
 
+        // Get page_id from promoted_object for target account
+        const targetPageId = createAdSetPayload.promoted_object?.page_id || sourceAdSet.promoted_object?.page_id;
+
+        if (!targetPageId) {
+          console.error("⚠️ No page_id found in promoted_object. Ads cannot be created without a page.");
+          return res.json({
+            success: true,
+            mode: "cross_account_sync",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            message: "Ad set created successfully, but ads cannot be duplicated (no page_id found in promoted_object)",
+          });
+        }
+
+        console.log(`Using page_id ${targetPageId} for ad creatives in target account`);
+
         const FormData = (await import("form-data")).default;
         const batchOperations = [];
 
@@ -2811,13 +2827,19 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               continue;
             }
 
+            // Clone object_story_spec and update page_id for target account
+            let targetObjectStorySpec = JSON.parse(JSON.stringify(adCreative.object_story_spec || {}));
+            targetObjectStorySpec.page_id = targetPageId;
+
+            console.log(`Ad ${ad.id}: Updated page_id from ${adCreative.object_story_spec?.page_id} to ${targetPageId}`);
+
             // Build batch operation to create new ad with creative
             // We need to create ad creative first, then ad
             const createAdCreativeOp = {
               name: `create_creative_${ad.id}`,
               method: "POST",
               relative_url: `act_${normalizedAccountId}/adcreatives`,
-              body: `name=${encodeURIComponent(adCreative.name || `${ad.name} Creative`)}&object_story_spec=${encodeURIComponent(JSON.stringify(adCreative.object_story_spec || {}))}`,
+              body: `name=${encodeURIComponent(adCreative.name || `${ad.name} Creative`)}&object_story_spec=${encodeURIComponent(JSON.stringify(targetObjectStorySpec))}`,
             };
 
             const createAdOp = {
