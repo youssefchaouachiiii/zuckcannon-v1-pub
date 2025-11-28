@@ -2349,23 +2349,26 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       status: "success",
     });
 
-    // 2. If there are other campaigns, duplicate the ad set
+    // 2. If there are other campaigns, create new ad sets with the same settings
     if (remainingCampaignIds.length > 0) {
-      const copyOperations = remainingCampaignIds.map((campaignId) => {
+      // Create new ad sets (not copies) to avoid "Copy of..." prefix
+      const createOperations = remainingCampaignIds.map((campaignId) => {
         const body = {
+          ...adSetPayload,
           campaign_id: campaignId,
-          status: adSetBody.status || "PAUSED", // Default to paused for copies
+          access_token: userAccessToken,
         };
-        // Use the base ad set ID for the copy operation
-        return MetaBatch.createBatchOperation("POST", `${baseAdSetId}/copies`, body);
+        // Remove the access_token from body since it's already in URL params for batch
+        delete body.access_token;
+
+        return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/adsets`, body);
       });
 
-      const batchResults = await MetaBatch.executeChunkedBatchRequest(copyOperations, userAccessToken);
+      const batchResults = await MetaBatch.executeChunkedBatchRequest(createOperations, userAccessToken);
 
       batchResults.forEach((result, index) => {
         const campaignId = remainingCampaignIds[index];
-        // Check for both id and copied_adset_id to handle different Meta API response formats
-        const adsetId = result.data?.id || result.data?.copied_adset_id;
+        const adsetId = result.data?.id;
 
         if (result.success && adsetId) {
           created_adsets.push({
@@ -2374,7 +2377,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
             status: "success",
           });
         } else {
-          console.error(`Failed to duplicate ad set to campaign ${campaignId}:`, result.error || "Unknown error");
+          console.error(`Failed to create ad set in campaign ${campaignId}:`, result.error || "Unknown error");
 
           failed_adsets.push({
             campaign_id: campaignId,
@@ -2690,6 +2693,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         totalChildObjects = totalAdsCount;
       }
 
+      // Fetch target campaign to check for special ad categories
+      const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+      const campaignDetailsResponse = await axios.get(campaignDetailsUrl, {
+        params: {
+          fields: "special_ad_categories",
+          access_token: userAccessToken,
+        },
+      });
+
+      const targetCampaignSpecialCategories = campaignDetailsResponse.data.special_ad_categories || [];
+      const hasSpecialCategories = Array.isArray(targetCampaignSpecialCategories) && targetCampaignSpecialCategories.length > 0;
+
+      console.log(`Target campaign special_ad_categories:`, targetCampaignSpecialCategories);
+
       // Create new ad set in target account with target campaign
       const createAdSetPayload = {
         name: name || `${sourceAdSet.name} (Copy)`,
@@ -2705,7 +2722,39 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.daily_budget) createAdSetPayload.daily_budget = sourceAdSet.daily_budget;
       if (sourceAdSet.lifetime_budget) createAdSetPayload.lifetime_budget = sourceAdSet.lifetime_budget;
       if (sourceAdSet.bid_amount) createAdSetPayload.bid_amount = sourceAdSet.bid_amount;
-      if (sourceAdSet.targeting) createAdSetPayload.targeting = sourceAdSet.targeting;
+
+      // Handle targeting - remove Advantage+ settings if special ad categories present
+      if (sourceAdSet.targeting) {
+        let targetingCopy = JSON.parse(JSON.stringify(sourceAdSet.targeting)); // Deep clone
+
+        if (hasSpecialCategories) {
+          console.log("⚠️ Target campaign has special ad categories. Removing Advantage+ targeting settings...");
+
+          // Remove advantage_audience and flexible_spec (Advantage+ detailed targeting)
+          if (targetingCopy.advantage_audience) {
+            delete targetingCopy.advantage_audience;
+            console.log("  - Removed advantage_audience");
+          }
+
+          if (targetingCopy.flexible_spec) {
+            delete targetingCopy.flexible_spec;
+            console.log("  - Removed flexible_spec (Advantage+ detailed targeting)");
+          }
+
+          // Ensure age range is 18-65 for special ad categories
+          if (targetingCopy.age_min && (targetingCopy.age_min < 18 || targetingCopy.age_min > 18)) {
+            targetingCopy.age_min = 18;
+            console.log("  - Adjusted age_min to 18");
+          }
+
+          if (targetingCopy.age_max && (targetingCopy.age_max > 65 || targetingCopy.age_max < 65)) {
+            targetingCopy.age_max = 65;
+            console.log("  - Adjusted age_max to 65");
+          }
+        }
+
+        createAdSetPayload.targeting = targetingCopy;
+      }
       if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
@@ -2739,39 +2788,125 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (deep_copy && totalAdsCount > 0) {
         console.log(`Duplicating ${totalAdsCount} ads to new ad set ${newAdSetId}`);
 
-        // Use batch requests for ads
-        const FormData = (await import("form-data")).default;
-        const batchOperations = adsData.map((ad) => ({
-          method: "POST",
-          relative_url: `${ad.id}/copies`,
-          body: `adset_id=${newAdSetId}&status_option=${status_option || "PAUSED"}`,
-        }));
+        // For cross-account, we need to fetch full ad details and recreate them
+        // Cannot use /copies endpoint across accounts
+        console.log("⚠️ Cross-account ad duplication: fetching full ad details...");
 
-        // Send in chunks
+        // Get page_id from promoted_object for target account
+        const targetPageId = createAdSetPayload.promoted_object?.page_id || sourceAdSet.promoted_object?.page_id;
+
+        if (!targetPageId) {
+          console.error("⚠️ No page_id found in promoted_object. Ads cannot be created without a page.");
+          return res.json({
+            success: true,
+            mode: "cross_account_sync",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            message: "Ad set created successfully, but ads cannot be duplicated (no page_id found in promoted_object)",
+          });
+        }
+
+        console.log(`Using page_id ${targetPageId} for ad creatives in target account`);
+
+        const FormData = (await import("form-data")).default;
+        const batchOperations = [];
+
+        // Fetch full details for each ad
+        for (const ad of adsData) {
+          try {
+            const adDetailsUrl = `https://graph.facebook.com/${api_version}/${ad.id}`;
+            const adDetailsResponse = await axios.get(adDetailsUrl, {
+              params: {
+                fields: "name,adcreatives{id,name,object_story_spec,image_url,image_hash,video_id,thumbnail_url}",
+                access_token: userAccessToken,
+              },
+            });
+
+            const sourceAd = adDetailsResponse.data;
+            const adCreative = sourceAd.adcreatives?.data?.[0];
+
+            if (!adCreative) {
+              console.log(`⚠️ Ad ${ad.id} has no creative, skipping...`);
+              continue;
+            }
+
+            // Clone object_story_spec and update page_id for target account
+            let targetObjectStorySpec = JSON.parse(JSON.stringify(adCreative.object_story_spec || {}));
+            targetObjectStorySpec.page_id = targetPageId;
+
+            console.log(`Ad ${ad.id}: Updated page_id from ${adCreative.object_story_spec?.page_id} to ${targetPageId}`);
+
+            // Build batch operation to create new ad with creative
+            // We need to create ad creative first, then ad
+            const createAdCreativeOp = {
+              name: `create_creative_${ad.id}`,
+              method: "POST",
+              relative_url: `act_${normalizedAccountId}/adcreatives`,
+              body: `name=${encodeURIComponent(adCreative.name || `${ad.name} Creative`)}&object_story_spec=${encodeURIComponent(JSON.stringify(targetObjectStorySpec))}`,
+            };
+
+            const createAdOp = {
+              name: `create_ad_${ad.id}`,
+              method: "POST",
+              relative_url: `act_${normalizedAccountId}/ads`,
+              body: `name=${encodeURIComponent(sourceAd.name || ad.name)}&adset_id=${newAdSetId}&creative={creative_id:{result=create_creative_${ad.id}:$.id}}&status=${status_option || "PAUSED"}`,
+            };
+
+            batchOperations.push(createAdCreativeOp);
+            batchOperations.push(createAdOp);
+
+          } catch (err) {
+            console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
+          }
+        }
+
+        if (batchOperations.length === 0) {
+          console.log("⚠️ No ads to duplicate (no creatives found)");
+          return res.json({
+            success: true,
+            mode: "cross_account_sync",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            message: "Ad set created successfully, but no ads could be duplicated (no creatives found)",
+          });
+        }
+
+        // Send batch operations in chunks
         const chunkSize = 50;
-        const batchIds = [];
 
         for (let i = 0; i < batchOperations.length; i += chunkSize) {
           const chunk = batchOperations.slice(i, i + chunkSize);
           const formData = new FormData();
           formData.append("access_token", userAccessToken);
           formData.append("batch", JSON.stringify(chunk));
-          formData.append("is_parallel", "true");
 
-          const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+          try {
+            const batchResponse = await axios.post(
+              `https://graph.facebook.com/${api_version}/`,
+              formData,
+              { headers: formData.getHeaders(), timeout: 30000 }
+            );
 
-          const batchId = batchResponse.data?.id || batchResponse.data?.async_batch_request_id || null;
-          batchIds.push(batchId);
+            console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
+
+            // For synchronous batch (not async), response is immediate
+            const batchResults = batchResponse.data;
+            if (Array.isArray(batchResults)) {
+              console.log(`Batch results: ${batchResults.filter(r => r.code === 200).length}/${batchResults.length} successful`);
+            }
+
+          } catch (err) {
+            console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
+          }
         }
 
         return res.json({
           success: true,
-          mode: "cross_account_async",
+          mode: "cross_account_sync_batch",
           id: newAdSetId,
           original_id: ad_set_id,
-          batchRequestIds: batchIds,
-          adsCount: totalAdsCount,
-          message: `Ad set created in target account. ${totalAdsCount} ads are being duplicated asynchronously.`,
+          adsCount: batchOperations.length / 2, // Each ad = 2 operations (creative + ad)
+          message: `Ad set created in target account. ${batchOperations.length / 2} ads duplicated via batch request.`,
         });
       }
 
@@ -3998,6 +4133,185 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
       console.log("There was an error uploading images to facebook.", err.response?.data);
       throw err;
     }
+  }
+});
+
+// Combined endpoint for uploading images and videos (for multi-campaign flow)
+app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.uploadFiles, async (req, res) => {
+  try {
+    const files = req.files;
+    const accountId = req.body.account_id;
+    const userAccessToken = req.user?.facebook_access_token;
+    const normalizedAccountId = normalizeAdAccountId(accountId);
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    console.log(`[Upload Creative] Processing ${files.length} files for account ${accountId}`);
+
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        try {
+          const isVideo = file.mimetype.startsWith("video/");
+
+          // Process creative with deduplication
+          const creativeResult = await processCreative(file, accountId);
+
+          if (creativeResult.isDuplicate) {
+            // Creative already exists and is uploaded to this account
+            if (isVideo) {
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "video",
+                  file: file.originalname,
+                  data: {
+                    uploadVideo: creativeResult.facebookIds.facebook_video_id,
+                    getImageHash: creativeResult.facebookIds.facebook_image_hash,
+                  },
+                  status: "success",
+                  isDuplicate: true,
+                  message: "Using existing creative from library",
+                },
+              };
+            } else {
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "image",
+                  file: file.originalname,
+                  imageHash: creativeResult.facebookIds.facebook_image_hash,
+                  status: "success",
+                  isDuplicate: true,
+                  message: "Using existing creative from library",
+                },
+              };
+            }
+          } else {
+            // Need to upload to Meta
+            let filePath;
+            if (!creativeResult.isNew) {
+              // Use existing file from library
+              filePath = getCreativeFilePath(creativeResult.creative);
+            } else {
+              // New file was moved to library, use the new path
+              filePath = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+            }
+
+            if (isVideo) {
+              // Upload video
+              const fileObj = {
+                path: filePath,
+                originalname: file.originalname,
+                size: file.size,
+              };
+
+              // Get or create thumbnail
+              let thumbnailPath = creativeResult.creative.thumbnail_path
+                ? getThumbnailFilePath(creativeResult.creative)
+                : null;
+              if (!thumbnailPath) {
+                const thumbnail = await getThumbnailFromVideo(fileObj);
+                thumbnailPath = thumbnail.path;
+                await updateCreativeThumbnail(creativeResult.creative.id, path.relative(__dirname, thumbnailPath));
+              }
+
+              // Upload video and thumbnail
+              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId);
+              const video_id = await uploadVideoToMeta(fileObj, accountId);
+
+              // Store Facebook IDs
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
+                videoId: video_id,
+                imageHash: thumbnail_image_hash,
+              });
+
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "video",
+                  file: file.originalname,
+                  data: {
+                    uploadVideo: video_id,
+                    getImageHash: thumbnail_image_hash,
+                  },
+                  status: "success",
+                  isNew: creativeResult.isNew,
+                },
+              };
+            } else {
+              // Upload image
+              const imageUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adimages`;
+              const file_stream = fs.createReadStream(filePath);
+
+              const fd = new FormData();
+              fd.append(file.originalname, file_stream);
+              fd.append("access_token", userAccessToken);
+
+              const response = await axios.post(imageUrl, fd, {
+                headers: { ...fd.getHeaders() },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+              });
+
+              const images = response.data.images;
+              const dynamicKey = Object.keys(images)[0];
+              const imageHash = images[dynamicKey].hash;
+
+              // Store Facebook IDs
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
+                imageHash: imageHash,
+              });
+
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "image",
+                  file: file.originalname,
+                  imageHash: imageHash,
+                  status: "success",
+                  isNew: creativeResult.isNew,
+                },
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`[Upload Creative] Error processing ${file.originalname}:`, error.message);
+          return {
+            status: "rejected",
+            reason: {
+              file: file.originalname,
+              status: "failed",
+              error: error.message,
+            },
+          };
+        }
+      })
+    );
+
+    console.log(`[Upload Creative] Completed: ${results.filter((r) => r.status === "fulfilled").length}/${files.length} succeeded`);
+
+    // Transform results to match expected format
+    const uploadedAssets = results.map((result) => {
+      if (result.status === "fulfilled") {
+        return result.value;
+      } else {
+        return result.reason;
+      }
+    });
+
+    res.status(200).json({ uploadedAssets });
+  } catch (error) {
+    console.error("[Upload Creative] Error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
