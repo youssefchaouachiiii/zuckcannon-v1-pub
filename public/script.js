@@ -92,6 +92,19 @@ function getOptimizationGoalFromObjective(objective) {
   return objectiveMapping[objective] || "LINK_CLICKS";
 }
 
+// Get friendly name for campaign objective
+function getObjectiveFriendlyName(objective) {
+  const names = {
+    'OUTCOME_TRAFFIC': 'Traffic',
+    'OUTCOME_SALES': 'Sales',
+    'OUTCOME_LEADS': 'Leads',
+    'OUTCOME_ENGAGEMENT': 'Engagement',
+    'OUTCOME_AWARENESS': 'Awareness',
+    'OUTCOME_APP_PROMOTION': 'App Promotion'
+  };
+  return names[objective] || objective;
+}
+
 /**
  * Update the visibility and requirement of pixel/event type fields based on optimization goal
  * Only OFFSITE_CONVERSIONS requires pixel_id + custom_event_type
@@ -9475,6 +9488,7 @@ async function openBulkDuplicateAdSetModal() {
   bulkAdSetDuplicateData.selectedAccounts = [];
   bulkAdSetDuplicateData.adSetData = null;
   bulkAdSetDuplicateData.campaignMapping = {};
+  bulkAdSetDuplicateData.deepCopy = false; // Reset to default (matches default checked radio button)
 
   const modal = document.querySelector(".bulk-duplicate-adset-modal");
   console.log("Modal element found:", modal);
@@ -9484,6 +9498,16 @@ async function openBulkDuplicateAdSetModal() {
     alert("Modal not found. Please refresh the page.");
     return;
   }
+
+  // Reset deep copy radio buttons to default
+  const deepCopyRadios = modal.querySelectorAll('input[name="bulk-adset-deep-copy"]');
+  deepCopyRadios.forEach((radio) => {
+    if (radio.value === "false") {
+      radio.checked = true;
+    } else {
+      radio.checked = false;
+    }
+  });
 
   showBulkDuplicateAdSetStep(1);
   loadAdSetsForBulkDuplication();
@@ -10905,19 +10929,6 @@ function setupMultiCampaignAdSetModal() {
     });
 
     return Object.values(groups);
-  }
-
-  // Get friendly name for objective
-  function getObjectiveFriendlyName(objective) {
-    const names = {
-      'OUTCOME_TRAFFIC': 'Traffic',
-      'OUTCOME_SALES': 'Sales',
-      'OUTCOME_LEADS': 'Leads',
-      'OUTCOME_ENGAGEMENT': 'Engagement',
-      'OUTCOME_AWARENESS': 'Awareness',
-      'OUTCOME_APP_PROMOTION': 'App Promotion'
-    };
-    return names[objective] || objective;
   }
 
   // Populate campaign list with visual grouping
