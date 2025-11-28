@@ -10977,6 +10977,23 @@ function setupMultiCampaignAdSetModal() {
         return;
       }
 
+      // VALIDATION: Check all campaigns belong to the same ad account
+      // Fix for "Campaign Doesn't Match Account" error (error_subcode: 1487597)
+      const selectedCampaigns = allCampaigns.filter(c => selectedCampaignIds.includes(c.id));
+      const accountIds = [...new Set(selectedCampaigns.map(c => c.accountId))];
+
+      if (accountIds.length > 1) {
+        const accountNames = [...new Set(selectedCampaigns.map(c => `${c.accountName} (${c.accountId})`))];
+        window.showError?.(
+          `❌ Cannot create ad sets across multiple ad accounts!\n\n` +
+          `You selected campaigns from ${accountIds.length} different ad accounts:\n` +
+          accountNames.join('\n') + '\n\n' +
+          `Please select campaigns from only ONE ad account.`,
+          8000
+        );
+        return;
+      }
+
       const payload = buildPayload();
       console.log("[Multi-Campaign AdSet] Payload:", payload);
 
@@ -11128,23 +11145,39 @@ function setupMultiCampaignAdSetModal() {
       payload.bid_strategy = bidStrategyDropdown.dataset.value;
     }
 
-    // Add page if selected (not placeholder)
-    if (pageDropdown?.dataset.value && !pageDropdown.classList.contains("placeholder")) {
+    // Build promoted_object based on optimization_goal
+    // Fix for "Promoted Object Invalid" error (error_subcode: 1885014)
+    const optimizationGoal = payload.optimization_goal;
+
+    if (optimizationGoal) {
+      // Goals that require pixel_id + custom_event_type
+      if (optimizationGoal === 'OFFSITE_CONVERSIONS' || optimizationGoal === 'VALUE' || optimizationGoal === 'APP_INSTALLS_AND_OFFSITE_CONVERSIONS') {
+        if (pixelDropdown?.dataset.value && !pixelDropdown.classList.contains("placeholder")) {
+          payload.promoted_object = payload.promoted_object || {};
+          payload.promoted_object.pixel_id = pixelDropdown.dataset.value;
+
+          // Add custom event type if provided
+          if (eventTypeInput?.value) {
+            payload.promoted_object.custom_event_type = eventTypeInput.dataset.apiValue || eventTypeInput.value;
+          }
+        }
+      }
+      // Goals that work with page_id only (don't mix with pixel_id)
+      else if (['LINK_CLICKS', 'POST_ENGAGEMENT', 'PAGE_LIKES', 'EVENT_RESPONSES', 'REACH', 'IMPRESSIONS', 'LANDING_PAGE_VIEWS', 'THRUPLAY', 'CONVERSATIONS', 'LEAD_GENERATION'].includes(optimizationGoal)) {
+        if (pageDropdown?.dataset.value && !pageDropdown.classList.contains("placeholder")) {
+          payload.promoted_object = payload.promoted_object || {};
+          payload.promoted_object.page_id = pageDropdown.dataset.value;
+        }
+      }
+      // Goals that require application_id (not implemented yet, would need app_id input)
+      // else if (optimizationGoal === 'APP_INSTALLS' || optimizationGoal === 'ENGAGED_USERS') {
+      //   payload.promoted_object = { application_id: "..." };
+      // }
+    }
+    // Fallback: If no optimization_goal, only add page_id if selected
+    else if (pageDropdown?.dataset.value && !pageDropdown.classList.contains("placeholder")) {
       payload.promoted_object = payload.promoted_object || {};
       payload.promoted_object.page_id = pageDropdown.dataset.value;
-    }
-
-    // Add pixel if selected (not placeholder)
-    if (pixelDropdown?.dataset.value && !pixelDropdown.classList.contains("placeholder")) {
-      payload.promoted_object = payload.promoted_object || {};
-      payload.promoted_object.pixel_id = pixelDropdown.dataset.value;
-    }
-
-    // Add custom event type if selected
-    if (eventTypeInput?.value) {
-      payload.promoted_object = payload.promoted_object || {};
-      // Use API format stored in dataset, fallback to value if not set
-      payload.promoted_object.custom_event_type = eventTypeInput.dataset.apiValue || eventTypeInput.value;
     }
 
     // Add bid amount for strategies that need it
