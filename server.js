@@ -4133,6 +4133,185 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
   }
 });
 
+// Combined endpoint for uploading images and videos (for multi-campaign flow)
+app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.uploadFiles, async (req, res) => {
+  try {
+    const files = req.files;
+    const accountId = req.body.account_id;
+    const userAccessToken = req.user?.facebook_access_token;
+    const normalizedAccountId = normalizeAdAccountId(accountId);
+
+    if (!userAccessToken) {
+      return res.status(403).json({
+        error: "Facebook account not connected",
+        needsAuth: true,
+      });
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    console.log(`[Upload Creative] Processing ${files.length} files for account ${accountId}`);
+
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        try {
+          const isVideo = file.mimetype.startsWith("video/");
+
+          // Process creative with deduplication
+          const creativeResult = await processCreative(file, accountId);
+
+          if (creativeResult.isDuplicate) {
+            // Creative already exists and is uploaded to this account
+            if (isVideo) {
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "video",
+                  file: file.originalname,
+                  data: {
+                    uploadVideo: creativeResult.facebookIds.facebook_video_id,
+                    getImageHash: creativeResult.facebookIds.facebook_image_hash,
+                  },
+                  status: "success",
+                  isDuplicate: true,
+                  message: "Using existing creative from library",
+                },
+              };
+            } else {
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "image",
+                  file: file.originalname,
+                  imageHash: creativeResult.facebookIds.facebook_image_hash,
+                  status: "success",
+                  isDuplicate: true,
+                  message: "Using existing creative from library",
+                },
+              };
+            }
+          } else {
+            // Need to upload to Meta
+            let filePath;
+            if (!creativeResult.isNew) {
+              // Use existing file from library
+              filePath = getCreativeFilePath(creativeResult.creative);
+            } else {
+              // New file was moved to library, use the new path
+              filePath = creativeResult.libraryPath || getCreativeFilePath(creativeResult.creative);
+            }
+
+            if (isVideo) {
+              // Upload video
+              const fileObj = {
+                path: filePath,
+                originalname: file.originalname,
+                size: file.size,
+              };
+
+              // Get or create thumbnail
+              let thumbnailPath = creativeResult.creative.thumbnail_path
+                ? getThumbnailFilePath(creativeResult.creative)
+                : null;
+              if (!thumbnailPath) {
+                const thumbnail = await getThumbnailFromVideo(fileObj);
+                thumbnailPath = thumbnail.path;
+                await updateCreativeThumbnail(creativeResult.creative.id, path.relative(__dirname, thumbnailPath));
+              }
+
+              // Upload video and thumbnail
+              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId);
+              const video_id = await uploadVideoToMeta(fileObj, accountId);
+
+              // Store Facebook IDs
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
+                videoId: video_id,
+                imageHash: thumbnail_image_hash,
+              });
+
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "video",
+                  file: file.originalname,
+                  data: {
+                    uploadVideo: video_id,
+                    getImageHash: thumbnail_image_hash,
+                  },
+                  status: "success",
+                  isNew: creativeResult.isNew,
+                },
+              };
+            } else {
+              // Upload image
+              const imageUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adimages`;
+              const file_stream = fs.createReadStream(filePath);
+
+              const fd = new FormData();
+              fd.append(file.originalname, file_stream);
+              fd.append("access_token", userAccessToken);
+
+              const response = await axios.post(imageUrl, fd, {
+                headers: { ...fd.getHeaders() },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+              });
+
+              const images = response.data.images;
+              const dynamicKey = Object.keys(images)[0];
+              const imageHash = images[dynamicKey].hash;
+
+              // Store Facebook IDs
+              await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
+                imageHash: imageHash,
+              });
+
+              return {
+                status: "fulfilled",
+                value: {
+                  type: "image",
+                  file: file.originalname,
+                  imageHash: imageHash,
+                  status: "success",
+                  isNew: creativeResult.isNew,
+                },
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`[Upload Creative] Error processing ${file.originalname}:`, error.message);
+          return {
+            status: "rejected",
+            reason: {
+              file: file.originalname,
+              status: "failed",
+              error: error.message,
+            },
+          };
+        }
+      })
+    );
+
+    console.log(`[Upload Creative] Completed: ${results.filter((r) => r.status === "fulfilled").length}/${files.length} succeeded`);
+
+    // Transform results to match expected format
+    const uploadedAssets = results.map((result) => {
+      if (result.status === "fulfilled") {
+        return result.value;
+      } else {
+        return result.reason;
+      }
+    });
+
+    res.status(200).json({ uploadedAssets });
+  } catch (error) {
+    console.error("[Upload Creative] Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/create-ad-creative", (req, res) => {
   try {
     const { name, page_id, message, headline, type, link, description, account_id, adset_id, assets } = req.body;
