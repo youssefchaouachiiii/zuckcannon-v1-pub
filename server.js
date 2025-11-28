@@ -2690,6 +2690,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         totalChildObjects = totalAdsCount;
       }
 
+      // Fetch target campaign to check for special ad categories
+      const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
+      const campaignDetailsResponse = await axios.get(campaignDetailsUrl, {
+        params: {
+          fields: "special_ad_categories",
+          access_token: userAccessToken,
+        },
+      });
+
+      const targetCampaignSpecialCategories = campaignDetailsResponse.data.special_ad_categories || [];
+      const hasSpecialCategories = Array.isArray(targetCampaignSpecialCategories) && targetCampaignSpecialCategories.length > 0;
+
+      console.log(`Target campaign special_ad_categories:`, targetCampaignSpecialCategories);
+
       // Create new ad set in target account with target campaign
       const createAdSetPayload = {
         name: name || `${sourceAdSet.name} (Copy)`,
@@ -2705,7 +2719,39 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.daily_budget) createAdSetPayload.daily_budget = sourceAdSet.daily_budget;
       if (sourceAdSet.lifetime_budget) createAdSetPayload.lifetime_budget = sourceAdSet.lifetime_budget;
       if (sourceAdSet.bid_amount) createAdSetPayload.bid_amount = sourceAdSet.bid_amount;
-      if (sourceAdSet.targeting) createAdSetPayload.targeting = sourceAdSet.targeting;
+
+      // Handle targeting - remove Advantage+ settings if special ad categories present
+      if (sourceAdSet.targeting) {
+        let targetingCopy = JSON.parse(JSON.stringify(sourceAdSet.targeting)); // Deep clone
+
+        if (hasSpecialCategories) {
+          console.log("⚠️ Target campaign has special ad categories. Removing Advantage+ targeting settings...");
+
+          // Remove advantage_audience and flexible_spec (Advantage+ detailed targeting)
+          if (targetingCopy.advantage_audience) {
+            delete targetingCopy.advantage_audience;
+            console.log("  - Removed advantage_audience");
+          }
+
+          if (targetingCopy.flexible_spec) {
+            delete targetingCopy.flexible_spec;
+            console.log("  - Removed flexible_spec (Advantage+ detailed targeting)");
+          }
+
+          // Ensure age range is 18-65 for special ad categories
+          if (targetingCopy.age_min && (targetingCopy.age_min < 18 || targetingCopy.age_min > 18)) {
+            targetingCopy.age_min = 18;
+            console.log("  - Adjusted age_min to 18");
+          }
+
+          if (targetingCopy.age_max && (targetingCopy.age_max > 65 || targetingCopy.age_max < 65)) {
+            targetingCopy.age_max = 65;
+            console.log("  - Adjusted age_max to 65");
+          }
+        }
+
+        createAdSetPayload.targeting = targetingCopy;
+      }
       if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
