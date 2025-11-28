@@ -10968,7 +10968,46 @@ function setupMultiCampaignAdSetModal() {
     const countEl = document.querySelector(".multi-campaign-adset-selected-count");
     if (countEl) countEl.textContent = selectedCampaignIds.length;
 
-    // Enable/disable next button based on selection count only
+    // Remove any existing warnings
+    const existingWarning = document.querySelector(".account-mismatch-warning");
+    if (existingWarning) existingWarning.remove();
+
+    // HARD VALIDATION 1: Check all campaigns from same account
+    const selectedCampaigns = allCampaigns.filter((c) => selectedCampaignIds.includes(c.id));
+    const accountIds = [...new Set(Array.from(checkboxes).map((cb) => cb.dataset.accountId))];
+
+    if (accountIds.length > 1 && accountIds[0] !== "") {
+      const warning = document.createElement("div");
+      warning.className = "account-mismatch-warning";
+      warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+      warning.textContent = "⚠️ Warning: You've selected campaigns from different ad accounts. This will cause creation failures. Please select campaigns from the same account only.";
+      const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+      if (formHelp) {
+        formHelp.parentNode.insertBefore(warning, formHelp);
+      }
+      // DISABLE next button
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    // HARD VALIDATION 2: Check all campaigns have same objective
+    const objectives = [...new Set(selectedCampaigns.map((c) => c.element?.dataset?.objective || "UNKNOWN"))];
+
+    if (objectives.length > 1) {
+      const warning = document.createElement("div");
+      warning.className = "account-mismatch-warning";
+      warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
+      warning.textContent = `⚠️ Warning: You've selected campaigns with different objectives (${objectives.map(o => getObjectiveFriendlyName(o)).join(", ")}). This will cause creation failures. Please select campaigns with the same objective.`;
+      const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
+      if (formHelp) {
+        formHelp.parentNode.insertBefore(warning, formHelp);
+      }
+      // DISABLE next button
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    // All validations passed - enable next button
     if (nextBtn) {
       nextBtn.disabled = selectedCampaignIds.length === 0;
     }
@@ -10979,44 +11018,17 @@ function setupMultiCampaignAdSetModal() {
     nextBtn.addEventListener("click", () => {
       console.log("[Multi-Campaign AdSet] Moving to step 2. Selected campaigns:", selectedCampaignIds);
 
-      // VALIDATION ON SUBMIT
       const checkboxes = document.querySelectorAll('.multi-campaign-adset-list input[type="checkbox"]:checked');
       const selectedCampaigns = allCampaigns.filter((c) => selectedCampaignIds.includes(c.id));
 
-      // Remove any existing warnings
-      const existingWarning = document.querySelector(".account-mismatch-warning");
-      if (existingWarning) existingWarning.remove();
-
-      // VALIDATION 1: Check all campaigns from same account
-      const accountIds = [...new Set(Array.from(checkboxes).map((cb) => cb.dataset.accountId))];
-      if (accountIds.length > 1 && accountIds[0] !== "") {
-        const warning = document.createElement("div");
-        warning.className = "account-mismatch-warning";
-        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-        warning.textContent = "⚠️ Warning: You've selected campaigns from different ad accounts. This will cause creation failures. Please select campaigns from the same account only.";
-        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
-        if (formHelp) {
-          formHelp.parentNode.insertBefore(warning, formHelp);
-        }
-        return; // Stop here, don't proceed
+      // Update summary
+      const campaignNames = Array.from(checkboxes).map((cb) => cb.dataset.campaignName);
+      const summary = document.querySelector(".selected-campaigns-summary");
+      if (summary) {
+        summary.textContent = `${selectedCampaignIds.length} campaign${selectedCampaignIds.length > 1 ? "s" : ""} (${campaignNames.join(", ")})`;
       }
 
-      // VALIDATION 2: Check all campaigns have same objective
-      const objectives = [...new Set(selectedCampaigns.map((c) => c.element?.dataset?.objective || "UNKNOWN"))];
-      if (objectives.length > 1) {
-        const warning = document.createElement("div");
-        warning.className = "account-mismatch-warning";
-        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-        warning.textContent = `⚠️ Warning: You've selected campaigns with different objectives (${objectives.map(o => getObjectiveFriendlyName(o)).join(", ")}). This will cause creation failures. Please select campaigns with the same objective.`;
-        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
-        if (formHelp) {
-          formHelp.parentNode.insertBefore(warning, formHelp);
-        }
-        return; // Stop here, don't proceed
-      }
-
-      // VALIDATION 3: Check special ad categories compatibility
-      // Rule: Either ALL campaigns have special ad categories, or NONE have them
+      // SOFT WARNING: Check special ad categories compatibility (warning only, tidak blocking)
       const campaignsWithSpecialCat = [];
       const campaignsWithoutSpecialCat = [];
 
@@ -11034,47 +11046,33 @@ function setupMultiCampaignAdSetModal() {
         }
       });
 
-      // If we have both (some with, some without), show error
+      // Remove any previous special ad category warnings in step 2
+      const existingStepWarning = document.querySelector(".special-cat-compatibility-warning");
+      if (existingStepWarning) existingStepWarning.remove();
+
+      // Show soft warning if mixed or different special ad categories (tapi tetap lanjut)
+      let showSpecialCatWarning = false;
+      let warningMessage = '';
+
+      // Check 1: Mixed (some with, some without)
       if (campaignsWithSpecialCat.length > 0 && campaignsWithoutSpecialCat.length > 0) {
-        const warning = document.createElement("div");
-        warning.className = "account-mismatch-warning";
-        warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-        warning.innerHTML = `⚠️ Warning: Mixed special ad category settings detected.<br><br>` +
+        showSpecialCatWarning = true;
+        warningMessage = `⚠️ Warning: Mixed special ad category settings detected.<br><br>` +
           `Campaigns WITH special ad categories (${campaignsWithSpecialCat.length}): ${campaignsWithSpecialCat.map(c => c.name).join(", ")}<br><br>` +
           `Campaigns WITHOUT special ad categories (${campaignsWithoutSpecialCat.length}): ${campaignsWithoutSpecialCat.join(", ")}<br><br>` +
-          `Please select campaigns that either ALL have special ad categories or NONE have them.`;
-        const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
-        if (formHelp) {
-          formHelp.parentNode.insertBefore(warning, formHelp);
-        }
-        return; // Stop here, don't proceed
+          `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
       }
-
-      // If all campaigns have special ad categories, check they all have the SAME categories
-      if (campaignsWithSpecialCat.length > 0) {
+      // Check 2: All have special categories but different ones
+      else if (campaignsWithSpecialCat.length > 0) {
         const firstCampaignCats = JSON.stringify(campaignsWithSpecialCat[0].categories.sort());
         const allSame = campaignsWithSpecialCat.every(c => JSON.stringify(c.categories.sort()) === firstCampaignCats);
 
         if (!allSame) {
-          const warning = document.createElement("div");
-          warning.className = "account-mismatch-warning";
-          warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-          warning.innerHTML = `⚠️ Warning: Campaigns have different special ad categories.<br><br>` +
+          showSpecialCatWarning = true;
+          warningMessage = `⚠️ Warning: Campaigns have different special ad categories.<br><br>` +
             campaignsWithSpecialCat.map(c => `• ${c.name}: ${c.categories.join(", ")}`).join('<br>') + '<br><br>' +
-            `Please select campaigns with the same special ad categories.`;
-          const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
-          if (formHelp) {
-            formHelp.parentNode.insertBefore(warning, formHelp);
-          }
-          return; // Stop here, don't proceed
+            `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
         }
-      }
-
-      // ALL VALIDATIONS PASSED - Proceed to Step 2
-      const campaignNames = Array.from(checkboxes).map((cb) => cb.dataset.campaignName);
-      const summary = document.querySelector(".selected-campaigns-summary");
-      if (summary) {
-        summary.textContent = `${selectedCampaignIds.length} campaign${selectedCampaignIds.length > 1 ? "s" : ""} (${campaignNames.join(", ")})`;
       }
 
       // Check for special ad categories
@@ -11096,6 +11094,18 @@ function setupMultiCampaignAdSetModal() {
 
       // Initialize dropdowns for step 2
       setTimeout(() => {
+        // Show special ad category compatibility warning if needed (SOFT WARNING - tidak blocking)
+        if (showSpecialCatWarning) {
+          const form = document.querySelector(".multi-campaign-adset-form");
+          if (form && !form.querySelector(".special-cat-compatibility-warning")) {
+            const warning = document.createElement("div");
+            warning.className = "special-cat-compatibility-warning";
+            warning.style.cssText = "color: #ff9800; font-size: 13px; margin-bottom: 16px; background: #fff3e0; padding: 12px; border-radius: 4px; border-left: 4px solid #ff9800;";
+            warning.innerHTML = warningMessage;
+            form.insertBefore(warning, form.firstChild);
+          }
+        }
+
         // First populate pages and pixels before initializing dropdowns
         initializePagePixelForModal();
 
