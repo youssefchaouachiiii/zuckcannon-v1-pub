@@ -2371,10 +2371,12 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
             status: "success",
           });
         } else {
+          console.error(`Failed to duplicate ad set to campaign ${campaignId}:`, result.error);
+
           failed_adsets.push({
             campaign_id: campaignId,
             status: "failed",
-            error: result.error || { message: "Batch operation failed without specific error" },
+            error: result.error,
           });
         }
       });
@@ -2480,10 +2482,12 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
           campaign_id: result.data.id,
         });
       } else {
+        console.error(`Failed to create campaign in account ${accountId}:`, result.error);
+
         results.push({
           success: false,
           ad_account_id: accountId,
-          error: result.error || { message: "Batch operation failed without specific error" },
+          error: result.error,
         });
       }
     });

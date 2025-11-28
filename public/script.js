@@ -10291,17 +10291,29 @@ function setupMultiCampaignAdSetModal() {
         const data = await response.json();
 
         if (!response.ok && response.status !== 207) {
-          throw new Error(data.error || "Failed to create ad sets");
+          // Prioritize error_user_msg from details if available
+          const errorMsg = data.details?.error_user_msg || data.error || "Failed to create ad sets";
+          throw new Error(errorMsg);
         }
 
         // Show success/partial success message
         const { total_created, total_failed, failed_adsets } = data;
 
         if (total_failed > 0) {
-          const failedCampaigns = failed_adsets.map((f) => f.campaign_id).join(", ");
-          window.showError?.(`Partially complete: ${total_created} ad sets created, ${total_failed} failed in campaigns: ${failedCampaigns}`, 8000);
+          // Build detailed error message
+          let errorMessage = `⚠️ Partial Success: ${total_created} ad set${total_created > 1 ? "s" : ""} created, ${total_failed} failed\n\n`;
+
+          failed_adsets.forEach((failure) => {
+            const error = failure.error || {};
+            const errorMsg = error.error_user_msg || error.message || JSON.stringify(error);
+            const errorCode = error.code ? ` [Code: ${error.code}]` : "";
+            const fbtrace = error.fbtrace_id ? ` [Trace: ${error.fbtrace_id}]` : "";
+            errorMessage += `Campaign ${failure.campaign_id}:\n${errorMsg}${errorCode}${fbtrace}\n\n`;
+          });
+
+          window.showError?.(errorMessage, 12000);
         } else {
-          window.showSuccess?.(`${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!`, 5000);
+          window.showSuccess?.(`✅ ${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!`, 5000);
         }
 
         closeModal();
@@ -10399,7 +10411,8 @@ function setupMultiCampaignAdSetModal() {
     // Add custom event type if selected
     if (eventTypeInput?.value) {
       payload.promoted_object = payload.promoted_object || {};
-      payload.promoted_object.custom_event_type = eventTypeInput.value;
+      // Use API format stored in dataset, fallback to value if not set
+      payload.promoted_object.custom_event_type = eventTypeInput.dataset.apiValue || eventTypeInput.value;
     }
 
     // Add bid amount for strategies that need it
@@ -10720,16 +10733,23 @@ function initializeEventTypeForModal() {
   if (!eventTypeInput || !eventTypeSearch || !eventTypeSuggestions) return;
 
   const standardEvents = [
-    { name: "ViewContent", description: "Track when a product is viewed" },
-    { name: "AddToCart", description: "Track when items are added to cart" },
-    { name: "InitiateCheckout", description: "Track when checkout is initiated" },
-    { name: "Purchase", description: "Track completed purchases" },
-    { name: "Lead", description: "Track lead submissions" },
-    { name: "CompleteRegistration", description: "Track registration completions" },
-    { name: "AddPaymentInfo", description: "Track payment info additions" },
-    { name: "AddToWishlist", description: "Track wishlist additions" },
-    { name: "Search", description: "Track search queries" },
-    { name: "Contact", description: "Track contact form submissions" },
+    { name: "CONTENT_VIEW", displayName: "ViewContent", description: "Track when a product is viewed" },
+    { name: "ADD_TO_CART", displayName: "AddToCart", description: "Track when items are added to cart" },
+    { name: "INITIATED_CHECKOUT", displayName: "InitiateCheckout", description: "Track when checkout is initiated" },
+    { name: "PURCHASE", displayName: "Purchase", description: "Track completed purchases" },
+    { name: "LEAD", displayName: "Lead", description: "Track lead submissions" },
+    { name: "COMPLETE_REGISTRATION", displayName: "CompleteRegistration", description: "Track registration completions" },
+    { name: "ADD_PAYMENT_INFO", displayName: "AddPaymentInfo", description: "Track payment info additions" },
+    { name: "ADD_TO_WISHLIST", displayName: "AddToWishlist", description: "Track wishlist additions" },
+    { name: "SEARCH", displayName: "Search", description: "Track search queries" },
+    { name: "CONTACT", displayName: "Contact", description: "Track contact form submissions" },
+    { name: "CUSTOMIZE_PRODUCT", displayName: "CustomizeProduct", description: "Track product customizations" },
+    { name: "DONATE", displayName: "Donate", description: "Track donations" },
+    { name: "FIND_LOCATION", displayName: "FindLocation", description: "Track location searches" },
+    { name: "SCHEDULE", displayName: "Schedule", description: "Track appointment scheduling" },
+    { name: "START_TRIAL", displayName: "StartTrial", description: "Track trial starts" },
+    { name: "SUBMIT_APPLICATION", displayName: "SubmitApplication", description: "Track application submissions" },
+    { name: "SUBSCRIBE", displayName: "Subscribe", description: "Track subscriptions" },
   ];
 
   let selectedEventType = "";
@@ -10750,14 +10770,14 @@ function initializeEventTypeForModal() {
       return;
     }
 
-    const matches = standardEvents.filter((evt) => evt.name.toLowerCase().includes(query) || evt.description.toLowerCase().includes(query));
+    const matches = standardEvents.filter((evt) => evt.displayName.toLowerCase().includes(query) || evt.description.toLowerCase().includes(query));
 
     if (matches.length > 0) {
       eventTypeSuggestions.innerHTML = matches
         .map(
           (evt) =>
             `<li data-event="${evt.name}">
-          <strong>${evt.name}</strong>
+          <strong>${evt.displayName}</strong>
           <span class="event-description">${evt.description}</span>
         </li>`
         )
@@ -10773,7 +10793,10 @@ function initializeEventTypeForModal() {
     const li = e.target.closest("li");
     if (li) {
       selectedEventType = li.dataset.event;
-      eventTypeInput.value = selectedEventType;
+      // Show display name to user but store API format
+      const selectedEvent = standardEvents.find((evt) => evt.name === selectedEventType);
+      eventTypeInput.value = selectedEvent ? selectedEvent.displayName : selectedEventType;
+      eventTypeInput.dataset.apiValue = selectedEventType; // Store API format
       eventTypeInput.style.display = "block";
       eventTypeSearch.style.display = "none";
       eventTypeSearch.value = "";
@@ -11265,11 +11288,23 @@ function setupMultiAccountCampaignModal() {
 
         const successCount = result.results?.filter((r) => r.success).length || 0;
         const failCount = result.results?.filter((r) => !r.success).length || 0;
+        const failedResults = result.results?.filter((r) => !r.success) || [];
 
         if (failCount === 0) {
-          alert(`Campaign created successfully in ${successCount} account(s)`);
+          window.showSuccess?.(`✅ Campaign created successfully in ${successCount} account(s)`, 5000);
         } else {
-          alert(`Campaign created in ${successCount} account(s), failed in ${failCount} account(s)`);
+          // Build detailed error message with original error structure
+          let errorMessage = `⚠️ Partial Success: Campaign created in ${successCount} account(s), failed in ${failCount}\n\n`;
+
+          failedResults.forEach((failure) => {
+            const error = failure.error || {};
+            const errorMsg = error.error_user_msg || error.message || JSON.stringify(error);
+            const errorCode = error.code ? ` [Code: ${error.code}]` : "";
+            const fbtrace = error.fbtrace_id ? ` [Trace: ${error.fbtrace_id}]` : "";
+            errorMessage += `Account ${failure.ad_account_id}:\n${errorMsg}${errorCode}${fbtrace}\n\n`;
+          });
+
+          window.showError?.(errorMessage, 12000);
         }
 
         closeModal();
