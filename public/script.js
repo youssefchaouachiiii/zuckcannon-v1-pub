@@ -545,23 +545,24 @@ function populateSpecialAdCountries() {
     return;
   }
 
-  // Find all campaign special country dropdown lists
-  const countryDropdowns = document.querySelectorAll(".dropdown-options.campaign-special-country");
+  // Find all campaign special country dropdown lists (both regular and multi-account/campaign)
+  const countryDropdowns = document.querySelectorAll(".dropdown-options.campaign-special-country, .dropdown-options.multi-campaign-special-country");
 
   countryDropdowns.forEach((dropdown) => {
-    // Keep the "None" option and add all countries
-    const noneOption = dropdown.querySelector('[data-value=""]');
-
-    // Clear all options except "None"
+    // Clear all options
     dropdown.innerHTML = "";
-    if (noneOption) {
-      dropdown.appendChild(noneOption);
-    } else {
-      const newNoneOption = document.createElement("li");
-      newNoneOption.setAttribute("data-value", "");
-      newNoneOption.textContent = "None";
-      dropdown.appendChild(newNoneOption);
-    }
+
+    // Add search input at the top
+    const searchDiv = document.createElement("div");
+    searchDiv.className = "dropdown-search";
+    searchDiv.innerHTML = '<input type="text" placeholder="Search countries..." class="country-search-input" />';
+    dropdown.appendChild(searchDiv);
+
+    // Keep the "None" option
+    const newNoneOption = document.createElement("li");
+    newNoneOption.setAttribute("data-value", "");
+    newNoneOption.textContent = "None";
+    dropdown.appendChild(newNoneOption);
 
     // Add all countries sorted alphabetically
     const sortedCountries = [...fbData.countries].sort((a, b) => a.name.localeCompare(b.name));
@@ -571,6 +572,36 @@ function populateSpecialAdCountries() {
       li.setAttribute("data-value", country.country_code);
       li.textContent = country.name;
       dropdown.appendChild(li);
+    });
+
+    // Add search functionality
+    const searchInput = searchDiv.querySelector(".country-search-input");
+    searchInput.addEventListener("input", (e) => {
+      const searchTerm = e.target.value.toLowerCase();
+      const allOptions = dropdown.querySelectorAll("li");
+
+      allOptions.forEach((option) => {
+        const text = option.textContent.toLowerCase();
+        if (text.includes(searchTerm) || option.dataset.value === "") {
+          option.style.display = "block";
+        } else {
+          option.style.display = "none";
+        }
+      });
+    });
+
+    // Prevent dropdown from closing when clicking on search input
+    searchInput.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
+    // Clear search and reset filter when dropdown closes
+    dropdown.addEventListener("dropdownClosed", () => {
+      searchInput.value = "";
+      const allOptions = dropdown.querySelectorAll("li");
+      allOptions.forEach((option) => {
+        option.style.display = "block";
+      });
     });
   });
 
@@ -11385,9 +11416,10 @@ function setupMultiCampaignAdSetModal() {
     const statusDropdown = form.querySelector('.dropdown-selected[data-dropdown="status"] .dropdown-display');
     const budgetTypeDropdown = form.querySelector('.dropdown-selected[data-dropdown="adset-budget-type"] .dropdown-display');
 
-    // Get optimization goal, billing event, and bid strategy from dropdowns
+    // Get optimization goal and bid strategy from dropdowns
     const optimizationGoalDropdown = form.querySelector('.dropdown-selected[data-dropdown="optimization-goal"] .dropdown-display');
-    const billingEventDropdown = form.querySelector('.dropdown-selected[data-dropdown="billing-event"] .dropdown-display');
+    // Billing event is auto-set to IMPRESSIONS via hidden input
+    const billingEventInput = form.querySelector('.multi-campaign-billing-event');
     const bidStrategyDropdown = form.querySelector('.dropdown-selected[data-dropdown="adset-bid-strategy"] .dropdown-display');
 
     // Get page and pixel
@@ -11417,9 +11449,9 @@ function setupMultiCampaignAdSetModal() {
       payload.optimization_goal = optimizationGoalDropdown.dataset.value;
     }
 
-    // Only add billing_event if user selected something (not placeholder)
-    if (billingEventDropdown?.dataset.value && !billingEventDropdown.classList.contains("placeholder")) {
-      payload.billing_event = billingEventDropdown.dataset.value;
+    // Auto-set billing_event to IMPRESSIONS
+    if (billingEventInput?.value) {
+      payload.billing_event = billingEventInput.value;
     }
 
     // Only add bid_strategy if user selected something (not placeholder)

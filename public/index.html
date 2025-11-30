@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app.css?v=20251129-no-copy-suffix" />
+  <link rel="stylesheet" href="app.css?v=20251129-ui-improvements" />
   <link rel="icon" type="image/x-icon" href="icons/favi.png">
 
 </head>
@@ -1769,29 +1769,8 @@
               </div>
             </div>
 
-            <!-- Billing Event dropdown -->
-            <div class="dropdown-container">
-              <div class="custom-dropdown">
-                <div class="dropdown-selected" data-dropdown="billing-event">
-                  <span class="dropdown-display placeholder">Billing Event (Optional)</span>
-                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
-                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
-                      stroke-linejoin="round" />
-                  </svg>
-                </div>
-                <ul class="dropdown-options billing-event">
-                  <li data-value="IMPRESSIONS">Impressions</li>
-                  <li data-value="LINK_CLICKS">Link Clicks</li>
-                  <li data-value="APP_INSTALLS">App Installs</li>
-                  <li data-value="POST_ENGAGEMENT">Post Engagement</li>
-                  <li data-value="PAGE_LIKES">Page Likes</li>
-                  <li data-value="THRUPLAY">ThruPlay (Video Views)</li>
-                  <li data-value="OFFER_CLAIMS">Offer Claims</li>
-                  <li data-value="PURCHASE">Purchase</li>
-                  <li data-value="LISTING_INTERACTION">Listing Interaction</li>
-                </ul>
-              </div>
-            </div>
+            <!-- Billing Event - Hidden, auto-set to IMPRESSIONS -->
+            <input type="hidden" class="multi-campaign-billing-event" value="IMPRESSIONS" />
 
             <!-- Page dropdown -->
             <div class="dropdown-container">
@@ -2224,7 +2203,8 @@
             </select>
           </div>
 
-          <div class="form-group">
+          <!-- Budget fields hidden - budget managed at ad set level -->
+          <div class="form-group" style="display: none;">
             <label for="budget_type">Campaign Budget Type (Optional - CBO)</label>
             <select name="budget_type" id="budget_type">
               <option value="NONE">No Campaign Budget (CBO Off)</option>
@@ -2298,8 +2278,8 @@
     </div>
   </div>
 
-  <script src="error-handler.js?v=20251129-no-copy-suffix"></script>
-  <script src="script.js?v=20251129-no-copy-suffix"></script>
+  <script src="error-handler.js?v=20251129-ui-improvements"></script>
+  <script src="script.js?v=20251129-ui-improvements"></script>
   <script>
     setTimeout(() => {
       if (typeof setupMetaDataUpdates === 'function') {
