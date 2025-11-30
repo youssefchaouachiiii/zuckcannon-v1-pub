@@ -850,8 +850,33 @@ h2 {
   font-weight: 500;
 }
 
+/* Dropdown search input */
+.dropdown-search {
+  position: sticky;
+  top: 0;
+  background: white;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e5e5;
+  z-index: 1001;
+}
+
+.dropdown-search input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+}
+
+.dropdown-search input:focus {
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
 /* Special Ad Category Country dropdown - limit height and make scrollable */
-.dropdown-options.campaign-special-country {
+.dropdown-options.campaign-special-country,
+.dropdown-options.multi-campaign-special-country {
   max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
