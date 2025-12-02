@@ -1869,7 +1869,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       if (bid_strategy === "LOWEST_COST_WITH_MIN_ROAS" && req.body.min_roas_target) {
         formData.append("min_roas_target", req.body.min_roas_target.toString());
       }
-    } else {
+    }
 
     if (spend_cap) {
       const capInCents = Math.round(parseFloat(spend_cap) * 100);
@@ -2877,7 +2877,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
             batchOperations.push(createAdCreativeOp);
             batchOperations.push(createAdOp);
-
           } catch (err) {
             console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
           }
@@ -2904,20 +2903,15 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           formData.append("batch", JSON.stringify(chunk));
 
           try {
-            const batchResponse = await axios.post(
-              `https://graph.facebook.com/${api_version}/`,
-              formData,
-              { headers: formData.getHeaders(), timeout: 30000 }
-            );
+            const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
             const batchResults = batchResponse.data;
             if (Array.isArray(batchResults)) {
-              console.log(`Batch results: ${batchResults.filter(r => r.code === 200).length}/${batchResults.length} successful`);
+              console.log(`Batch results: ${batchResults.filter((r) => r.code === 200).length}/${batchResults.length} successful`);
             }
-
           } catch (err) {
             console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
           }
@@ -4238,9 +4232,7 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
               };
 
               // Get or create thumbnail
-              let thumbnailPath = creativeResult.creative.thumbnail_path
-                ? getThumbnailFilePath(creativeResult.creative)
-                : null;
+              let thumbnailPath = creativeResult.creative.thumbnail_path ? getThumbnailFilePath(creativeResult.creative) : null;
               if (!thumbnailPath) {
                 const thumbnail = await getThumbnailFromVideo(fileObj);
                 thumbnailPath = thumbnail.path;
