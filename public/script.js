@@ -95,12 +95,12 @@ function getOptimizationGoalFromObjective(objective) {
 // Get friendly name for campaign objective
 function getObjectiveFriendlyName(objective) {
   const names = {
-    'OUTCOME_TRAFFIC': 'Traffic',
-    'OUTCOME_SALES': 'Sales',
-    'OUTCOME_LEADS': 'Leads',
-    'OUTCOME_ENGAGEMENT': 'Engagement',
-    'OUTCOME_AWARENESS': 'Awareness',
-    'OUTCOME_APP_PROMOTION': 'App Promotion'
+    OUTCOME_TRAFFIC: "Traffic",
+    OUTCOME_SALES: "Sales",
+    OUTCOME_LEADS: "Leads",
+    OUTCOME_ENGAGEMENT: "Engagement",
+    OUTCOME_AWARENESS: "Awareness",
+    OUTCOME_APP_PROMOTION: "App Promotion",
   };
   return names[objective] || objective;
 }
@@ -6223,7 +6223,141 @@ function initializeCreateCampaignDialog() {
       }
     };
     setupCreateButton();
+
+    // Setup preview button
+    const setupPreviewButton = () => {
+      const previewBtn = document.querySelector(".campaign-preview-btn");
+      if (previewBtn) {
+        previewBtn.onclick = (e) => {
+          e.preventDefault();
+          console.log("Preview button clicked");
+          showCampaignPreview();
+        };
+      }
+    };
+    setupPreviewButton();
+
+    // Setup preview modal buttons
+    const setupPreviewModal = () => {
+      const modal = document.querySelector(".campaign-preview-modal");
+      const closeBtn = modal?.querySelector(".close-preview-btn");
+      const editBtn = modal?.querySelector(".preview-edit-btn");
+      const confirmBtn = modal?.querySelector(".preview-confirm-create-btn");
+
+      if (closeBtn) {
+        closeBtn.onclick = () => {
+          modal.style.display = "none";
+        };
+      }
+
+      if (editBtn) {
+        editBtn.onclick = () => {
+          modal.style.display = "none";
+        };
+      }
+
+      if (confirmBtn) {
+        confirmBtn.onclick = () => {
+          modal.style.display = "none";
+          handleCampaignCreation();
+        };
+      }
+
+      // Close on background click
+      if (modal) {
+        modal.onclick = (e) => {
+          if (e.target === modal) {
+            modal.style.display = "none";
+          }
+        };
+      }
+    };
+    setupPreviewModal();
+
+    // ===== BUDGET MODE LOGIC =====
+    setupCampaignBudgetMode();
   }, 500); // Wait for DOM to settle
+}
+
+// Setup Campaign Budget Mode functionality
+function setupCampaignBudgetMode() {
+  const column = document.querySelector(".campaign-creation-column");
+  if (!column) {
+    console.warn("Campaign creation column not found for budget mode setup");
+    return;
+  }
+
+  const budgetModeRadios = column.querySelectorAll('input[name="campaign-budget-mode"]');
+  const campaignBudgetFields = column.querySelector(".campaign-budget-fields");
+  const budgetTypeDisplay = column.querySelector('[data-dropdown="campaign-budget-type"] .dropdown-display');
+  const budgetAmountInput = column.querySelector(".campaign-budget-amount");
+  const budgetSuffix = column.querySelector(".campaign-budget-suffix");
+  const endDateContainer = column.querySelector(".campaign-end-date-container");
+  const pacingTypeDisplay = column.querySelector('[data-dropdown="campaign-pacing-type"] .dropdown-display');
+  const scheduleContainer = column.querySelector(".campaign-schedule-container");
+  const addScheduleBtn = column.querySelector(".add-campaign-schedule-btn");
+  const scheduleList = column.querySelector(".campaign-schedule-list");
+  const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+  const bidAmountContainer = column.querySelector(".campaign-bid-amount-container");
+  const minRoasContainer = column.querySelector(".campaign-min-roas-container");
+
+  let campaignScheduleCounter = 0;
+
+  // Toggle budget fields based on mode selection
+  budgetModeRadios.forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      const allLabels = column.querySelectorAll(".budget-mode-options label");
+
+      if (e.target.value === "CAMPAIGN_LEVEL") {
+        campaignBudgetFields.style.display = "block";
+        // Highlight Campaign-Level (first label)
+        allLabels[0].style.borderColor = "#1877f2";
+        allLabels[0].style.background = "#e7f3ff";
+        allLabels[1].style.borderColor = "#ddd";
+        allLabels[1].style.background = "white";
+      } else {
+        campaignBudgetFields.style.display = "none";
+        // Highlight Ad Set-Level (second label)
+        allLabels[1].style.borderColor = "#1877f2";
+        allLabels[1].style.background = "#e7f3ff";
+        allLabels[0].style.borderColor = "#ddd";
+        allLabels[0].style.background = "white";
+      }
+    });
+  });
+
+  // Budget type change handler (Daily vs Lifetime) - Simplified since pacing/schedule are hidden
+  const budgetTypeOptions = column.querySelectorAll(".dropdown-options.campaign-budget-type li");
+  budgetTypeOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      const budgetType = option.dataset.value;
+      if (budgetType === "daily") {
+        budgetSuffix.textContent = "/day";
+        // End date hidden for now
+      } else if (budgetType === "lifetime") {
+        budgetSuffix.textContent = " (Total)";
+        // End date hidden for now
+      }
+    });
+  });
+
+  const bidStrategyOptions = column.querySelectorAll(".dropdown-options.campaign-bid-strategy li");
+  bidStrategyOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      const bidStrategy = option.dataset.value;
+      // ERROR 3 FIX: Handle different bid strategies
+      if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
+        if (bidAmountContainer) bidAmountContainer.style.display = "block";
+        if (minRoasContainer) minRoasContainer.style.display = "none";
+      } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
+        if (bidAmountContainer) bidAmountContainer.style.display = "none";
+        if (minRoasContainer) minRoasContainer.style.display = "block";
+      } else {
+        if (bidAmountContainer) bidAmountContainer.style.display = "none";
+        if (minRoasContainer) minRoasContainer.style.display = "none";
+      }
+    });
+  });
 }
 
 // Reset campaign creation form
@@ -6235,12 +6369,30 @@ function resetCampaignCreationForm() {
   const nameInput = column.querySelector(".config-campaign-name");
   if (nameInput) nameInput.value = "";
 
-  // Budget fields - MOVED TO AD SET LEVEL
-  // const dailyBudgetInput = column.querySelector(".config-campaign-daily-budget");
-  // if (dailyBudgetInput) dailyBudgetInput.value = "";
+  // Reset budget mode to CAMPAIGN_LEVEL (default)
+  const campaignLevelRadio = column.querySelector('input[name="campaign-budget-mode"][value="CAMPAIGN_LEVEL"]');
+  if (campaignLevelRadio) {
+    campaignLevelRadio.checked = true;
+    const campaignBudgetFields = column.querySelector(".campaign-budget-fields");
+    if (campaignBudgetFields) campaignBudgetFields.style.display = "block";
+  }
 
-  // const lifetimeBudgetInput = column.querySelector(".config-campaign-lifetime-budget");
-  // if (lifetimeBudgetInput) lifetimeBudgetInput.value = "";
+  // Reset campaign budget fields
+  const budgetAmountInput = column.querySelector(".campaign-budget-amount");
+  if (budgetAmountInput) budgetAmountInput.value = "";
+
+  const endDateInput = column.querySelector(".campaign-end-date");
+  if (endDateInput) endDateInput.value = "";
+
+  const bidAmountInput = column.querySelector(".campaign-bid-amount");
+  if (bidAmountInput) bidAmountInput.value = "";
+
+  const minRoasInput = column.querySelector(".campaign-min-roas");
+  if (minRoasInput) minRoasInput.value = "";
+
+  // Clear campaign schedules
+  const scheduleList = column.querySelector(".campaign-schedule-list");
+  if (scheduleList) scheduleList.innerHTML = "";
 
   // Reset all dropdowns
   const displayElements = column.querySelectorAll(".dropdown-display");
@@ -6254,12 +6406,151 @@ function resetCampaignCreationForm() {
   const allOptions = column.querySelectorAll(".dropdown-options li");
   allOptions.forEach((opt) => opt.classList.remove("selected"));
 
+  // Reset budget mode styling (Campaign-Level is default)
+  const budgetModeLabels = column.querySelectorAll(".budget-mode-options label");
+  budgetModeLabels.forEach((label, index) => {
+    if (index === 0) {
+      // Campaign-Level (first option)
+      label.style.borderColor = "#1877f2";
+      label.style.background = "#e7f3ff";
+    } else {
+      label.style.borderColor = "#ddd";
+      label.style.background = "white";
+    }
+  });
+
   // Keep create button active and enabled when column is displayed
   const createBtn = column.querySelector(".campaign-create-btn");
   if (createBtn && column.style.display === "block") {
     createBtn.classList.add("active");
     createBtn.disabled = false;
   }
+}
+
+// Show Campaign Preview Modal
+function showCampaignPreview() {
+  const column = document.querySelector(".campaign-creation-column");
+  if (!column) return;
+
+  const modal = document.querySelector(".campaign-preview-modal");
+  const modalBody = modal?.querySelector(".preview-modal-body");
+  if (!modal || !modalBody) return;
+
+  // Gather campaign data
+  const nameInput = column.querySelector(".config-campaign-name");
+  const objectiveDisplay = column.querySelector('[data-dropdown="campaign-objective"] .dropdown-display');
+  const statusDisplay = column.querySelector('[data-dropdown="campaign-status"] .dropdown-display');
+
+  const name = nameInput?.value.trim();
+  const objective = objectiveDisplay?.dataset.value;
+  const objectiveText = objectiveDisplay?.textContent;
+  const status = statusDisplay?.dataset.value;
+
+  // Get special categories
+  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
+  const specialCategories = Array.from(specialCategoriesOptions)
+    .map((opt) => opt.textContent)
+    .filter((val) => val && val !== "None - If none of the categories apply");
+
+  // Get special countries
+  const specialCountryOptions = column.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
+  const specialCountries = Array.from(specialCountryOptions)
+    .map((opt) => opt.textContent)
+    .filter((val) => val && val !== "None");
+
+  // Budget mode
+  const budgetModeRadio = column.querySelector('input[name="campaign-budget-mode"]:checked');
+  const budgetMode = budgetModeRadio?.value;
+
+  let budgetInfo = "Ad set budget";
+  let bidStrategyInfo = null;
+
+  if (budgetMode === "CAMPAIGN_LEVEL") {
+    const budgetTypeDisplay = column.querySelector('[data-dropdown="campaign-budget-type"] .dropdown-display');
+    const budgetType = budgetTypeDisplay?.dataset.value;
+    const budgetAmount = column.querySelector(".campaign-budget-amount")?.value;
+
+    // Set to Campaign budget regardless of whether fields are filled
+    budgetInfo = "Campaign budget";
+
+    if (budgetType && budgetAmount) {
+      budgetInfo += `<br>${budgetType === "daily" ? "Daily" : "Lifetime"} Budget $${parseFloat(budgetAmount).toFixed(2)}`;
+    }
+
+    // Get bid strategy
+    const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+    const bidStrategy = bidStrategyDisplay?.dataset.value;
+    const bidStrategyText = bidStrategyDisplay?.textContent;
+
+    if (bidStrategy) {
+      bidStrategyInfo = bidStrategyText;
+
+      // Check for bid amount or min ROAS
+      if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
+        const bidAmount = column.querySelector(".campaign-bid-amount")?.value;
+        if (bidAmount) {
+          bidStrategyInfo += `<br><span style="font-size: 13px; color: #666;">Bid: $${parseFloat(bidAmount).toFixed(2)}</span>`;
+        }
+      } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
+        const minRoas = column.querySelector(".campaign-min-roas")?.value;
+        if (minRoas) {
+          bidStrategyInfo += `<br><span style="font-size: 13px; color: #666;">Min ROAS: ${parseFloat(minRoas).toFixed(2)}x</span>`;
+        }
+      }
+    }
+  }
+
+  // Build preview HTML
+  let previewHTML = `
+    <div style="margin-bottom: 20px;">
+      <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">Campaign name</div>
+      <div style="font-size: 15px; color: #333;">${name || "Not specified"}</div>
+      ${name ? `<div style="font-size: 12px; color: #1877f2; margin-top: 4px;">ID: Will be generated</div>` : ""}
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">Objective</div>
+      <div style="font-size: 15px; color: #333;">${objectiveText || "Not specified"}</div>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+        Budget
+        ${budgetMode === "CAMPAIGN_LEVEL" ? '<span style="color: #42b72a; font-size: 12px; font-weight: 600;">Advantage+ on</span>' : ""}
+      </div>
+      <div style="font-size: 15px; color: #333;">${budgetInfo}</div>
+    </div>
+  `;
+
+  if (bidStrategyInfo) {
+    previewHTML += `
+      <div style="margin-bottom: 20px;">
+        <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">Campaign bid strategy</div>
+        <div style="font-size: 15px; color: #333;">${bidStrategyInfo}</div>
+      </div>
+    `;
+  }
+
+  if (specialCategories.length > 0) {
+    previewHTML += `
+      <div style="margin-bottom: 20px;">
+        <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">Special Ad Categories</div>
+        <div style="font-size: 15px; color: #333;">${specialCategories.join(", ")}</div>
+      </div>
+    `;
+  }
+
+  if (specialCountries.length > 0) {
+    previewHTML += `
+      <div style="margin-bottom: 20px;">
+        <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">Special ad category countries</div>
+        <div style="font-size: 15px; color: #333;">${specialCountries.join(", ")}</div>
+      </div>
+    `;
+  }
+
+  modalBody.innerHTML = previewHTML;
+  modal.style.display = "flex";
 }
 
 // Handle campaign creation
@@ -6360,19 +6651,70 @@ async function handleCampaignCreation() {
       requestBody.special_ad_category_country = specialCountries;
     }
 
-    // Bid strategy - MOVED TO AD SET LEVEL
-    // if (bidStrategy) {
-    //   requestBody.bid_strategy = bidStrategy;
-    // }
+    // ===== BUDGET MODE LOGIC =====
+    const budgetModeRadio = column.querySelector('input[name="campaign-budget-mode"]:checked');
+    const budgetMode = budgetModeRadio?.value;
 
-    // Budget fields - MOVED TO AD SET LEVEL
-    // if (dailyBudget && parseFloat(dailyBudget) > 0) {
-    //   requestBody.daily_budget = parseFloat(dailyBudget);
-    // }
+    if (budgetMode === "CAMPAIGN_LEVEL") {
+      // Get budget type
+      const budgetTypeDisplay = column.querySelector('[data-dropdown="campaign-budget-type"] .dropdown-display');
+      const budgetType = budgetTypeDisplay?.dataset.value;
+      const budgetAmount = column.querySelector(".campaign-budget-amount")?.value;
 
-    // if (lifetimeBudget && parseFloat(lifetimeBudget) > 0) {
-    //   requestBody.lifetime_budget = parseFloat(lifetimeBudget);
-    // }
+      if (!budgetType || !budgetAmount || parseFloat(budgetAmount) <= 0) {
+        if (window.showError) {
+          window.showError("Please specify budget type and amount for campaign-level budget", 3000);
+        }
+        if (createBtn) {
+          createBtn.disabled = false;
+          createBtn.textContent = "Create Campaign";
+        }
+        return;
+      }
+
+      if (budgetType === "daily") {
+        requestBody.daily_budget = parseFloat(budgetAmount);
+      } else if (budgetType === "lifetime") {
+        requestBody.lifetime_budget = parseFloat(budgetAmount);
+      }
+
+      const bidStrategyDisplay = column.querySelector('[data-dropdown="campaign-bid-strategy"] .dropdown-display');
+      const bidStrategy = bidStrategyDisplay?.dataset.value;
+
+      if (bidStrategy) {
+        requestBody.bid_strategy = bidStrategy;
+      }
+
+      // Get bid amount or min ROAS if required
+      if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
+        const bidAmount = column.querySelector(".campaign-bid-amount")?.value;
+        if (!bidAmount || parseFloat(bidAmount) <= 0) {
+          if (window.showError) {
+            window.showError(`Bid amount is required for ${bidStrategy}`, 3000);
+          }
+          if (createBtn) {
+            createBtn.disabled = false;
+            createBtn.textContent = "Create Campaign";
+          }
+          return;
+        }
+        // For now, store as a single value - backend can handle distribution to ad sets
+        requestBody.adset_bid_amounts = [{ bid_amount: parseFloat(bidAmount) }];
+      } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
+        const minRoas = column.querySelector(".campaign-min-roas")?.value;
+        if (!minRoas || parseFloat(minRoas) <= 0) {
+          if (window.showError) {
+            window.showError("Minimum ROAS is required for this bid strategy", 3000);
+          }
+          if (createBtn) {
+            createBtn.disabled = false;
+            createBtn.textContent = "Create Campaign";
+          }
+          return;
+        }
+        requestBody.min_roas_target = parseFloat(minRoas);
+      }
+    }
 
     console.log("Creating campaign with payload:", requestBody);
 
@@ -6462,6 +6804,12 @@ async function handleCampaignCreation() {
         }
       })
       .catch((err) => console.error("Failed to trigger refresh:", err));
+
+    // Reset button state after success
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create Campaign";
+    }
   } catch (error) {
     console.error("Error creating campaign:", error);
     if (window.showError) {
@@ -9587,14 +9935,14 @@ function loadAdSetsForBulkDuplication() {
       // Get source campaign data for filtering
       const selectedCampaignId = appState.getState().selectedCampaign;
       const allCampaigns = window.campaignsData || window.allCampaignsCache || [];
-      const sourceCampaign = allCampaigns.find(c => c.id === selectedCampaignId);
+      const sourceCampaign = allCampaigns.find((c) => c.id === selectedCampaignId);
 
       if (sourceCampaign) {
         bulkAdSetDuplicateData.sourceCampaign = {
           id: sourceCampaign.id,
           name: sourceCampaign.name,
           objective: sourceCampaign.objective,
-          special_ad_categories: sourceCampaign.special_ad_categories || []
+          special_ad_categories: sourceCampaign.special_ad_categories || [],
         };
       }
 
@@ -9769,7 +10117,7 @@ async function loadCampaignsForSelectedAccounts() {
 
     // Normalize special categories for comparison
     try {
-      if (typeof sourceSpecialCategories === 'string') {
+      if (typeof sourceSpecialCategories === "string") {
         sourceSpecialCategories = JSON.parse(sourceSpecialCategories);
       }
       if (!Array.isArray(sourceSpecialCategories)) {
@@ -9832,7 +10180,7 @@ async function loadCampaignsForSelectedAccounts() {
       mappingItem.dataset.accountId = account.id;
 
       let campaignOptions = '<option value="">Select a campaign...</option>';
-      let warningMessage = '';
+      let warningMessage = "";
 
       if (campaigns.length === 0) {
         campaignOptions += '<option value="" disabled>No compatible campaigns</option>';
@@ -9912,7 +10260,7 @@ function validateCampaignSelection() {
   const sourceCampaign = bulkAdSetDuplicateData.sourceCampaign;
   let sourceSpecialCategories = sourceCampaign?.special_ad_categories || [];
   try {
-    if (typeof sourceSpecialCategories === 'string') {
+    if (typeof sourceSpecialCategories === "string") {
       sourceSpecialCategories = JSON.parse(sourceSpecialCategories);
     }
     if (!Array.isArray(sourceSpecialCategories)) {
@@ -9925,9 +10273,11 @@ function validateCampaignSelection() {
 
   // Get all selected campaigns
   const allCampaigns = window.allCampaignsCache || [];
-  const selectedCampaigns = Object.values(bulkAdSetDuplicateData.campaignMapping).map((campaignId) => {
-    return allCampaigns.find((c) => c.id === campaignId);
-  }).filter(Boolean);
+  const selectedCampaigns = Object.values(bulkAdSetDuplicateData.campaignMapping)
+    .map((campaignId) => {
+      return allCampaigns.find((c) => c.id === campaignId);
+    })
+    .filter(Boolean);
 
   // Check special ad categories compatibility
   const campaignsWithSpecialCat = [];
@@ -9937,7 +10287,7 @@ function validateCampaignSelection() {
   selectedCampaigns.forEach((campaign) => {
     let campaignCategories = campaign.special_ad_categories || [];
     try {
-      if (typeof campaignCategories === 'string') {
+      if (typeof campaignCategories === "string") {
         campaignCategories = JSON.parse(campaignCategories);
       }
       if (!Array.isArray(campaignCategories)) {
@@ -9950,8 +10300,7 @@ function validateCampaignSelection() {
 
     if (campaignCategories.length > 0) {
       // Check if categories match source
-      const categoriesMatch = campaignCategories.length === sourceSpecialCategories.length &&
-        campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
+      const categoriesMatch = campaignCategories.length === sourceSpecialCategories.length && campaignCategories.every((cat, idx) => cat === sourceSpecialCategories[idx]);
 
       if (categoriesMatch) {
         campaignsWithSpecialCat.push({ name: campaign.name, categories: campaignCategories });
@@ -9964,34 +10313,39 @@ function validateCampaignSelection() {
   });
 
   let showWarning = false;
-  let warningMessage = '';
+  let warningMessage = "";
 
   // Check 1: Source has categories, but some target campaigns don't
   if (sourceSpecialCategories.length > 0 && campaignsWithoutSpecialCat.length > 0) {
     showWarning = true;
-    warningMessage = `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
-      `Source campaign has special categories: <strong>${sourceSpecialCategories.join(', ')}</strong><br><br>` +
+    warningMessage =
+      `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
+      `Source campaign has special categories: <strong>${sourceSpecialCategories.join(", ")}</strong><br><br>` +
       `But ${campaignsWithoutSpecialCat.length} target campaign(s) have NO special categories:<br>` +
-      `${campaignsWithoutSpecialCat.map(name => `• ${name}`).join('<br>')}<br><br>` +
+      `${campaignsWithoutSpecialCat.map((name) => `• ${name}`).join("<br>")}<br><br>` +
       `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
   }
   // Check 2: Source has no categories, but some target campaigns do
   else if (sourceSpecialCategories.length === 0 && (campaignsWithSpecialCat.length > 0 || campaignsDifferentCat.length > 0)) {
     showWarning = true;
     const allWithCategories = [...campaignsWithSpecialCat, ...campaignsDifferentCat];
-    warningMessage = `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
+    warningMessage =
+      `⚠️ Warning: Special ad category mismatch detected.<br><br>` +
       `Source campaign has NO special categories.<br><br>` +
       `But ${allWithCategories.length} target campaign(s) have special categories:<br>` +
-      allWithCategories.map(c => `• ${c.name}: ${c.categories.join(', ')}`).join('<br>') + '<br><br>' +
+      allWithCategories.map((c) => `• ${c.name}: ${c.categories.join(", ")}`).join("<br>") +
+      "<br><br>" +
       `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
   }
   // Check 3: Different categories among selected campaigns
   else if (campaignsDifferentCat.length > 0) {
     showWarning = true;
-    warningMessage = `⚠️ Warning: Different special ad categories detected.<br><br>` +
-      `Source: ${sourceSpecialCategories.length > 0 ? sourceSpecialCategories.join(', ') : 'No special categories'}<br><br>` +
+    warningMessage =
+      `⚠️ Warning: Different special ad categories detected.<br><br>` +
+      `Source: ${sourceSpecialCategories.length > 0 ? sourceSpecialCategories.join(", ") : "No special categories"}<br><br>` +
       `Target campaigns with different categories (${campaignsDifferentCat.length}):<br>` +
-      campaignsDifferentCat.map(c => `• ${c.name}: ${c.categories.join(', ')}`).join('<br>') + '<br><br>' +
+      campaignsDifferentCat.map((c) => `• ${c.name}: ${c.categories.join(", ")}`).join("<br>") +
+      "<br><br>" +
       `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
   }
 
@@ -11013,7 +11367,7 @@ function setupMultiCampaignAdSetModal() {
                  data-campaign-name="${campaign.name}"
                  data-account-id="${campaign.accountId || ""}"
                  data-objective="${campaign.element?.dataset?.objective || ""}"
-                 data-special-ad-categories="${campaign.element?.dataset?.specialAdCategories || '[]'}">
+                 data-special-ad-categories="${campaign.element?.dataset?.specialAdCategories || "[]"}">
           <div style="display: flex; flex-direction: column; gap: 2px;">
             <span style="font-weight: 500;">${campaign.name}</span>
             <small style="color: #666; font-size: 11px;">${campaign.accountName || "Unknown Account"} • ${campaign.status}</small>
@@ -11101,7 +11455,9 @@ function setupMultiCampaignAdSetModal() {
       const warning = document.createElement("div");
       warning.className = "account-mismatch-warning";
       warning.style.cssText = "color: #dc3545; font-size: 13px; margin: 10px 0; background: #ffe6e6; padding: 10px; border-radius: 4px; border-left: 4px solid #dc3545;";
-      warning.textContent = `⚠️ Warning: You've selected campaigns with different objectives (${objectives.map(o => getObjectiveFriendlyName(o)).join(", ")}). This will cause creation failures. Please select campaigns with the same objective.`;
+      warning.textContent = `⚠️ Warning: You've selected campaigns with different objectives (${objectives
+        .map((o) => getObjectiveFriendlyName(o))
+        .join(", ")}). This will cause creation failures. Please select campaigns with the same objective.`;
       const formHelp = document.querySelector(".multi-campaign-adset-modal .form-help-text");
       if (formHelp) {
         formHelp.parentNode.insertBefore(warning, formHelp);
@@ -11137,7 +11493,7 @@ function setupMultiCampaignAdSetModal() {
       const campaignsWithoutSpecialCat = [];
 
       selectedCampaigns.forEach((c) => {
-        const specialCategoriesStr = c.element?.dataset?.specialAdCategories || '[]';
+        const specialCategoriesStr = c.element?.dataset?.specialAdCategories || "[]";
         try {
           const categories = JSON.parse(specialCategoriesStr);
           if (Array.isArray(categories) && categories.length > 0) {
@@ -11156,25 +11512,28 @@ function setupMultiCampaignAdSetModal() {
 
       // Show soft warning if mixed or different special ad categories (tapi tetap lanjut)
       let showSpecialCatWarning = false;
-      let warningMessage = '';
+      let warningMessage = "";
 
       // Check 1: Mixed (some with, some without)
       if (campaignsWithSpecialCat.length > 0 && campaignsWithoutSpecialCat.length > 0) {
         showSpecialCatWarning = true;
-        warningMessage = `⚠️ Warning: Mixed special ad category settings detected.<br><br>` +
-          `Campaigns WITH special ad categories (${campaignsWithSpecialCat.length}): ${campaignsWithSpecialCat.map(c => c.name).join(", ")}<br><br>` +
+        warningMessage =
+          `⚠️ Warning: Mixed special ad category settings detected.<br><br>` +
+          `Campaigns WITH special ad categories (${campaignsWithSpecialCat.length}): ${campaignsWithSpecialCat.map((c) => c.name).join(", ")}<br><br>` +
           `Campaigns WITHOUT special ad categories (${campaignsWithoutSpecialCat.length}): ${campaignsWithoutSpecialCat.join(", ")}<br><br>` +
           `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
       }
       // Check 2: All have special categories but different ones
       else if (campaignsWithSpecialCat.length > 0) {
         const firstCampaignCats = JSON.stringify(campaignsWithSpecialCat[0].categories.sort());
-        const allSame = campaignsWithSpecialCat.every(c => JSON.stringify(c.categories.sort()) === firstCampaignCats);
+        const allSame = campaignsWithSpecialCat.every((c) => JSON.stringify(c.categories.sort()) === firstCampaignCats);
 
         if (!allSame) {
           showSpecialCatWarning = true;
-          warningMessage = `⚠️ Warning: Campaigns have different special ad categories.<br><br>` +
-            campaignsWithSpecialCat.map(c => `• ${c.name}: ${c.categories.join(", ")}`).join('<br>') + '<br><br>' +
+          warningMessage =
+            `⚠️ Warning: Campaigns have different special ad categories.<br><br>` +
+            campaignsWithSpecialCat.map((c) => `• ${c.name}: ${c.categories.join(", ")}`).join("<br>") +
+            "<br><br>" +
             `<strong>This may cause targeting conflicts.</strong> You can still proceed, but the ad set may fail for some campaigns.`;
         }
       }
@@ -11292,16 +11651,13 @@ function setupMultiCampaignAdSetModal() {
 
       // VALIDATION: Check all campaigns belong to the same ad account
       // Fix for "Campaign Doesn't Match Account" error (error_subcode: 1487597)
-      const selectedCampaigns = allCampaigns.filter(c => selectedCampaignIds.includes(c.id));
-      const accountIds = [...new Set(selectedCampaigns.map(c => c.accountId))];
+      const selectedCampaigns = allCampaigns.filter((c) => selectedCampaignIds.includes(c.id));
+      const accountIds = [...new Set(selectedCampaigns.map((c) => c.accountId))];
 
       if (accountIds.length > 1) {
-        const accountNames = [...new Set(selectedCampaigns.map(c => `${c.accountName} (${c.accountId})`))];
+        const accountNames = [...new Set(selectedCampaigns.map((c) => `${c.accountName} (${c.accountId})`))];
         window.showError?.(
-          `❌ Cannot create ad sets across multiple ad accounts!\n\n` +
-          `You selected campaigns from ${accountIds.length} different ad accounts:\n` +
-          accountNames.join('\n') + '\n\n' +
-          `Please select campaigns from only ONE ad account.`,
+          `❌ Cannot create ad sets across multiple ad accounts!\n\n` + `You selected campaigns from ${accountIds.length} different ad accounts:\n` + accountNames.join("\n") + "\n\n" + `Please select campaigns from only ONE ad account.`,
           8000
         );
         return;
@@ -11419,7 +11775,7 @@ function setupMultiCampaignAdSetModal() {
     // Get optimization goal and bid strategy from dropdowns
     const optimizationGoalDropdown = form.querySelector('.dropdown-selected[data-dropdown="optimization-goal"] .dropdown-display');
     // Billing event is auto-set to IMPRESSIONS via hidden input
-    const billingEventInput = form.querySelector('.multi-campaign-billing-event');
+    const billingEventInput = form.querySelector(".multi-campaign-billing-event");
     const bidStrategyDropdown = form.querySelector('.dropdown-selected[data-dropdown="adset-bid-strategy"] .dropdown-display');
 
     // Get page and pixel
@@ -11465,7 +11821,7 @@ function setupMultiCampaignAdSetModal() {
 
     if (optimizationGoal) {
       // Goals that require pixel_id + custom_event_type
-      if (optimizationGoal === 'OFFSITE_CONVERSIONS' || optimizationGoal === 'VALUE' || optimizationGoal === 'APP_INSTALLS_AND_OFFSITE_CONVERSIONS') {
+      if (optimizationGoal === "OFFSITE_CONVERSIONS" || optimizationGoal === "VALUE" || optimizationGoal === "APP_INSTALLS_AND_OFFSITE_CONVERSIONS") {
         if (pixelDropdown?.dataset.value && !pixelDropdown.classList.contains("placeholder")) {
           payload.promoted_object = payload.promoted_object || {};
           payload.promoted_object.pixel_id = pixelDropdown.dataset.value;
@@ -11477,7 +11833,7 @@ function setupMultiCampaignAdSetModal() {
         }
       }
       // Goals that work with page_id only (don't mix with pixel_id)
-      else if (['LINK_CLICKS', 'POST_ENGAGEMENT', 'PAGE_LIKES', 'EVENT_RESPONSES', 'REACH', 'IMPRESSIONS', 'LANDING_PAGE_VIEWS', 'THRUPLAY', 'CONVERSATIONS', 'LEAD_GENERATION'].includes(optimizationGoal)) {
+      else if (["LINK_CLICKS", "POST_ENGAGEMENT", "PAGE_LIKES", "EVENT_RESPONSES", "REACH", "IMPRESSIONS", "LANDING_PAGE_VIEWS", "THRUPLAY", "CONVERSATIONS", "LEAD_GENERATION"].includes(optimizationGoal)) {
         if (pageDropdown?.dataset.value && !pageDropdown.classList.contains("placeholder")) {
           payload.promoted_object = payload.promoted_object || {};
           payload.promoted_object.page_id = pageDropdown.dataset.value;

@@ -1,2 +1,20 @@
 node_modules
 .env
+
+# Database files (should not be version controlled)
+data/db/
+*.db
+*.db-shm
+*.db-wal
+sessions.db
+
+# Runtime data
+uploads/
+creative-library/
+data/uploads/
+data/creative-library/
+
+# OS files
+.DS_Store
+.env.local
+.env.*.local
