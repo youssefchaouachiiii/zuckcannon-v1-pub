@@ -502,15 +502,6 @@ export const validateRequest = {
       }
     }
 
-    // Validate adset_bid_amounts if provided
-    if (req.body.adset_bid_amounts) {
-      if (typeof req.body.adset_bid_amounts !== "object" || Array.isArray(req.body.adset_bid_amounts)) {
-        return res.status(400).json({
-          error: "adset_bid_amounts must be a JSON object mapping adset IDs to bid amounts",
-        });
-      }
-    }
-
     // Validate boolean flags
     const booleanFields = ["budget_rebalance_flag", "is_adset_budget_sharing_enabled", "is_skadnetwork_attribution", "is_using_l3_schedule"];
     for (const field of booleanFields) {

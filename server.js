@@ -1778,16 +1778,19 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       name,
       objective,
       status,
-      // Budget options - MOVED TO AD SET LEVEL
-      // daily_budget,
-      // lifetime_budget,
-      // spend_cap,
+      // Budget options (now supporting both modes)
+      daily_budget,
+      lifetime_budget,
+      spend_cap,
+      // Pacing options (campaign-level)
+      pacing_type,
+      campaign_schedule,
       // Special categories
       special_ad_categories,
       special_ad_category,
       special_ad_category_country,
-      // Bid strategy - MOVED TO AD SET LEVEL
-      // bid_strategy,
+      // Bid strategy (now supporting campaign-level)
+      bid_strategy,
       // Advanced options
       adlabels,
       adset_bid_amounts,
@@ -1803,9 +1806,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       promoted_object,
       // Smart promotion
       smart_promotion_type,
-      // Timing - MOVED TO AD SET LEVEL
-      // start_time,
-      // stop_time,
+      // Timing
+      start_time,
+      stop_time,
     } = req.body;
 
     const userAccessToken = req.user.facebook_access_token;
@@ -1839,24 +1842,39 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     formData.append("status", status || "PAUSED");
     formData.append("access_token", userAccessToken);
 
-    // Budget fields - MOVED TO AD SET LEVEL
-    // const hasCampaignBudget = !!(daily_budget || lifetime_budget);
-    const hasCampaignBudget = false; // Always false now since budgets moved to ad set level
+    // ===== BUDGET MODE LOGIC =====
+    // Determine if campaign-level budget is being used
+    const hasCampaignBudget = !!(daily_budget || lifetime_budget);
 
-    // if (daily_budget) {
-    //   const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
-    //   formData.append("daily_budget", budgetInCents.toString());
-    // }
+    if (hasCampaignBudget) {
+      // Campaign-level budget mode
+      if (daily_budget) {
+        const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+        formData.append("daily_budget", budgetInCents.toString());
+      }
 
-    // if (lifetime_budget) {
-    //   const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
-    //   formData.append("lifetime_budget", budgetInCents.toString());
-    // }
+      if (lifetime_budget) {
+        const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+        formData.append("lifetime_budget", budgetInCents.toString());
+      }
 
-    // if (spend_cap) {
-    //   const capInCents = Math.round(parseFloat(spend_cap) * 100);
-    //   formData.append("spend_cap", capInCents.toString());
-    // }
+      if (bid_strategy) {
+        formData.append("bid_strategy", bid_strategy);
+      }
+
+      if (adset_bid_amounts && ["LOWEST_COST_WITH_BID_CAP", "COST_CAP"].includes(bid_strategy)) {
+        formData.append("adset_bid_amounts", JSON.stringify(adset_bid_amounts));
+      }
+
+      if (bid_strategy === "LOWEST_COST_WITH_MIN_ROAS" && req.body.min_roas_target) {
+        formData.append("min_roas_target", req.body.min_roas_target.toString());
+      }
+    }
+
+    if (spend_cap) {
+      const capInCents = Math.round(parseFloat(spend_cap) * 100);
+      formData.append("spend_cap", capInCents.toString());
+    }
 
     // Special ad categories (Meta requires JSON array)
     if (special_ad_categories) {
@@ -1874,19 +1892,16 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("special_ad_category_country", JSON.stringify(special_ad_category_country));
     }
 
-    // Bid strategy - MOVED TO AD SET LEVEL
-    // if (bid_strategy) {
-    //   formData.append("bid_strategy", bid_strategy);
-    // }
+    // Note: bid_strategy is now handled in budget mode logic above
+    // It's only added when campaign-level budget is used
 
     // Advanced campaign options
     if (adlabels) {
       formData.append("adlabels", JSON.stringify(adlabels));
     }
 
-    if (adset_bid_amounts) {
-      formData.append("adset_bid_amounts", JSON.stringify(adset_bid_amounts));
-    }
+    // Note: adset_bid_amounts is now handled in budget mode logic above
+    // It's only added when campaign-level budget + bid cap strategy is used
 
     if (adset_budgets) {
       formData.append("adset_budgets", JSON.stringify(adset_budgets));
@@ -1936,14 +1951,14 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Timing - MOVED TO AD SET LEVEL
-    // if (start_time) {
-    //   formData.append("start_time", start_time);
-    // }
+    // Timing (now supported at campaign level)
+    if (start_time) {
+      formData.append("start_time", start_time);
+    }
 
-    // if (stop_time) {
-    //   formData.append("stop_time", stop_time);
-    // }
+    if (stop_time) {
+      formData.append("stop_time", stop_time);
+    }
 
     console.log("Creating campaign:", {
       url: campaignUrl,
@@ -1952,6 +1967,14 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       status: status || "PAUSED",
       account: formattedAccountId,
       hasCampaignBudget,
+      budgetMode: hasCampaignBudget ? "CAMPAIGN_LEVEL" : "ADSET_LEVEL",
+      ...(hasCampaignBudget && {
+        daily_budget,
+        lifetime_budget,
+        bid_strategy,
+        min_roas_target: req.body.min_roas_target,
+        hasAdsetBidAmounts: !!adset_bid_amounts,
+      }),
       budgetSharing: !hasCampaignBudget ? (is_adset_budget_sharing_enabled !== undefined ? is_adset_budget_sharing_enabled : false) : "N/A",
       hasAdvancedOptions: !!(adlabels || adset_bid_amounts || adset_budgets || campaign_optimization_type || promoted_object),
     });
@@ -2854,7 +2877,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
             batchOperations.push(createAdCreativeOp);
             batchOperations.push(createAdOp);
-
           } catch (err) {
             console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
           }
@@ -2881,20 +2903,15 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           formData.append("batch", JSON.stringify(chunk));
 
           try {
-            const batchResponse = await axios.post(
-              `https://graph.facebook.com/${api_version}/`,
-              formData,
-              { headers: formData.getHeaders(), timeout: 30000 }
-            );
+            const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
             const batchResults = batchResponse.data;
             if (Array.isArray(batchResults)) {
-              console.log(`Batch results: ${batchResults.filter(r => r.code === 200).length}/${batchResults.length} successful`);
+              console.log(`Batch results: ${batchResults.filter((r) => r.code === 200).length}/${batchResults.length} successful`);
             }
-
           } catch (err) {
             console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
           }
@@ -4215,9 +4232,7 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
               };
 
               // Get or create thumbnail
-              let thumbnailPath = creativeResult.creative.thumbnail_path
-                ? getThumbnailFilePath(creativeResult.creative)
-                : null;
+              let thumbnailPath = creativeResult.creative.thumbnail_path ? getThumbnailFilePath(creativeResult.creative) : null;
               if (!thumbnailPath) {
                 const thumbnail = await getThumbnailFromVideo(fileObj);
                 thumbnailPath = thumbnail.path;
