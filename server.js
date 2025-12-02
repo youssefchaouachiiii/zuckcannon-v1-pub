@@ -1782,9 +1782,6 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       daily_budget,
       lifetime_budget,
       spend_cap,
-      // Pacing options (campaign-level)
-      pacing_type,
-      campaign_schedule,
       // Special categories
       special_ad_categories,
       special_ad_category,
@@ -1951,6 +1948,17 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
+    // Set pacing_type only if explicitly provided in request
+    // Note: pacing_type controls whether ad sets can use adset_schedule
+    // - day_parting: Allows ad sets to use adset_schedule (day/hour targeting)
+    // - standard: Even distribution, does NOT support adset_schedule
+    // - no_pacing: Accelerated delivery
+    // If not set, Meta will use default based on bid strategy and budget type
+    if (req.body.pacing_type) {
+      formData.append("pacing_type", JSON.stringify(Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type]));
+      console.log("Campaign pacing_type set to:", req.body.pacing_type);
+    }
+
     // Timing (now supported at campaign level)
     if (start_time) {
       formData.append("start_time", start_time);
@@ -1990,7 +1998,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
     const detailsResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time",
+        fields: "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -2040,13 +2048,16 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     });
   }
 
-  // Fetch campaign details to get special_ad_category_country
+  // Fetch campaign details to get special_ad_category_country and pacing_type
   let campaignCountries = null;
+  let campaignPacingType = null;
+  const needsDayParting = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
+
   try {
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
     const campaignResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "special_ad_category_country",
+        fields: "special_ad_category_country,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -2055,9 +2066,30 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       campaignCountries = campaignResponse.data.special_ad_category_country;
       console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
     }
+
+    // campaignPacingType = campaignResponse.data.pacing_type;
+    console.log(`Campaign ${req.body.campaign_id} current pacing_type:`, campaignPacingType);
+
+    // If ad set has scheduling but campaign doesn't have day_parting, update the campaign
+    if (needsDayParting && (!campaignPacingType || !campaignPacingType.includes("day_parting"))) {
+      console.log(`Updating campaign ${req.body.campaign_id} pacing_type to day_parting for scheduled ad set`);
+
+      const updateCampaignUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
+      const updateFormData = new URLSearchParams();
+      // updateFormData.append("pacing_type", JSON.stringify(["day_parting"]));
+      updateFormData.append("access_token", userAccessToken);
+
+      await axios.post(updateCampaignUrl, updateFormData, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      console.log(`Successfully updated campaign pacing_type to day_parting`);
+    }
   } catch (err) {
-    console.warn("Could not fetch campaign details for special_ad_category_country:", err.message);
-    // Continue with ad set creation even if campaign fetch fails
+    console.warn("Could not fetch/update campaign details:", err.message);
+    // Continue with ad set creation even if campaign fetch/update fails
   }
 
   const payload = {
@@ -2235,14 +2267,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   if (bidAmountRequired) {
     if (!req.body.bid_amount || req.body.bid_amount <= 0) {
-      // return res.status(400).json({
-      //   error: `Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.`,
-      //   details: "Bid amount required for bid strategy provided",
-      //   missing_fields: { bid_amount: true },
-      // });
-      console.log("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.");
+      console.log(`[WARNING] Bid amount required but not provided for ${bidStrategy}`);
+    } else {
+      payload.bid_amount = parseInt(req.body.bid_amount);
     }
-    payload.bid_amount = parseInt(req.body.bid_amount);
   } else if (req.body.bid_amount) {
     // Optional bid_amount for other strategies
     payload.bid_amount = parseInt(req.body.bid_amount);
@@ -2251,7 +2279,6 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Add adset_schedule if provided
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    payload.pacing_type = ["day_parting"]; // Only set pacing for scheduled ads
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2358,10 +2385,9 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       adSetPayload.promoted_object = JSON.stringify(adSetPayload.promoted_object);
     }
 
-    // Handle ad scheduling - must set pacing_type if adset_schedule is provided
+    // Handle ad scheduling
     if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
       adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
-      adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2782,7 +2808,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
-      if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
+      // if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
       if (sourceAdSet.adset_schedule) createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
 
       // Create ad set in target account

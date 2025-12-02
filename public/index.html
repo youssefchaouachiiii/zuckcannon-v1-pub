@@ -384,6 +384,34 @@
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
 
+          <!-- Campaign Budget Display (Read-Only) - Shows when CBO is enabled -->
+          <div class="campaign-budget-display-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fff3cd;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#856404">
+                <path
+                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 11a.75.75 0 01-.75-.75v-3.5a.75.75 0 011.5 0v3.5A.75.75 0 018 11zm0-5.5a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+              <span style="font-size: 13px; color: #856404; font-weight: 600;">Campaign Budget Optimization (CBO)
+                Enabled</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Budget Type</label>
+                <input type="text" class="campaign-budget-type-readonly" readonly
+                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Budget Amount</label>
+                <input type="text" class="campaign-budget-amount-readonly" readonly
+                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+              </div>
+            </div>
+            <small style="display: block; margin-top: 8px; color: #856404; font-size: 12px;">
+              💡 Budget is managed at campaign level. Adset-level budget fields are disabled.
+            </small>
+          </div>
+
           <!-- Budget & Schedule Section -->
           <div class="budget-schedule-section"
             style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
@@ -436,6 +464,26 @@
             </div>
           </div>
 
+          <!-- Campaign Bid Strategy Display (Read-Only) - Shows when CBO is enabled -->
+          <div class="campaign-bid-strategy-display-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #e7f3ff;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#004085">
+                <path
+                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 11a.75.75 0 01-.75-.75v-3.5a.75.75 0 011.5 0v3.5A.75.75 0 018 11zm0-5.5a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+              <span style="font-size: 13px; color: #004085; font-weight: 600;">Campaign-Level Bid Strategy</span>
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Bid Strategy</label>
+              <input type="text" class="campaign-bid-strategy-readonly" readonly
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+            </div>
+            <small style="display: block; margin-top: 8px; color: #004085; font-size: 12px;">
+              💡 Bid strategy is managed at campaign level. Adset-level bid strategy is disabled.
+            </small>
+          </div>
+
           <!-- Bid Strategy Section  -->
           <div class="bid-strategy-section" style="margin-top: 15px;">
             <div class="dropdown-container">
@@ -457,11 +505,23 @@
             </div>
           </div>
 
-          <div class="budget-input-wrapper cost-per-result">
+          <!-- Bid Amount Field (for BID_CAP and COST_CAP strategies) -->
+          <div class="budget-input-wrapper bid-amount-field" style="display: none; margin-top: 10px;">
             <span class="currency-prefix">$</span>
-            <input type="number" placeholder="12.50" data-container="adset-form-container"
-              class="config-cost-per-result-goal" step="0.01" min="0" />
+            <input type="number" placeholder="Enter bid amount (e.g., 12.50)" data-container="adset-form-container"
+              class="config-bid-amount" step="0.01" min="0" />
             <span class="currency-suffix">per result</span>
+          </div>
+
+          <!-- ROAS Constraints Field (for MIN_ROAS strategy) -->
+          <div class="roas-constraints-field" style="display: none; margin-top: 10px;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">ROAS Average Floor*</label>
+            <input type="number" placeholder="Enter ROAS value (e.g., 2.5 for 250% ROAS)"
+              data-container="adset-form-container" class="config-roas-average-floor" step="0.01" min="0"
+              style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+            <small style="display: block; margin-top: 4px; color: #666; font-size: 12px;">
+              💡 Minimum return on ad spend target. E.g., 2.5 = 250% ROAS ($2.50 return per $1 spent)
+            </small>
           </div>
 
           <div class="targeting-age">
