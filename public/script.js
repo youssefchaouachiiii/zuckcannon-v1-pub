@@ -279,6 +279,24 @@ class AppStateManager {
 
 const appState = new AppStateManager();
 
+// Normalize Meta API bid strategy values
+// Meta sometimes returns different values than what was set
+function normalizeBidStrategy(bidStrategy) {
+  if (!bidStrategy) return "LOWEST_COST_WITHOUT_CAP";
+
+  // Meta API bid strategy mapping
+  const bidStrategyMap = {
+    LOWEST_COST_WITHOUT_CAP: "LOWEST_COST_WITHOUT_CAP",
+    LOWEST_COST_WITH_BID_CAP: "LOWEST_COST_WITH_BID_CAP",
+    COST_CAP: "COST_CAP",
+    LOWEST_COST_WITH_MIN_ROAS: "LOWEST_COST_WITH_MIN_ROAS",
+    // Meta sometimes returns these alternate values
+    BID_CAP: "LOWEST_COST_WITH_BID_CAP", // Normalize BID_CAP to LOWEST_COST_WITH_BID_CAP
+  };
+
+  return bidStrategyMap[bidStrategy] || bidStrategy;
+}
+
 // Function to show Facebook connect prompt
 function showFacebookConnectPrompt() {
   const mainContainer = document.getElementById("main-container");
@@ -388,9 +406,9 @@ function populateCampaigns(campaigns) {
 
     if (campaign.insights) {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${
-        campaign.bid_strategy || "LOWEST_COST_WITHOUT_CAP"
-      }" data-campaign-id="${campaign.id}" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
+          data-acc-campaign-id="${campaign.account_id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${normalizeBidStrategy(
+        campaign.bid_strategy
+      )}" data-campaign-id="${campaign.id}" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
           <input type="checkbox" class="campaign-checkbox" style="display: none;">
           <label>
             <h3>${campaign.name}</h3>
@@ -403,9 +421,9 @@ function populateCampaigns(campaigns) {
         </div>`;
     } else {
       campaignSelection.innerHTML += `<div class="${classlist}" data-next-column=".action-column" style="display:none" data-col-id="2"
-        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${
-        campaign.bid_strategy || "LOWEST_COST_WITHOUT_CAP"
-      }" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
+        data-acc-campaign-id="${campaign.account_id}" data-campaign-id="${campaign.id}" data-daily-budget="${campaign.daily_budget || ""}" data-lifetime-budget="${campaign.lifetime_budget || ""}" data-bid-strategy="${normalizeBidStrategy(
+        campaign.bid_strategy
+      )}" data-objective="${campaign.objective || ""}" data-special-ad-categories='${JSON.stringify(campaign.special_ad_categories)}'>
         <input type="checkbox" class="campaign-checkbox" style="display: none;">
         <label>
           <h3>${campaign.name}</h3>
@@ -651,10 +669,17 @@ async function init() {
 
 function clearAdSetForm() {
   const adsetNameInput = document.querySelector(".config-adset-name");
+  const adsetBudgetInput = document.querySelector(".config-adset-budget");
+  const bidAmountInput = document.querySelector(".config-bid-amount");
+  const roasInput = document.querySelector(".config-roas-average-floor");
 
-  if (adsetNameInput) {
-    adsetNameInput.value = "";
-  }
+  if (adsetNameInput) adsetNameInput.value = "";
+  if (adsetBudgetInput) adsetBudgetInput.value = "";
+  if (bidAmountInput) bidAmountInput.value = "";
+  if (roasInput) roasInput.value = "";
+
+  // Reset schedule counter when clearing form
+  scheduleCounter = 0;
 }
 
 class SingleSelectGroup {
@@ -731,7 +756,7 @@ class SingleSelectGroup {
             }
 
             appState.updateState("selectedCampaign", clickedItem.dataset.campaignId);
-            appState.updateState("campaignBidStrategy", clickedItem.dataset.bidStrategy || "LOWEST_COST_WITHOUT_CAP");
+            appState.updateState("campaignBidStrategy", normalizeBidStrategy(clickedItem.dataset.bidStrategy));
             appState.updateState("campaignDailyBudget", clickedItem.dataset.dailyBudget);
             appState.updateState("campaignLifetimeBudget", clickedItem.dataset.lifetimeBudget);
 
@@ -916,6 +941,177 @@ class SingleSelectGroup {
     }
   }
 
+  handleCampaignBudgetDisplay() {
+    const campaignDailyBudget = appState.getState().campaignDailyBudget;
+    const campaignLifetimeBudget = appState.getState().campaignLifetimeBudget;
+    const campaignBidStrategy = appState.getState().campaignBidStrategy;
+
+    const campaignBudgetContainer = document.querySelector(".campaign-budget-display-container");
+    const campaignBidStrategyContainer = document.querySelector(".campaign-bid-strategy-display-container");
+    const budgetScheduleSection = document.querySelector(".budget-schedule-section");
+    const bidStrategySection = document.querySelector(".bid-strategy-section");
+    const adSchedulingContainer = document.querySelector(".ad-scheduling-container");
+    const budgetTypeDropdown = document.querySelector('.dropdown-selected[data-dropdown="adset-budget-type"]');
+    const budgetAmountInput = document.querySelector(".config-adset-budget");
+    const bidStrategyDropdown = document.querySelector('.dropdown-selected[data-dropdown="adset-bid-strategy"]');
+
+    const hasCampaignBudget = !!(campaignDailyBudget || campaignLifetimeBudget);
+
+    if (hasCampaignBudget) {
+      // CBO Mode: Show campaign budget read-only fields, hide/disable adset budget fields
+      if (campaignBudgetContainer) {
+        campaignBudgetContainer.style.display = "block";
+
+        const budgetTypeField = campaignBudgetContainer.querySelector(".campaign-budget-type-readonly");
+        const budgetAmountField = campaignBudgetContainer.querySelector(".campaign-budget-amount-readonly");
+
+        if (campaignDailyBudget) {
+          const budgetValue = (parseFloat(campaignDailyBudget) / 100).toFixed(2);
+          budgetTypeField.value = "Campaign-Daily Budget";
+          budgetAmountField.value = `$${budgetValue} / day`;
+
+          // Hide ad scheduling for campaign daily budget
+          if (adSchedulingContainer) {
+            adSchedulingContainer.style.display = "none";
+          }
+        } else if (campaignLifetimeBudget) {
+          const budgetValue = (parseFloat(campaignLifetimeBudget) / 100).toFixed(2);
+          budgetTypeField.value = "Campaign-Lifetime Budget";
+          budgetAmountField.value = `$${budgetValue} (lifetime)`;
+
+          // Show ad scheduling for campaign lifetime budget
+          if (adSchedulingContainer) {
+            adSchedulingContainer.style.display = "block";
+          }
+        }
+      }
+
+      // Show campaign bid strategy read-only field
+      if (campaignBidStrategyContainer && campaignBidStrategy) {
+        campaignBidStrategyContainer.style.display = "block";
+        const bidStrategyField = campaignBidStrategyContainer.querySelector(".campaign-bid-strategy-readonly");
+
+        // Format bid strategy for display
+        const bidStrategyDisplay = {
+          LOWEST_COST_WITHOUT_CAP: "Lowest Cost Without Cap",
+          LOWEST_COST_WITH_BID_CAP: "Lowest Cost With Bid Cap",
+          COST_CAP: "Cost Cap",
+          LOWEST_COST_WITH_MIN_ROAS: "Lowest Cost With Min ROAS",
+        };
+
+        bidStrategyField.value = bidStrategyDisplay[campaignBidStrategy] || campaignBidStrategy;
+        // Store the actual bid strategy value in data attribute for later retrieval
+        bidStrategyField.dataset.value = campaignBidStrategy;
+      }
+
+      // Hide and disable adset budget fields
+      if (budgetScheduleSection) {
+        const budgetTypeContainer = budgetScheduleSection.querySelector(".dropdown-container");
+        const budgetInputWrapper = budgetScheduleSection.querySelector(".budget-input-wrapper");
+
+        if (budgetTypeContainer) budgetTypeContainer.style.display = "none";
+        if (budgetInputWrapper) budgetInputWrapper.style.display = "none";
+
+        if (budgetAmountInput) {
+          budgetAmountInput.required = false;
+          budgetAmountInput.disabled = true;
+        }
+      }
+
+      // Hide and disable adset bid strategy dropdown (campaign-level strategy is shown)
+      if (bidStrategySection && bidStrategyDropdown) {
+        const dropdownContainer = bidStrategySection.querySelector(".dropdown-container");
+        if (dropdownContainer) dropdownContainer.style.display = "none";
+      }
+
+      // Update bid fields visibility based on campaign bid strategy
+      if (campaignBidStrategy) {
+        this.updateBidFieldsVisibility(campaignBidStrategy);
+      }
+    } else {
+      // ABO Mode: Hide campaign budget display, show and enable adset budget fields
+      if (campaignBudgetContainer) {
+        campaignBudgetContainer.style.display = "none";
+      }
+
+      if (campaignBidStrategyContainer) {
+        campaignBidStrategyContainer.style.display = "none";
+      }
+
+      // Show ad scheduling (will be controlled by adset budget type selection)
+      if (adSchedulingContainer) {
+        adSchedulingContainer.style.display = "block";
+      }
+
+      // Show and enable adset budget fields
+      if (budgetScheduleSection) {
+        const budgetTypeContainer = budgetScheduleSection.querySelector(".dropdown-container");
+        const budgetInputWrapper = budgetScheduleSection.querySelector(".budget-input-wrapper");
+
+        if (budgetTypeContainer) budgetTypeContainer.style.display = "block";
+        if (budgetInputWrapper) budgetInputWrapper.style.display = "flex";
+
+        if (budgetAmountInput) {
+          budgetAmountInput.required = true;
+          budgetAmountInput.disabled = false;
+        }
+      }
+
+      // Show and enable adset bid strategy dropdown
+      if (bidStrategySection && bidStrategyDropdown) {
+        const dropdownContainer = bidStrategySection.querySelector(".dropdown-container");
+        if (dropdownContainer) dropdownContainer.style.display = "block";
+      }
+    }
+  }
+
+  setupBidStrategyListeners() {
+    const bidStrategyOptions = document.querySelectorAll(".dropdown-options.adset-bid-strategy li");
+
+    bidStrategyOptions.forEach((option) => {
+      // Check if listener already attached to avoid duplicates
+      if (option.dataset.bidStrategyListenerAttached) return;
+
+      option.addEventListener("click", () => {
+        const bidStrategy = option.dataset.value;
+        this.updateBidFieldsVisibility(bidStrategy);
+      });
+
+      // Mark listener as attached
+      option.dataset.bidStrategyListenerAttached = "true";
+    });
+  }
+
+  updateBidFieldsVisibility(bidStrategy) {
+    const bidAmountField = document.querySelector(".bid-amount-field");
+    const roasConstraintsField = document.querySelector(".roas-constraints-field");
+    const bidAmountInput = document.querySelector(".config-bid-amount");
+    const roasInput = document.querySelector(".config-roas-average-floor");
+
+    // Hide all bid-related fields by default
+    if (bidAmountField) bidAmountField.style.display = "none";
+    if (roasConstraintsField) roasConstraintsField.style.display = "none";
+    if (bidAmountInput) bidAmountInput.required = false;
+    if (roasInput) roasInput.required = false;
+
+    // Show appropriate field based on bid strategy
+    if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
+      // Show bid amount field
+      if (bidAmountField) bidAmountField.style.display = "flex";
+      if (bidAmountInput) bidAmountInput.required = true;
+    } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
+      // Show ROAS constraints field
+      if (roasConstraintsField) roasConstraintsField.style.display = "block";
+      if (roasInput) roasInput.required = true;
+    }
+    // For LOWEST_COST_WITHOUT_CAP, all fields remain hidden
+
+    // Trigger validation check
+    if (typeof checkRequiredFields === "function") {
+      checkRequiredFields();
+    }
+  }
+
   hideAndClearDownstreamColumns(currentColId) {
     const currentColNum = parseInt(currentColId);
 
@@ -1052,6 +1248,29 @@ class SingleSelectGroup {
           attachDropdownOptionListeners(pixelDropdownElement);
         }
       }
+
+      // Handle campaign budget display (CBO vs ABO)
+      this.handleCampaignBudgetDisplay();
+
+      // Setup bid strategy listeners and initialize field visibility
+      this.setupBidStrategyListeners();
+
+      // Get current bid strategy and update field visibility
+      // If campaign has bid strategy (CBO), use it; otherwise use adset dropdown value
+      const campaignBidStrategy = appState.getState().campaignBidStrategy;
+      const hasCampaignBudget = !!(appState.getState().campaignDailyBudget || appState.getState().campaignLifetimeBudget);
+
+      let effectiveBidStrategy;
+      if (hasCampaignBudget && campaignBidStrategy) {
+        // Use campaign bid strategy when CBO is enabled
+        effectiveBidStrategy = campaignBidStrategy;
+      } else {
+        // Use adset dropdown value for ABO mode
+        const currentBidStrategy = document.querySelector('[data-dropdown="adset-bid-strategy"] .dropdown-display');
+        effectiveBidStrategy = currentBidStrategy?.dataset.value || "LOWEST_COST_WITHOUT_CAP";
+      }
+
+      this.updateBidFieldsVisibility(effectiveBidStrategy);
 
       // Apply the current campaign's special ad category settings
       const selectedCampaign = document.querySelector(".campaign.selected");
@@ -1712,10 +1931,53 @@ class UploadForm {
     const optimizationGoal = document.querySelector(".config-optimization-goal").value;
     const pixelId = pixelDropdown ? pixelDropdown.dataset.pixelid : "";
     const eventType = document.querySelector(".config-event-type").dataset.value || document.querySelector(".config-event-type").value;
-    const bidStrategyDisplay = document.querySelector('[data-dropdown="adset-bid-strategy"] .dropdown-display');
-    let bidStrategy = bidStrategyDisplay ? bidStrategyDisplay.dataset.value : "LOWEST_COST_WITHOUT_CAP";
+
+    // Check if campaign-level bid strategy is being used (CBO mode)
+    const campaignBidStrategyDisplay = document.querySelector(".campaign-bid-strategy-readonly");
+    const adsetBidStrategyDisplay = document.querySelector('[data-dropdown="adset-bid-strategy"] .dropdown-display');
+
+    let bidStrategy;
+    if (campaignBidStrategyDisplay && window.getComputedStyle(campaignBidStrategyDisplay.closest(".campaign-bid-strategy-display-container")).display !== "none") {
+      // CBO mode - use campaign bid strategy
+      bidStrategy = campaignBidStrategyDisplay.dataset.value;
+      console.log("[buildAdSetPayload] Using campaign bid strategy (CBO):", bidStrategy);
+    } else {
+      // ABO mode - use adset bid strategy
+      bidStrategy = adsetBidStrategyDisplay ? adsetBidStrategyDisplay.dataset.value : "LOWEST_COST_WITHOUT_CAP";
+      console.log("[buildAdSetPayload] Using adset bid strategy (ABO):", bidStrategy);
+    }
+
     if (!bidStrategy || bidStrategy === "undefined") {
       bidStrategy = "LOWEST_COST_WITHOUT_CAP";
+    }
+
+    // Get bid amount or ROAS constraints based on bid strategy
+    let bidAmount = null;
+    let bidConstraints = null;
+
+    console.log("[buildAdSetPayload] Bid Strategy:", bidStrategy);
+
+    if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
+      const bidAmountInput = document.querySelector(".config-bid-amount");
+      console.log("[buildAdSetPayload] Bid amount input found:", !!bidAmountInput);
+      console.log("[buildAdSetPayload] Bid amount input value:", bidAmountInput?.value);
+      console.log("[buildAdSetPayload] Bid amount input display:", bidAmountInput ? window.getComputedStyle(bidAmountInput.parentElement).display : "N/A");
+
+      if (bidAmountInput && bidAmountInput.value) {
+        bidAmount = parseFloat(bidAmountInput.value);
+        console.log("[buildAdSetPayload] Parsed bid amount:", bidAmount);
+      } else {
+        console.warn("[buildAdSetPayload] Bid amount input missing or empty!");
+      }
+    } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
+      const roasInput = document.querySelector(".config-roas-average-floor");
+      if (roasInput && roasInput.value) {
+        const roasValue = parseFloat(roasInput.value);
+        // Convert ROAS to Meta's format (multiply by 100 for percentage, then by 100 for cents)
+        bidConstraints = {
+          roas_average_floor: Math.round(roasValue * 10000),
+        };
+      }
     }
 
     const payload = {
@@ -1724,6 +1986,8 @@ class UploadForm {
       optimization_goal: optimizationGoal,
       billing_event: document.querySelector(".config-billing-event").value,
       bid_strategy: bidStrategy,
+      ...(bidAmount && { bid_amount: Math.round(bidAmount * 100) }), // Convert to cents
+      ...(bidConstraints && { bid_constraints: bidConstraints }),
       name: document.querySelector(".config-adset-name").value,
       status: statusDropdown ? statusDropdown.dataset.value : "ACTIVE",
       targeting: {},
@@ -1775,11 +2039,6 @@ class UploadForm {
     if (startDateTime && startDateTime.value) payload.start_time = new Date(startDateTime.value).toISOString();
     if (endDateTime && endDateTime.value) payload.end_time = new Date(endDateTime.value).toISOString();
 
-    const bid_amount = document.querySelector(".config-cost-per-result-goal");
-    if (bid_amount && bid_amount.value && bid_amount.value.trim() !== "") {
-      payload.bid_amount = Math.round(parseFloat(bid_amount.value) * 100);
-    }
-
     const minAgeInput = document.querySelector(".min-age");
     const maxAgeInput = document.querySelector(".max-age");
     const ageContainer = document.querySelector(".targeting-age");
@@ -1818,6 +2077,7 @@ class UploadForm {
       // The name field for single ad set payload is 'adset_name' in the old code
       payload.adset_name = payload.name;
 
+      console.log("[Create AdSet] Payload being sent:", payload);
       this.showLoadingState();
 
       try {
@@ -4351,7 +4611,7 @@ class InputValidator {
   }
 
   setupBudgetValidation() {
-    const budgetInputs = document.querySelectorAll(".config-daily-budget, .config-cost-per-result-goal");
+    const budgetInputs = document.querySelectorAll(".config-daily-budget, .config-bid-amount, .config-roas-average-floor");
 
     budgetInputs.forEach((input) => {
       input.addEventListener("input", (e) => {
@@ -6345,17 +6605,13 @@ function setupCampaignBudgetMode() {
   bidStrategyOptions.forEach((option) => {
     option.addEventListener("click", () => {
       const bidStrategy = option.dataset.value;
-      // ERROR 3 FIX: Handle different bid strategies
-      if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
-        if (bidAmountContainer) bidAmountContainer.style.display = "block";
-        if (minRoasContainer) minRoasContainer.style.display = "none";
-      } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
-        if (bidAmountContainer) bidAmountContainer.style.display = "none";
-        if (minRoasContainer) minRoasContainer.style.display = "block";
-      } else {
-        if (bidAmountContainer) bidAmountContainer.style.display = "none";
-        if (minRoasContainer) minRoasContainer.style.display = "none";
-      }
+      // Bid amount/constraints are managed at ad set level, not campaign level
+      // Hide both containers since they're not used for campaign creation
+      if (bidAmountContainer) bidAmountContainer.style.display = "none";
+      if (minRoasContainer) minRoasContainer.style.display = "none";
+
+      // Note: Bid strategy can still be set at campaign level,
+      // but specific amounts/constraints are configured per ad set
     });
   });
 }
@@ -6685,35 +6941,8 @@ async function handleCampaignCreation() {
         requestBody.bid_strategy = bidStrategy;
       }
 
-      // Get bid amount or min ROAS if required
-      if (bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") {
-        const bidAmount = column.querySelector(".campaign-bid-amount")?.value;
-        if (!bidAmount || parseFloat(bidAmount) <= 0) {
-          if (window.showError) {
-            window.showError(`Bid amount is required for ${bidStrategy}`, 3000);
-          }
-          if (createBtn) {
-            createBtn.disabled = false;
-            createBtn.textContent = "Create Campaign";
-          }
-          return;
-        }
-        // For now, store as a single value - backend can handle distribution to ad sets
-        requestBody.adset_bid_amounts = [{ bid_amount: parseFloat(bidAmount) }];
-      } else if (bidStrategy === "LOWEST_COST_WITH_MIN_ROAS") {
-        const minRoas = column.querySelector(".campaign-min-roas")?.value;
-        if (!minRoas || parseFloat(minRoas) <= 0) {
-          if (window.showError) {
-            window.showError("Minimum ROAS is required for this bid strategy", 3000);
-          }
-          if (createBtn) {
-            createBtn.disabled = false;
-            createBtn.textContent = "Create Campaign";
-          }
-          return;
-        }
-        requestBody.min_roas_target = parseFloat(minRoas);
-      }
+      // Note: Bid amount and ROAS constraints are managed at ad set level
+      // Campaign-level bid strategy is set, but amounts are configured per ad set
     }
 
     console.log("Creating campaign with payload:", requestBody);
@@ -6738,10 +6967,10 @@ async function handleCampaignCreation() {
     column.style.display = "none";
 
     // Deactivate and disable create button when hiding column
-    const createBtn = column.querySelector(".campaign-create-btn");
     if (createBtn) {
       createBtn.classList.remove("active");
       createBtn.disabled = true;
+      createBtn.textContent = "Create Campaign"; // Reset text
       console.log("✓ Create button deactivated and disabled");
     }
 
@@ -7863,11 +8092,27 @@ function addScheduleItem() {
   if (removeBtn) {
     removeBtn.addEventListener("click", () => {
       scheduleItem.remove();
+      // Renumber remaining schedules after removal
+      renumberSchedules();
     });
   }
 
   // Append to schedule list
   scheduleList.appendChild(scheduleItem);
+}
+
+// Renumber all schedules after add/remove
+function renumberSchedules() {
+  const scheduleItems = document.querySelectorAll(".schedule-list .schedule-item");
+  scheduleCounter = 0;
+
+  scheduleItems.forEach((item, index) => {
+    scheduleCounter++;
+    const scheduleNumber = item.querySelector(".schedule-number");
+    if (scheduleNumber) {
+      scheduleNumber.textContent = scheduleCounter;
+    }
+  });
 }
 
 function getAdScheduleData() {
