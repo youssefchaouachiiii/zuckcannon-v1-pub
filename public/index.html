@@ -103,32 +103,141 @@
           </div>
         </div>
 
-        <!-- Budget Options - MOVED TO AD SET LEVEL -->
-        <!-- <input type="number" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
-          class="config-campaign-daily-budget" step="0.01" min="0" />
-        <input type="number" placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)"
-          class="config-campaign-lifetime-budget" step="0.01" min="0" /> -->
-
-        <!-- Bid Strategy dropdown - MOVED TO AD SET LEVEL -->
-        <!-- <div class="dropdown-container">
-          <div class="custom-dropdown">
-            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
-              <span class="dropdown-display placeholder" placeholder="Bid Strategy">Bid Strategy
-                (Optional)</span>
-              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
-                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-            </div>
-            <ul class="dropdown-options campaign-bid-strategy">
-              <li data-value="">None</li>
-              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
-              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
-              <li data-value="COST_CAP">Cost Cap</li>
-              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
-            </ul>
+        <!-- Budget Mode Selection -->
+        <div class="budget-mode-container"
+          style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+          <h4 style="margin: 0 0 15px 0; font-size: 14px; color: #333; display: flex; align-items: center; gap: 8px;">
+            Budget*
+            <span style="color: #42b72a; font-size: 12px; font-weight: 600;">Advantage+ on</span>
+          </h4>
+          <div class="budget-mode-options" style="display: flex; flex-direction: column; gap: 10px;">
+            <label
+              style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #1877f2; border-radius: 4px; background: #e7f3ff; transition: all 0.2s;">
+              <input type="radio" name="campaign-budget-mode" value="CAMPAIGN_LEVEL" checked style="cursor: pointer;">
+              <div>
+                <div style="font-weight: 600; font-size: 14px; color: #333;">Campaign budget</div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">Automatically distribute your budget to the
+                  best opportunities across your campaign. Also known as Advantage+ campaign budget. <a
+                    href="https://www.facebook.com/business/help/1602924913861363" target="_blank"
+                    style="color: #1877f2; text-decoration: none;">About campaign budget</a></div>
+              </div>
+            </label>
+            <label
+              style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #ddd; border-radius: 4px; background: white; transition: all 0.2s;">
+              <input type="radio" name="campaign-budget-mode" value="ADSET_LEVEL" style="cursor: pointer;">
+              <div>
+                <div style="font-weight: 600; font-size: 14px; color: #333;">Ad set budget</div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">Set different bid strategies or budget
+                  schedules for each ad set.</div>
+              </div>
+            </label>
           </div>
-        </div> -->
+        </div>
+
+        <!-- Campaign-Level Budget Fields (Shown by default since CAMPAIGN_LEVEL is default) -->
+        <div class="campaign-budget-fields" style="display: block; margin-top: 15px;">
+          <!-- Budget Type Selection -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-budget-type">
+                <span class="dropdown-display placeholder" placeholder="Budget Type*">Budget Type*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-budget-type">
+                <li data-value="daily">Daily Budget</li>
+                <li data-value="lifetime">Lifetime Budget</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Budget Amount Input -->
+          <div class="budget-input-wrapper"
+            style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+            <span class="currency-prefix"
+              style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+            <input type="number" id="campaign-budget-amount" class="campaign-budget-amount" placeholder="Budget Amount*"
+              step="0.01" min="1" required style="flex: 1; border: none; padding: 10px; outline: none;">
+            <span class="currency-suffix campaign-budget-suffix"
+              style="padding: 10px; background: #f5f5f5; color: #666; font-size: 12px;">/day</span>
+          </div>
+
+          <!-- Campaign End Date (for lifetime budget) - HIDDEN -->
+          <div class="campaign-end-date-container" style="display: none;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Campaign End Date*</label>
+            <input type="datetime-local" id="campaign-end-date" class="campaign-end-date"
+              style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+          </div>
+
+          <!-- Pacing Type - HIDDEN -->
+          <div class="dropdown-container" style="display: none;">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-pacing-type">
+                <span class="dropdown-display placeholder" placeholder="Pacing Type">Pacing Type</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-pacing-type">
+                <li data-value="standard">Standard Pacing (Recommended)</li>
+                <li data-value="no_pacing">No Pacing (Accelerated)</li>
+                <li data-value="day_parting">Day Parting (Schedule)</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Campaign Schedule - HIDDEN -->
+          <div class="campaign-schedule-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h4 style="margin: 0; font-size: 14px; color: #333;">Campaign Schedule</h4>
+              <button type="button" class="add-campaign-schedule-btn"
+                style="padding: 6px 12px; background: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">+
+                Add Schedule</button>
+            </div>
+            <p style="margin: 8px 0; font-size: 12px; color: #666;">Schedule specific days and hours when your ads
+              should run.</p>
+            <div class="campaign-schedule-list"></div>
+          </div>
+
+          <!-- Bid Strategy -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+                <span class="dropdown-display placeholder" placeholder="Bid Strategy">Bid Strategy</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-bid-strategy">
+                <li data-value="">None (Meta optimizes automatically)</li>
+                <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+                <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+                <li data-value="COST_CAP">Cost Cap</li>
+                <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Bid Amount (shown when bid cap strategy selected) -->
+          <div class="campaign-bid-amount-container" style="display: none;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Bid Amount per Ad
+              Set*</label>
+            <div class="budget-input-wrapper"
+              style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+              <span class="currency-prefix"
+                style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+              <input type="number" id="campaign-bid-amount" class="campaign-bid-amount" placeholder="Bid Amount*"
+                step="0.01" min="0.01" style="flex: 1; border: none; padding: 10px; outline: none;">
+            </div>
+            <small style="display: block; margin-top: 4px; color: #666; font-size: 11px;">This bid amount will be
+              applied to all ad sets in this campaign</small>
+          </div>
+        </div>
 
         <!-- Special Categories dropdown -->
         <div class="dropdown-container">
@@ -170,6 +279,7 @@
           </div>
         </div>
 
+        <button class="campaign-preview-btn" style="background: #42b72a; margin-bottom: 8px;">Preview Campaign</button>
         <button class="campaign-create-btn">Create Campaign</button>
         <button class="campaign-cancel-btn">Cancel</button>
       </div>
@@ -834,31 +944,136 @@
           </div>
         </div>
 
-        <!-- Budget Options - MOVED TO AD SET LEVEL -->
-        <!-- <input type="number" id="create-campaign-daily-budget" placeholder="Daily Budget (Optional, e.g., 50 for $50)"
-          step="0.01" min="0">
-        <input type="number" id="create-campaign-lifetime-budget"
-          placeholder="Lifetime Budget (Optional, e.g., 1000 for $1000)" step="0.01" min="0"> -->
-
-        <!-- Bid Strategy dropdown - MOVED TO AD SET LEVEL -->
-        <!-- <div class="dropdown-container">
-          <div class="custom-dropdown">
-            <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
-              <span class="dropdown-display">Bid Strategy</span>
-              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
-                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-            </div>
-            <ul class="dropdown-options campaign-bid-strategy">
-              <li data-value="">None</li>
-              <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
-              <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
-              <li data-value="COST_CAP">Cost Cap</li>
-              <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
-            </ul>
+        <!-- Budget Mode Selection -->
+        <div class="budget-mode-container"
+          style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+          <h4 style="margin: 0 0 15px 0; font-size: 14px; color: #333;">Budget Mode*</h4>
+          <div class="budget-mode-options" style="display: flex; flex-direction: column; gap: 10px;">
+            <label
+              style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #ddd; border-radius: 4px; background: white; transition: all 0.2s;">
+              <input type="radio" name="campaign-budget-mode" value="ADSET_LEVEL" checked style="cursor: pointer;">
+              <div>
+                <div style="font-weight: 600; font-size: 14px; color: #333;">Ad Set-Level Budget (Current)</div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">Set budget individually for each ad set
+                </div>
+              </div>
+            </label>
+            <label
+              style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #ddd; border-radius: 4px; background: white; transition: all 0.2s;">
+              <input type="radio" name="campaign-budget-mode" value="CAMPAIGN_LEVEL" style="cursor: pointer;">
+              <div>
+                <div style="font-weight: 600; font-size: 14px; color: #333;">Campaign-Level Budget</div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">Set budget once at campaign level,
+                  auto-distributed to ad sets</div>
+              </div>
+            </label>
           </div>
-        </div> -->
+        </div>
+
+        <!-- Campaign-Level Budget Fields (Hidden by default) -->
+        <div class="campaign-budget-fields" style="display: none; margin-top: 15px;">
+          <!-- Budget Type Selection -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-budget-type">
+                <span class="dropdown-display">Budget Type*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-budget-type">
+                <li data-value="daily">Daily Budget</li>
+                <li data-value="lifetime">Lifetime Budget</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Budget Amount Input -->
+          <div class="budget-input-wrapper"
+            style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+            <span class="currency-prefix"
+              style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+            <input type="number" id="campaign-budget-amount" class="campaign-budget-amount" placeholder="Budget Amount*"
+              step="0.01" min="1" required style="flex: 1; border: none; padding: 10px; outline: none;">
+            <span class="currency-suffix campaign-budget-suffix"
+              style="padding: 10px; background: #f5f5f5; color: #666; font-size: 12px;">/day</span>
+          </div>
+
+          <!-- Campaign End Date (for lifetime budget) -->
+          <div class="campaign-end-date-container" style="display: none;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Campaign End Date*</label>
+            <input type="datetime-local" id="campaign-end-date" class="campaign-end-date"
+              style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+          </div>
+
+          <!-- Pacing Type -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-pacing-type">
+                <span class="dropdown-display">Pacing Type</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-pacing-type">
+                <li data-value="standard">Standard Pacing (Recommended)</li>
+                <li data-value="no_pacing">No Pacing (Accelerated)</li>
+                <li data-value="day_parting">Day Parting (Schedule)</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Campaign Schedule (Hidden by default, shown when day_parting selected) -->
+          <div class="campaign-schedule-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h4 style="margin: 0; font-size: 14px; color: #333;">Campaign Schedule</h4>
+              <button type="button" class="add-campaign-schedule-btn"
+                style="padding: 6px 12px; background: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">+
+                Add Schedule</button>
+            </div>
+            <p style="margin: 8px 0; font-size: 12px; color: #666;">Schedule specific days and hours when your ads
+              should run.</p>
+            <div class="campaign-schedule-list"></div>
+          </div>
+
+          <!-- Bid Strategy -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="campaign-bid-strategy">
+                <span class="dropdown-display">Bid Strategy</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options campaign-bid-strategy">
+                <li data-value="">None (Meta optimizes automatically)</li>
+                <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+                <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+                <li data-value="COST_CAP">Cost Cap</li>
+                <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Bid Amount (shown when bid cap strategy selected) -->
+          <div class="campaign-bid-amount-container" style="display: none;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Bid Amount per Ad
+              Set*</label>
+            <div class="budget-input-wrapper"
+              style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+              <span class="currency-prefix"
+                style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+              <input type="number" id="campaign-bid-amount" class="campaign-bid-amount" placeholder="Bid Amount*"
+                step="0.01" min="0.01" style="flex: 1; border: none; padding: 10px; outline: none;">
+            </div>
+            <small style="display: block; margin-top: 4px; color: #666; font-size: 11px;">This bid amount will be
+              applied to all ad sets in this campaign</small>
+          </div>
+        </div>
 
         <div class="dropdown-container">
           <div class="custom-dropdown">
@@ -2274,6 +2489,31 @@
           <button class="btn-back" style="display: none;">Back</button>
           <button class="btn-create" style="display: none;">Create Campaign</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign Preview Modal -->
+  <div class="campaign-preview-modal"
+    style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; overflow-y: auto; padding: 20px;">
+    <div class="preview-modal-content"
+      style="max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+      <div class="preview-modal-header"
+        style="padding: 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 18px; color: #333;">Campaign Preview</h2>
+        <button class="close-preview-btn"
+          style="background: none; border: none; font-size: 24px; color: #666; cursor: pointer; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">&times;</button>
+      </div>
+      <div class="preview-modal-body" style="padding: 20px;">
+        <!-- Preview content will be populated dynamically -->
+      </div>
+      <div class="preview-modal-footer"
+        style="padding: 20px; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="preview-edit-btn"
+          style="padding: 10px 20px; background: #e4e6eb; color: #333; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Edit</button>
+        <button class="preview-confirm-create-btn"
+          style="padding: 10px 20px; background: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Create
+          Campaign</button>
       </div>
     </div>
   </div>
