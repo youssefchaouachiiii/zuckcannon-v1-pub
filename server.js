@@ -2279,6 +2279,9 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Add adset_schedule if provided
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
+    // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
+    payload.pacing_type = ["day_parting"];
+    console.log("Ad set has scheduling, setting pacing_type to day_parting");
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2388,6 +2391,9 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
     // Handle ad scheduling
     if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
       adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
+      // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
+      adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
+      console.log("Ad set has scheduling, setting pacing_type to day_parting");
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2809,7 +2815,12 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
       // if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
-      if (sourceAdSet.adset_schedule) createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+      if (sourceAdSet.adset_schedule) {
+        createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+        // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
+        createAdSetPayload.pacing_type = ["day_parting"];
+        console.log("Ad set has scheduling, setting pacing_type to day_parting");
+      }
 
       // Create ad set in target account
       const createAdSetUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
