@@ -1632,6 +1632,7 @@ function attachDropdownOptionListeners(dropdown) {
   const display = selected.querySelector(".dropdown-display");
   const optionItems = options.querySelectorAll("li");
   const dropdownType = selected.dataset.dropdown;
+  const isMultiSelect = options.dataset.multiple === "true";
 
   // The CustomDropdown instance, to call its methods
   const dropdownInstance = dropdown.customDropdownInstance;
@@ -1651,31 +1652,59 @@ function attachDropdownOptionListeners(dropdown) {
     option.addEventListener("click", (e) => {
       e.stopPropagation();
       const text = option.textContent;
+      const value = option.dataset.value;
 
       // Re-query display element to ensure we have the correct reference after cloning
       const currentSelected = dropdown.querySelector(".dropdown-selected");
       const currentDisplay = currentSelected ? currentSelected.querySelector(".dropdown-display") : display;
 
-      // Update selected display
-      console.log(`[Dropdown ${dropdownType}] Updating display to:`, text);
-      console.log(`[Dropdown ${dropdownType}] Display element:`, currentDisplay);
-      console.log(`[Dropdown ${dropdownType}] Is display in DOM?`, document.contains(currentDisplay));
-      currentDisplay.textContent = text;
-      currentDisplay.classList.remove("placeholder");
-      console.log(`[Dropdown ${dropdownType}] Display text after update:`, currentDisplay.textContent);
-      dropdownInstance.setDropdownData(currentDisplay, option, dropdownType);
+      if (isMultiSelect) {
+        // Multi-select behavior
+        const isNoneOption = value === "" || text.toLowerCase().includes("none");
 
-      // Re-query here to handle dynamically added/removed items
-      const currentOptions = options.querySelectorAll("li");
-      currentOptions.forEach((opt) => opt.classList.remove("selected"));
-      option.classList.add("selected");
+        if (isNoneOption) {
+          // Clicking "None" deselects all and closes dropdown (acts as "Clear All" button)
+          const currentOptions = options.querySelectorAll("li");
+          currentOptions.forEach((opt) => opt.classList.remove("selected"));
+          // Don't select the None option itself
 
-      dropdownInstance.closeDropdown(dropdown);
+          // Update display
+          updateMultiSelectDisplay(dropdown, dropdownType);
 
-      currentDisplay.parentElement.classList.remove("empty-input");
-      console.log(`Selected ${dropdownType}:`, text);
+          // Close dropdown after clearing
+          dropdownInstance.closeDropdown(dropdown);
+        } else {
+          // Clicking a specific option - just toggle it
+          // Toggle selection
+          if (option.classList.contains("selected")) {
+            option.classList.remove("selected");
+          } else {
+            option.classList.add("selected");
+          }
 
-      // Bid strategy dropdown is hidden, no special handling needed
+          // Update display with selected count or items
+          updateMultiSelectDisplay(dropdown, dropdownType);
+
+          // Don't close dropdown for multi-select
+          // dropdownInstance.closeDropdown(dropdown);
+        }
+      } else {
+        // Single-select behavior (original)
+        console.log(`[Dropdown ${dropdownType}] Updating display to:`, text);
+        currentDisplay.textContent = text;
+        currentDisplay.classList.remove("placeholder");
+        dropdownInstance.setDropdownData(currentDisplay, option, dropdownType);
+
+        // Re-query here to handle dynamically added/removed items
+        const currentOptions = options.querySelectorAll("li");
+        currentOptions.forEach((opt) => opt.classList.remove("selected"));
+        option.classList.add("selected");
+
+        dropdownInstance.closeDropdown(dropdown);
+
+        currentDisplay.parentElement.classList.remove("empty-input");
+        console.log(`Selected ${dropdownType}:`, text);
+      }
 
       if (typeof checkRequiredFields === "function") {
         checkRequiredFields();
@@ -1684,6 +1713,55 @@ function attachDropdownOptionListeners(dropdown) {
     // Set the flag
     option.listenerAttached = true;
   });
+}
+
+// Helper function to update multi-select display
+function updateMultiSelectDisplay(dropdown, dropdownType) {
+  const selected = dropdown.querySelector(".dropdown-selected");
+  const options = dropdown.querySelector(".dropdown-options");
+  const display = selected.querySelector(".dropdown-display");
+  const selectedOptions = options.querySelectorAll("li.selected:not(.none-option)");
+  const selectedValues = Array.from(selectedOptions)
+    .map((opt) => opt.dataset.value)
+    .filter((val) => val !== "");
+
+  if (selectedValues.length === 0) {
+    // No selection - show placeholder
+    const placeholder = display.getAttribute("placeholder");
+    display.innerHTML = placeholder || "Select options";
+    display.classList.add("placeholder");
+    display.removeAttribute("title");
+  } else if (selectedValues.length === 1) {
+    // Single selection - show the text (clean it from checkbox if present)
+    const selectedText = Array.from(selectedOptions)
+      .filter((opt) => opt.dataset.value !== "")
+      .map((opt) => {
+        // Get text content without the checkbox
+        const clone = opt.cloneNode(true);
+        const checkbox = clone.querySelector(".multi-select-checkbox");
+        if (checkbox) checkbox.remove();
+        return clone.textContent.trim();
+      })[0];
+    display.innerHTML = selectedText;
+    display.classList.remove("placeholder");
+    display.removeAttribute("title");
+  } else {
+    // Multiple selections - show count
+    const selectedTexts = Array.from(selectedOptions)
+      .filter((opt) => opt.dataset.value !== "")
+      .map((opt) => {
+        // Get text content without the checkbox
+        const clone = opt.cloneNode(true);
+        const checkbox = clone.querySelector(".multi-select-checkbox");
+        if (checkbox) checkbox.remove();
+        return clone.textContent.trim();
+      });
+
+    // Show count with items in tooltip
+    display.innerHTML = `${selectedValues.length} selected`;
+    display.classList.remove("placeholder");
+    display.title = selectedTexts.join(", ");
+  }
 }
 
 class CustomDropdown {
@@ -1701,13 +1779,59 @@ class CustomDropdown {
 
       const selected = dropdown.querySelector(".dropdown-selected");
       const options = dropdown.querySelector(".dropdown-options");
+      const isMultiSelect = options.dataset.multiple === "true";
+
+      // Add checkboxes for multi-select dropdowns
+      if (isMultiSelect) {
+        const optionItems = options.querySelectorAll("li");
+        optionItems.forEach((item) => {
+          // Skip if checkbox already exists
+          if (item.querySelector(".multi-select-checkbox")) {
+            return;
+          }
+
+          // Skip adding checkbox to "None" option
+          const value = item.dataset.value;
+          const text = item.textContent.trim();
+          const isNoneOption = value === "" || text.toLowerCase().includes("none");
+
+          if (isNoneOption) {
+            // Add a special class for None options
+            item.classList.add("none-option");
+            return;
+          }
+
+          const checkbox = document.createElement("span");
+          checkbox.className = "multi-select-checkbox";
+          checkbox.innerHTML = item.classList.contains("selected") ? "☑" : "☐";
+          item.insertBefore(checkbox, item.firstChild);
+        });
+
+        // Update checkboxes when selection changes
+        const observer = new MutationObserver(() => {
+          optionItems.forEach((item) => {
+            const checkbox = item.querySelector(".multi-select-checkbox");
+            if (checkbox) {
+              checkbox.innerHTML = item.classList.contains("selected") ? "☑" : "☐";
+            }
+          });
+        });
+
+        optionItems.forEach((item) => {
+          observer.observe(item, { attributes: true, attributeFilter: ["class"] });
+        });
+      }
 
       // Check for preselected option
       const preselectedOption = options.querySelector("li.selected");
       if (preselectedOption) {
         const display = selected.querySelector(".dropdown-display");
-        display.textContent = preselectedOption.textContent;
-        this.setDropdownData(display, preselectedOption, selected.dataset.dropdown);
+        if (isMultiSelect) {
+          updateMultiSelectDisplay(dropdown, selected.dataset.dropdown);
+        } else {
+          display.textContent = preselectedOption.textContent;
+          this.setDropdownData(display, preselectedOption, selected.dataset.dropdown);
+        }
       } else {
         // Set initial placeholder state only if no option is preselected
         const display = selected.querySelector(".dropdown-display");
@@ -1727,6 +1851,41 @@ class CustomDropdown {
           this.openDropdown(dropdown);
         }
       });
+
+      // Add "Clear All" button for multi-select dropdowns
+      if (isMultiSelect) {
+        const existingClearBtn = selected.querySelector(".multi-select-clear-btn");
+        if (!existingClearBtn) {
+          const clearBtn = document.createElement("button");
+          clearBtn.className = "multi-select-clear-btn";
+          clearBtn.innerHTML = "×";
+          clearBtn.title = "Clear all selections";
+          clearBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+
+            // Clear all selections (including None)
+            const allOptions = options.querySelectorAll("li");
+            allOptions.forEach((opt) => opt.classList.remove("selected"));
+
+            // Update display
+            updateMultiSelectDisplay(dropdown, selected.dataset.dropdown);
+
+            // Trigger validation
+            if (typeof checkRequiredFields === "function") {
+              checkRequiredFields();
+            }
+          });
+
+          // Insert before arrow
+          const arrow = selected.querySelector(".dropdown-arrow");
+          if (arrow) {
+            selected.insertBefore(clearBtn, arrow);
+          } else {
+            selected.appendChild(clearBtn);
+          }
+        }
+      }
 
       // Attach option listeners
       attachDropdownOptionListeners(dropdown);
@@ -6765,16 +6924,28 @@ function showCampaignPreview() {
   const objectiveText = objectiveDisplay?.textContent;
   const status = statusDisplay?.dataset.value;
 
-  // Get special categories
-  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected");
+  // Get special categories (clean text without checkboxes)
+  const specialCategoriesOptions = column.querySelectorAll(".dropdown-options.campaign-special-categories li.selected:not(.none-option)");
   const specialCategories = Array.from(specialCategoriesOptions)
-    .map((opt) => opt.textContent)
+    .map((opt) => {
+      // Clone and remove checkbox to get clean text
+      const clone = opt.cloneNode(true);
+      const checkbox = clone.querySelector(".multi-select-checkbox");
+      if (checkbox) checkbox.remove();
+      return clone.textContent.trim();
+    })
     .filter((val) => val && val !== "None - If none of the categories apply");
 
-  // Get special countries
-  const specialCountryOptions = column.querySelectorAll(".dropdown-options.campaign-special-country li.selected");
+  // Get special countries (clean text without checkboxes)
+  const specialCountryOptions = column.querySelectorAll(".dropdown-options.campaign-special-country li.selected:not(.none-option)");
   const specialCountries = Array.from(specialCountryOptions)
-    .map((opt) => opt.textContent)
+    .map((opt) => {
+      // Clone and remove checkbox to get clean text
+      const clone = opt.cloneNode(true);
+      const checkbox = clone.querySelector(".multi-select-checkbox");
+      if (checkbox) checkbox.remove();
+      return clone.textContent.trim();
+    })
     .filter((val) => val && val !== "None");
 
   // Budget mode
