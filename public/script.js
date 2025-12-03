@@ -105,6 +105,86 @@ function getObjectiveFriendlyName(objective) {
   return names[objective] || objective;
 }
 
+// ============================================
+// CAMPAIGN OBJECTIVE TO CTA MAPPING
+// ============================================
+
+/**
+ * Map campaign objective to recommended CTA options
+ * Non-recommended CTAs will be shown but faded out
+ */
+const ctaOptionsByObjective = {
+  OUTCOME_AWARENESS: ["INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "SEND_UPDATES", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+  OUTCOME_TRAFFIC: ["INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "SEND_UPDATES", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+  OUTCOME_ENGAGEMENT: ["GET_UPDATES", "SEND_UPDATES", "INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+  OUTCOME_LEADS: ["INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "SEND_UPDATES", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+  OUTCOME_APP_PROMOTION: ["INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "SEND_UPDATES", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+  OUTCOME_SALES: ["INSTALL_APP", "INSTALL_MOBILE_APP", "USE_APP", "USE_MOBILE_APP", "ADD_TO_CART", "SEE_SHOP", "SEND_UPDATES", "MESSAGE_PAGE", "WHATSAPP_MESSAGE", "VIEW_PRODUCT", "EVENT_RSVP"],
+};
+
+/**
+ * Update CTA dropdown options based on campaign objective
+ * Recommended CTAs are shown with full opacity and sorted to the top
+ * Non-recommended CTAs are faded but still selectable
+ */
+function updateCTAOptions(campaignObjective) {
+  const ctaDropdown = document.querySelector(".ad-copy-container .dropdown-options.cta");
+  if (!ctaDropdown) {
+    console.warn("[updateCTAOptions] CTA dropdown not found");
+    return;
+  }
+
+  const recommendedCtas = ctaOptionsByObjective[campaignObjective] || [];
+  console.log(`[updateCTAOptions] Updating CTA options for objective: ${campaignObjective}`, recommendedCtas);
+
+  // Get all option elements
+  const allOptions = Array.from(ctaDropdown.querySelectorAll("li"));
+
+  // Separate recommended and non-recommended options
+  const recommendedOptions = [];
+  const nonRecommendedOptions = [];
+
+  allOptions.forEach((option) => {
+    const ctaValue = option.dataset.value;
+    const isRecommended = recommendedCtas.includes(ctaValue);
+
+    // Style the option
+    option.style.display = "block";
+    option.style.opacity = isRecommended ? "1" : "0.4";
+    option.style.pointerEvents = "auto"; // Keep all options clickable
+
+    // Categorize the option
+    if (isRecommended) {
+      recommendedOptions.push(option);
+    } else {
+      nonRecommendedOptions.push(option);
+    }
+  });
+
+  // Clear the dropdown
+  ctaDropdown.innerHTML = "";
+
+  // Add recommended options first (sorted to top)
+  recommendedOptions.forEach((option) => ctaDropdown.appendChild(option));
+
+  // Then add non-recommended options
+  nonRecommendedOptions.forEach((option) => ctaDropdown.appendChild(option));
+
+  // Reset to "No Button" as default
+  const noButtonOption = ctaDropdown.querySelector('li[data-value="NO_BUTTON"]');
+  const ctaDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="cta"] .dropdown-display');
+
+  if (noButtonOption && ctaDropdownDisplay) {
+    // Remove selected class from all options
+    ctaDropdown.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+
+    // Set NO_BUTTON as selected
+    noButtonOption.classList.add("selected");
+    ctaDropdownDisplay.textContent = "No button";
+    ctaDropdownDisplay.dataset.value = "NO_BUTTON";
+  }
+}
+
 /**
  * Update the visibility and requirement of pixel/event type fields based on optimization goal
  * Only OFFSITE_CONVERSIONS requires pixel_id + custom_event_type
@@ -3056,12 +3136,6 @@ class FileUploadHandler {
       button.classList.add("upload-complete");
       this.initialUploadComplete = true;
     }
-
-    // Show additional upload options
-    const additionalOptions = document.querySelector(".additional-upload-options");
-    if (additionalOptions) {
-      additionalOptions.style.display = "block";
-    }
   }
 
   displayUploadedFiles() {
@@ -3085,26 +3159,32 @@ class FileUploadHandler {
         <div class="files-container" style="${isCollapsed ? "max-height: 250px; overflow-y: auto;" : ""}">
         </div>
       </div>
-      <button type="button" class="browse-more-btn" style="width: 100%; margin-top: 10px; padding: 8px 16px; background: #f8f9fa; border: 1px solid #d0d0d0; color: #333; cursor: pointer; font-size: 14px;">
-        + Browse More Files
-      </button>
-      <div class="additional-upload-options" style="display: none; margin-top: 10px;">
+      <div class="upload-options-container" style="margin-top: 15px;">
+        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; text-align: center;">Add more files</p>
+        <button type="button" class="browse-more-btn" style="width: 100%; padding: 10px 16px; background: #f8f9fa; border: 1px solid #d0d0d0; color: #333; cursor: pointer; font-size: 14px; border-radius: 4px; margin-bottom: 10px;">
+          + Browse Files
+        </button>
         <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; text-align: center;">or</p>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input type="text" class="gdrive-link-input-additional" placeholder="Add more from Google Drive..."
-            style="flex: 1; padding: 8px 12px; font-size: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+          <input type="text" class="gdrive-link-input-additional" placeholder="Paste Google Drive link..."
+            style="flex: 1; padding: 8px 12px; font-size: 14px; border: 1px solid #d0d0d0; border-radius: 4px;">
           <button class="gdrive-fetch-btn-additional"
-            style="padding: 8px 12px; background: #103dee; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px;">
+            style="padding: 8px 16px; background: #103dee; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; border-radius: 4px; white-space: nowrap;">
             <img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;">
-            Add
+            Fetch
           </button>
         </div>
+        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; text-align: center;">or</p>
+        <button type="button" class="browse-library-btn-additional" style="width: 100%; padding: 10px 16px; background: #28a745; border: none; color: white; cursor: pointer; font-size: 14px; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span style="font-size: 16px;">🖼️</span> Browse Creative Library
+        </button>
       </div>
     `;
 
     const filesContainer = filesList.querySelector(".files-container");
     const toggleBtn = filesList.querySelector(".toggle-files-btn");
     const browseMoreBtn = filesList.querySelector(".browse-more-btn");
+    const browseLibraryBtn = filesList.querySelector(".browse-library-btn-additional");
 
     this.uploadedFiles.forEach((file, index) => {
       const fileDiv = document.createElement("div");
@@ -3229,6 +3309,17 @@ class FileUploadHandler {
         fileInput.click();
       }
     });
+
+    // Add browse creative library functionality
+    if (browseLibraryBtn) {
+      browseLibraryBtn.addEventListener("click", () => {
+        if (window.creativeLibrary) {
+          window.creativeLibrary.openLibrary();
+        } else {
+          console.error("Creative library not initialized");
+        }
+      });
+    }
 
     // Re-add event listeners for additional Google Drive input
     const fetchBtnAdditional = filesList.querySelector(".gdrive-fetch-btn-additional");
@@ -3863,6 +3954,25 @@ class FileUploadHandler {
           attachDropdownOptionListeners(dropdown);
         });
       }
+    }
+
+    // Apply CTA filtering based on campaign objective
+    const selectedCampaignId = appState.getState().selectedCampaign;
+    if (selectedCampaignId) {
+      const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+      if (campaignElement) {
+        const campaignObjective = campaignElement.dataset.objective;
+        if (campaignObjective) {
+          console.log(`[showAdCopySection] Applying CTA filtering for objective: ${campaignObjective}`);
+          updateCTAOptions(campaignObjective);
+        } else {
+          console.warn("[showAdCopySection] Campaign objective not found on campaign element");
+        }
+      } else {
+        console.warn("[showAdCopySection] Campaign element not found for ID:", selectedCampaignId);
+      }
+    } else {
+      console.warn("[showAdCopySection] No campaign selected in appState");
     }
 
     adCopySection.scrollIntoView({
@@ -6054,7 +6164,49 @@ class CreativeLibrary {
 }
 
 FileUploadHandler.prototype.addFilesFromLibrary = function (files) {
-  this.uploadedFiles.push(...files);
+  // Check for duplicates based on libraryId or name+size
+  const newFiles = files.filter((newFile) => {
+    return !this.uploadedFiles.some((existingFile) => {
+      // Check by libraryId if both have it
+      if (newFile.libraryId && existingFile.libraryId) {
+        return newFile.libraryId === existingFile.libraryId;
+      }
+      // Fallback to name and size check
+      return existingFile.name === newFile.name && existingFile.size === newFile.size;
+    });
+  });
+
+  // Only add non-duplicate files
+  if (newFiles.length === 0) {
+    alert("All selected files are already uploaded.");
+    return;
+  }
+
+  this.uploadedFiles.push(...newFiles);
+
+  // Determine upload type based on all files
+  const allImageFiles = this.uploadedFiles.filter((file) => file.type.startsWith("image/"));
+  const allVideoFiles = this.uploadedFiles.filter((file) => file.type.startsWith("video/"));
+
+  if (allImageFiles.length > 0 && allVideoFiles.length > 0) {
+    this.selectedUploadType = "mixed";
+  } else if (allImageFiles.length > 0) {
+    this.selectedUploadType = "image";
+  } else if (allVideoFiles.length > 0) {
+    this.selectedUploadType = "video";
+  }
+
+  // Reset button state to allow new uploads
+  const button = document.querySelector('[data-step="3"] .continue-btn');
+  if (button) {
+    button.classList.remove("upload-complete");
+    button.disabled = false;
+    button.style.backgroundColor = "";
+    button.style.cursor = "pointer";
+    button.style.opacity = "1";
+    button.textContent = "Upload Creatives";
+  }
+
   this.displayUploadedFiles();
   this.showStep(3);
 };
@@ -6078,6 +6230,33 @@ FileUploadHandler.prototype.uploadFiles = async function (files, account_id) {
     this.progressTracker.reset();
 
     try {
+      // Initialize uploadPromises array
+      const uploadPromises = [];
+
+      // Process library files - they're already uploaded to the library, just need to register them
+      if (libraryFiles.length > 0) {
+        const libraryPromise = Promise.resolve(
+          libraryFiles.map((file) => ({
+            status: "fulfilled",
+            value: {
+              hash: file.hash,
+              type: file.type,
+              url: file.url,
+              thumbnail_url: file.thumbnail_url,
+              creativeId: file.name,
+              isFromLibrary: true,
+            },
+          }))
+        );
+        uploadPromises.push(libraryPromise);
+      }
+
+      // Process other files using original method if any
+      if (otherFiles.length > 0) {
+        const otherFilesPromise = originalUploadFiles.call(this, otherFiles, account_id);
+        uploadPromises.push(otherFilesPromise);
+      }
+
       const settledResults = await Promise.allSettled(uploadPromises);
 
       // Combine results
