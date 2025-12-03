@@ -3759,12 +3759,9 @@ class FileUploadHandler {
       }
     }
 
-    // Validate Page dropdown
+    // Page dropdown is now optional - no validation needed
     const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
-    if (!pageDropdownDisplay || pageDropdownDisplay.classList.contains("placeholder")) {
-      pageDropdownDisplay.parentElement.classList.add("empty-input");
-      isValid = false;
-    } else {
+    if (pageDropdownDisplay) {
       pageDropdownDisplay.parentElement.classList.remove("empty-input");
     }
 
@@ -3986,7 +3983,7 @@ class FileUploadHandler {
     const ctaDisplayText = ctaSelectedOption ? ctaSelectedOption.textContent : "";
     const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
     const pageText = pageDropdownDisplay ? pageDropdownDisplay.textContent : "";
-    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : "";
+    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.value : "";
 
     // Debug logging
     console.log("[populateReviewData] CTA Selected:", cta, ctaDisplayText);
@@ -7416,7 +7413,7 @@ function getCurrentAdData() {
 
     // Get page ID from the ad copy container (it's stored in dataset)
     const pageDropdownDisplay = document.querySelector('.ad-copy-container .dropdown-selected[data-dropdown="page"] .dropdown-display');
-    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.pageid : "";
+    const pageId = pageDropdownDisplay ? pageDropdownDisplay.dataset.value : "";
 
     // Get uploaded assets from appState
     const assets = appState.getState().uploadedAssets || [];
@@ -7434,15 +7431,14 @@ function getCurrentAdData() {
       adsetId: adsetId ? "✓" : "✗",
     });
 
-    // Validate required fields
-    if (!primaryText || !headline || !destinationUrl || assets.length === 0 || !pageId || !adsetId) {
+    // Validate required fields (pageId is now optional)
+    if (!primaryText || !headline || !destinationUrl || assets.length === 0 || !adsetId) {
       console.log("Missing required fields:", { primaryText, headline, destinationUrl, assetsCount: assets.length, pageId, adsetId });
       const missingFields = [];
       if (!primaryText) missingFields.push("- Primary Text");
       if (!headline) missingFields.push("- Headline");
       if (!destinationUrl) missingFields.push("- Destination URL");
       if (assets.length === 0) missingFields.push("- At least one asset (image/video)");
-      if (!pageId) missingFields.push("- Page (select a page in the ad copy section)");
       if (!adsetId) missingFields.push("- Ad Set (you need to select or create an ad set first)");
 
       alert(`Missing required fields:\n${missingFields.join("\n")}\n\nFor bulk upload, please complete the ad creation form first, including selecting a Page and Ad Set. These will be used for all accounts.`);
@@ -11378,8 +11374,8 @@ function setupMultiCampaignAdSetModal() {
     const pageId = pageDropdown?.dataset.value;
     const cta = ctaDropdown?.dataset.value || "LEARN_MORE";
 
-    // Validate
-    if (!primaryText || !headline || !destinationUrl || !pageId) {
+    // Validate (pageId is now optional)
+    if (!primaryText || !headline || !destinationUrl) {
       window.showError?.("Please fill in all required fields", 4000);
       showStep(5);
       return;
