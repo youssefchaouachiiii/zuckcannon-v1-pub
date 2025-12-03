@@ -4428,7 +4428,6 @@ app.post("/api/create-ad-creative", (req, res) => {
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             video_data: {
               message,
               title: headline,
@@ -4444,12 +4443,16 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       } else {
         // payload for image upload
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             link_data: {
               message,
               link,
@@ -4465,6 +4468,11 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       }
 
       const normalizedAccountId = normalizeAdAccountId(account_id);
@@ -4508,6 +4516,13 @@ app.post("/api/create-ad-creative", (req, res) => {
             }
           } else {
             errorMessage = err.message;
+          }
+
+          // Provide helpful context for page_id errors
+          if (errorMessage.includes("Facebook Page is missing") || errorMessage.includes("page") || errorMessage.includes("Page")) {
+            throw new Error(
+              `Ad "${adName}": ${errorMessage}\n\nNote: While page_id is optional in our system, Meta's API may require it for certain ad objectives (like LEAD_GENERATION, PAGE_LIKES, etc.). Please select a Facebook Page in the ad copy section.`
+            );
           }
 
           throw new Error(`Ad "${adName}": ${errorMessage}`);
@@ -4564,7 +4579,7 @@ app.post("/api/create-ad-creative", (req, res) => {
  * {
  *   "account_id": "123456789",
  *   "adset_id": "120123456789",
- *   "page_id": "987654321",
+ *   "page_id": "987654321", // Optional: Facebook Page ID for the ads
  *   "ads": [
  *     {
  *       "name": "Ad 1",
@@ -4593,9 +4608,9 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       });
     }
 
-    if (!account_id || !adset_id || !page_id) {
+    if (!account_id || !adset_id) {
       return res.status(400).json({
-        error: "account_id, adset_id, and page_id are required",
+        error: "account_id and adset_id are required",
       });
     }
 
@@ -4621,7 +4636,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       if (ad.video_id) {
         // Video ad
         object_story_spec = {
-          page_id,
           video_data: {
             message: ad.message || "",
             title: ad.headline || "",
@@ -4636,6 +4650,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
           },
         };
 
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
+
         // Add thumbnail if provided
         if (ad.thumbnailHash) {
           object_story_spec.video_data.image_hash = ad.thumbnailHash;
@@ -4643,7 +4662,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       } else if (ad.imageHash) {
         // Image ad
         object_story_spec = {
-          page_id,
           link_data: {
             message: ad.message || "",
             link: ad.link || "",
@@ -4658,6 +4676,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
       } else {
         throw new Error(`Ad "${ad.name}" must have either imageHash or video_id`);
       }
