@@ -3659,7 +3659,7 @@ async function addCampaignToDatabase(campaignId, campaignName, accountId) {
   }
 }
 
-app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   try {
     const files = req.files;
     const adAccountId = req.body.account_id;
@@ -3698,38 +3698,36 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
       });
     }
 
-    async function videoUploadPromise() {
-      const results = await Promise.allSettled(
-        files.map((file, index) => {
-          return handleVideoUpload(file, index, userAccessToken)
-            .then((response) => ({
-              type: "video",
-              file: file.originalname,
-              data: response,
-              status: "success",
-            }))
-            .then((data) => {
-              return data;
-            })
-            .catch((error) => ({
-              file: file.originalname,
-              status: "failed",
-              error: error.message,
-            }));
-        })
-      );
+    // Process all video uploads and AWAIT completion before sending response
+    const results = await Promise.allSettled(
+      files.map((file, index) => {
+        return handleVideoUpload(file, index, userAccessToken)
+          .then((response) => ({
+            type: "video",
+            file: file.originalname,
+            data: response,
+            status: "success",
+          }))
+          .then((data) => {
+            return data;
+          })
+          .catch((error) => ({
+            file: file.originalname,
+            status: "failed",
+            error: error.message,
+          }));
+      })
+    );
 
-      // Send session complete event
-      broadcastToSession(sessionId, "session-complete", {
-        totalFiles: files.length,
-        processedFiles: session.processedFiles,
-        results: results,
-      });
+    // Send session complete event
+    broadcastToSession(sessionId, "session-complete", {
+      totalFiles: files.length,
+      processedFiles: session.processedFiles,
+      results: results,
+    });
 
-      res.status(200).json({ results, sessionId });
-    }
-
-    videoUploadPromise();
+    // Now send response AFTER all processing is complete
+    res.status(200).json({ results, sessionId });
 
     async function handleVideoUpload(file, index, userAccessToken) {
       console.log("File: ", file);
@@ -3892,7 +3890,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
     }
   } catch (err) {
     console.log("There was an error in uploading videos to facebook.", err);
-    res.status(500).send("Could not upload videos to facebook.", err);
+    res.status(500).send("Could not upload videos to facebook.");
   }
 
   // function to get thumbnail from video
@@ -4085,7 +4083,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
   }
 });
 
-app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   const files = req.files;
   const accountId = req.body.account_id;
   const userAccessToken = req.user?.facebook_access_token;
@@ -4099,7 +4097,8 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
     });
   }
 
-  async function imageUploadPromise() {
+  try {
+    // Process all image uploads and AWAIT completion before sending response
     const results = await Promise.allSettled(
       files.map(async (file) => {
         try {
@@ -4155,10 +4154,12 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
       })
     );
 
+    // Now send response AFTER all processing is complete
     res.status(200).json(results);
+  } catch (err) {
+    console.log("There was an error in uploading images to facebook.", err);
+    res.status(500).send("Could not upload images to facebook.");
   }
-
-  imageUploadPromise();
 
   async function uploadImages(filePath, originalName) {
     const file_path = fs.createReadStream(filePath);
