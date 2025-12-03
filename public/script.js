@@ -67,7 +67,7 @@ function getOptimizationGoalFromObjective(objective) {
     LINK_CLICKS: "LINK_CLICKS",
 
     // Engagement objectives
-    OUTCOME_ENGAGEMENT: "POST_ENGAGEMENT",
+    OUTCOME_ENGAGEMENT: "CONVERSATIONS",
     POST_ENGAGEMENT: "POST_ENGAGEMENT",
     VIDEO_VIEWS: "VIDEO_VIEWS",
 
@@ -6611,6 +6611,68 @@ function setupCampaignBudgetMode() {
       // but specific amounts/constraints are configured per ad set
     });
   });
+
+  // Setup objective change handler for bid strategy recommendations
+  setupCampaignObjectiveBidStrategyRecommendations(column);
+}
+
+// Setup bid strategy recommendations based on campaign objective
+function setupCampaignObjectiveBidStrategyRecommendations(column) {
+  const objectiveOptions = column.querySelectorAll(".dropdown-options.campaign-objective li");
+
+  // Bid strategy recommendations based on Meta's documentation
+  const bidStrategyRecommendations = {
+    // Format: objective -> [recommended_strategy, explanation]
+    OUTCOME_AWARENESS: ["LOWEST_COST_WITHOUT_CAP", "Meta will optimize for maximum reach within your budget"],
+    OUTCOME_TRAFFIC: ["LOWEST_COST_WITH_BID_CAP", "Control costs while driving traffic to your destination"],
+    OUTCOME_ENGAGEMENT: ["LOWEST_COST_WITH_BID_CAP", "Optimize for engagement while managing costs per result"],
+    OUTCOME_LEADS: ["LOWEST_COST_WITHOUT_CAP", "Meta will optimize for maximum reach within your budget"],
+    OUTCOME_SALES: ["COST_CAP", "Control cost per conversion while scaling sales"],
+    OUTCOME_APP_PROMOTION: ["COST_CAP", "Optimize app installs while keeping costs predictable"],
+  };
+
+  objectiveOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      const objective = option.dataset.value;
+      const recommendation = bidStrategyRecommendations[objective];
+
+      const bidStrategyNote = column.querySelector(".campaign-bid-strategy-note");
+      const bidStrategyRecommendationText = column.querySelector(".bid-strategy-recommendation");
+      const bidStrategyDropdown = column.querySelector('[data-dropdown="campaign-bid-strategy"]');
+      const bidStrategyDisplay = bidStrategyDropdown?.querySelector(".dropdown-display");
+      const bidStrategyOptionsContainer = column.querySelector(".dropdown-options.campaign-bid-strategy");
+
+      if (recommendation && bidStrategyNote && bidStrategyRecommendationText) {
+        const [recommendedStrategy, explanation] = recommendation;
+
+        // Show the recommendation note
+        bidStrategyNote.style.display = "block";
+        bidStrategyRecommendationText.textContent = explanation;
+
+        // Auto-select the recommended bid strategy
+        if (bidStrategyDisplay && bidStrategyOptionsContainer) {
+          // Find the option element
+          const recommendedOption = bidStrategyOptionsContainer.querySelector(`li[data-value="${recommendedStrategy}"]`);
+
+          if (recommendedOption) {
+            // Update display
+            bidStrategyDisplay.textContent = recommendedOption.textContent;
+            bidStrategyDisplay.classList.remove("placeholder");
+            bidStrategyDisplay.dataset.value = recommendedStrategy;
+
+            // Update selected state
+            bidStrategyOptionsContainer.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+            recommendedOption.classList.add("selected");
+
+            console.log(`Auto-selected bid strategy "${recommendedStrategy}" for objective "${objective}"`);
+          }
+        }
+      } else {
+        // Hide recommendation note if no recommendation
+        if (bidStrategyNote) bidStrategyNote.style.display = "none";
+      }
+    });
+  });
 }
 
 // Reset campaign creation form
@@ -6658,6 +6720,10 @@ function resetCampaignCreationForm() {
   // Reset all selected options
   const allOptions = column.querySelectorAll(".dropdown-options li");
   allOptions.forEach((opt) => opt.classList.remove("selected"));
+
+  // Hide bid strategy recommendation note
+  const bidStrategyNote = column.querySelector(".campaign-bid-strategy-note");
+  if (bidStrategyNote) bidStrategyNote.style.display = "none";
 
   // Reset budget mode styling (Campaign-Level is default)
   const budgetModeLabels = column.querySelectorAll(".budget-mode-options label");
@@ -6859,6 +6925,19 @@ async function handleCampaignCreation() {
   if (!name || !objective || !status) {
     if (window.showError) {
       window.showError("Please fill in all required fields", 3000);
+    }
+    // Reset button state on validation error
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create Campaign";
+    }
+    return;
+  }
+
+  // Validate: special ad category country cannot be selected without special ad categories
+  if (specialCountries.length > 0 && specialCategories.length === 0) {
+    if (window.showError) {
+      window.showError("Special Ad Category Country requires Special Ad Categories to be selected first", 4000);
     }
     // Reset button state on validation error
     if (createBtn) {

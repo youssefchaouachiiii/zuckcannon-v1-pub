@@ -1998,7 +1998,8 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
     const detailsResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,pacing_type",
+        fields:
+          "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,special_ad_category_country,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,pacing_type",
         access_token: userAccessToken,
       },
     });
