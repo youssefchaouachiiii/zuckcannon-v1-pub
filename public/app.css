@@ -851,6 +851,76 @@ h2 {
   color: #103dee;
 }
 
+/* Multi-select checkbox styling */
+.multi-select-checkbox {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 16px;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.dropdown-options[data-multiple="true"] li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropdown-options[data-multiple="true"] li.selected .multi-select-checkbox {
+  color: #103dee;
+  font-weight: bold;
+}
+
+/* None option in multi-select acts as clear button */
+.dropdown-options[data-multiple="true"] li.none-option {
+  color: #dc3545;
+  font-style: italic;
+  border-top: 1px solid #e5e5e5;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.dropdown-options[data-multiple="true"] li.none-option:hover {
+  background-color: #fff5f5;
+  color: #c82333;
+}
+
+/* Multi-select clear button */
+.multi-select-clear-btn {
+  display: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #e8f2ff;
+  color: #103dee;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 4px;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.multi-select-clear-btn:hover {
+  background: #103dee;
+  color: white;
+}
+
+.dropdown-selected:not(.placeholder) .multi-select-clear-btn {
+  display: inline-flex;
+}
+
+.dropdown-selected {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 /* Pixel status indicators */
 .pixel-option .pixel-status-icon {
   margin-right: 6px;
