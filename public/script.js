@@ -188,6 +188,7 @@ function updateCTAOptions(campaignObjective) {
 /**
  * Update the visibility and requirement of pixel/event type fields based on optimization goal
  * Only OFFSITE_CONVERSIONS requires pixel_id + custom_event_type
+ * Controls visibility of page dropdown based on optimization goal
  */
 function updateConversionFieldsVisibility(optimizationGoal) {
   const pixelDropdownContainer = document.querySelector('.dropdown-container .custom-dropdown .dropdown-selected[data-dropdown="pixel"]');
@@ -195,7 +196,17 @@ function updateConversionFieldsVisibility(optimizationGoal) {
   const pixelDisplay = pixelDropdownContainer ? pixelDropdownContainer.querySelector(".dropdown-display") : null;
   const eventTypeInput = document.querySelector(".config-event-type");
 
+  // Get page dropdown elements
+  const pageDropdownContainer = document.querySelector('.dropdown-container .custom-dropdown .dropdown-selected[data-dropdown="pages"]');
+  const pageDisplay = pageDropdownContainer ? pageDropdownContainer.querySelector(".dropdown-display") : null;
+
   const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
+
+  // Goals that require page_id (not pixel_id)
+  const requiresPage = ["LEAD_GENERATION", "PAGE_LIKES", "OFFER_CLAIMS", "POST_ENGAGEMENT", "EVENT_RESPONSES"].includes(optimizationGoal);
+
+  // Goals that use pixel_id for conversions
+  const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
 
   // Update placeholder text to indicate if required
   if (pixelDisplay) {
@@ -204,6 +215,25 @@ function updateConversionFieldsVisibility(optimizationGoal) {
 
   if (eventTypeInput) {
     eventTypeInput.placeholder = requiresPixelAndEvent ? "Custom Event Type*" : "Custom Event Type";
+  }
+
+  // Update page dropdown visibility and requirement
+  if (pageDropdownContainer && pageDisplay) {
+    if (usesPixel) {
+      // Hide page dropdown for pixel-based optimization goals
+      pageDropdownContainer.parentElement.style.display = "none";
+    } else {
+      // Show page dropdown for page-based optimization goals
+      pageDropdownContainer.parentElement.style.display = "block";
+      pageDisplay.textContent = requiresPage ? "Page*" : "Page";
+
+      // Remove placeholder class if it was previously required
+      if (!requiresPage) {
+        pageDropdownContainer.classList.add("optional");
+      } else {
+        pageDropdownContainer.classList.remove("optional");
+      }
+    }
   }
 
   // Show/hide conversion fields based on requirement
@@ -2232,19 +2262,54 @@ class UploadForm {
       targeting: {},
     };
 
-    // Add page_id if selected (optional)
-    const pageDropdown = document.querySelector('.dropdown-selected[data-dropdown="pages"] .dropdown-display');
-    const pageId = pageDropdown ? pageDropdown.dataset.value : null;
-    if (pageId) {
-      payload.promoted_object = payload.promoted_object || {};
-      payload.promoted_object.page_id = pageId;
-    }
+    // Build promoted_object based on optimization goal
+    const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
+    const requiresPage = ["LEAD_GENERATION", "PAGE_LIKES", "OFFER_CLAIMS", "POST_ENGAGEMENT", "EVENT_RESPONSES"].includes(optimizationGoal);
 
-    if (pixelId) {
-      payload.promoted_object = payload.promoted_object || {};
-      payload.promoted_object.pixel_id = pixelId;
+    // For pixel-based optimization goals, only add pixel_id and custom_event_type
+    if (usesPixel && pixelId) {
+      payload.promoted_object = {
+        pixel_id: pixelId,
+      };
+      // Also add as top-level fields for backend processing
+      payload.pixel_id = pixelId;
+
       if (eventType) {
         payload.promoted_object.custom_event_type = eventType;
+        payload.event_type = eventType;
+      }
+    }
+    // For page-based optimization goals, only add page_id
+    else if (requiresPage) {
+      const pageDropdown = document.querySelector('.dropdown-selected[data-dropdown="pages"] .dropdown-display');
+      const pageId = pageDropdown ? pageDropdown.dataset.value : null;
+      if (pageId) {
+        payload.promoted_object = {
+          page_id: pageId,
+        };
+        // Also add as top-level field for backend processing
+        payload.page_id = pageId;
+      }
+    }
+    // For other goals, check what's available
+    else {
+      const pageDropdown = document.querySelector('.dropdown-selected[data-dropdown="pages"] .dropdown-display');
+      const pageId = pageDropdown ? pageDropdown.dataset.value : null;
+
+      if (pageId) {
+        payload.promoted_object = payload.promoted_object || {};
+        payload.promoted_object.page_id = pageId;
+        payload.page_id = pageId;
+      }
+
+      if (pixelId) {
+        payload.promoted_object = payload.promoted_object || {};
+        payload.promoted_object.pixel_id = pixelId;
+        payload.pixel_id = pixelId;
+        if (eventType) {
+          payload.promoted_object.custom_event_type = eventType;
+          payload.event_type = eventType;
+        }
       }
     }
 
@@ -2410,6 +2475,7 @@ class UploadForm {
     // Validate dropdowns
     const optimizationGoal = document.querySelector(".config-optimization-goal")?.value || "";
     const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
+    const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
 
     for (const dropdownInput of dropdownInputs) {
       // NEW CHECK: Only validate visible dropdowns
@@ -2418,11 +2484,19 @@ class UploadForm {
       }
 
       const isPixelDropdown = dropdownInput.closest('[data-dropdown="pixel"]');
+      const isPageDropdown = dropdownInput.closest('[data-dropdown="pages"]');
       const isRequired = !dropdownInput.parentElement.parentElement.classList.contains("optional");
 
+      // Skip pixel validation if not required for this optimization goal
       if (isPixelDropdown && !requiresPixelAndEvent) {
         dropdownInput.parentElement.classList.remove("empty-input");
         continue; // Skip validation if not required
+      }
+
+      // Skip page validation if using pixel-based optimization goals
+      if (isPageDropdown && usesPixel) {
+        dropdownInput.parentElement.classList.remove("empty-input");
+        continue; // Skip validation for page dropdown when using pixel-based goals
       }
 
       if (dropdownInput.classList.contains("placeholder") && isRequired) {

@@ -2130,11 +2130,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.destination_type = req.body.destination_type;
   }
 
-  // Add page_id if provided (for objectives that require a page)
-  if (req.body.page_id) {
-    payload.promoted_object = payload.promoted_object || {};
-    payload.promoted_object.page_id = req.body.page_id;
-  }
+  // Note: page_id is now handled in the optimization goal specific section below
+  // to ensure it's only added for goals that support it
 
   // Add budget - either daily_budget or lifetime_budget (moved from campaign level)
   if (req.body.daily_budget) {
@@ -2169,18 +2166,39 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   // Build promoted_object based on optimization goal requirements
   if (optimizationGoal === "OFFSITE_CONVERSIONS") {
-    // CONVERSIONS objective - pixel_id and event_type are optional, user decides if needed
-    if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
-      // Validate that pixel_id doesn't start with "act_"
-      if (req.body.pixel_id.startsWith("act_")) {
-        console.log("⚠️ WARNING: Invalid pixel ID - appears to be an account ID.");
-      } else {
-        // Merge with existing promoted_object if it exists
-        payload.promoted_object = payload.promoted_object || {};
-        payload.promoted_object.pixel_id = req.body.pixel_id;
-        payload.promoted_object.custom_event_type = req.body.event_type;
-      }
+    // OFFSITE_CONVERSIONS - Requires pixel_id and custom_event_type
+    // NEVER include page_id for this optimization goal
+
+    if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a pixel_id. This ad set may fail to create.");
+      return res.status(400).json({
+        error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Facebook Pixel for conversion tracking. OFFSITE_CONVERSIONS optimization goal requires a pixel.",
+      });
     }
+
+    if (!req.body.event_type || req.body.event_type.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a custom_event_type.");
+      return res.status(400).json({
+        error: "Custom Event Type is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Custom Event Type (e.g., PURCHASE, LEAD). OFFSITE_CONVERSIONS optimization goal requires an event type.",
+      });
+    }
+
+    // Validate that pixel_id doesn't start with "act_"
+    if (req.body.pixel_id.startsWith("act_")) {
+      console.log("⚠️ ERROR: Invalid pixel ID - appears to be an account ID.");
+      return res.status(400).json({
+        error: "Invalid Pixel ID format",
+        error_user_msg: "The Pixel ID appears to be an account ID. Please provide a valid Facebook Pixel ID.",
+      });
+    }
+
+    // Set promoted_object with only pixel_id and custom_event_type
+    payload.promoted_object = {
+      pixel_id: req.body.pixel_id,
+      custom_event_type: req.body.event_type,
+    };
   } else if (optimizationGoal === "LEAD_GENERATION") {
     // LEAD_GENERATION - requires page_id, optionally pixel_id
     // custom_event_type should be a separate field, not in promoted_object
@@ -2229,8 +2247,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.promoted_object = payload.promoted_object || {};
     payload.promoted_object.application_id = req.body.application_id;
     payload.promoted_object.object_store_url = req.body.object_store_url;
-  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS") {
-    // PAGE_LIKES or OFFER_CLAIMS - page_id is recommended
+  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS" || optimizationGoal === "POST_ENGAGEMENT" || optimizationGoal === "EVENT_RESPONSES") {
+    // PAGE_LIKES, OFFER_CLAIMS, POST_ENGAGEMENT, EVENT_RESPONSES - page_id is recommended
     if (!req.body.page_id) {
       console.log(`⚠️ WARNING: Page ID is recommended for ${optimizationGoal} optimization goal.`);
     } else {
