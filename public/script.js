@@ -4877,25 +4877,8 @@ class InputValidator {
   }
 
   setupBudgetValidation() {
-    const budgetInputs = document.querySelectorAll(".config-daily-budget, .config-bid-amount, .config-roas-average-floor");
-
-    budgetInputs.forEach((input) => {
-      input.addEventListener("input", (e) => {
-        // Allow only numbers and decimal point
-        e.target.value = e.target.value.replace(/[^0-9.]/g, "");
-
-        // Prevent multiple decimal points
-        const parts = e.target.value.split(".");
-        if (parts.length > 2) {
-          e.target.value = parts[0] + "." + parts.slice(1).join("");
-        }
-
-        // Limit to 2 decimal places
-        if (parts[1] && parts[1].length > 2) {
-          e.target.value = parts[0] + "." + parts[1].substring(0, 2);
-        }
-      });
-    });
+    // Budget inputs are type="number" with step="0.01" in HTML
+    // Browser handles decimal validation natively, no JS validation needed
   }
 }
 
@@ -4979,20 +4962,36 @@ function filterCampaigns(searchTerm) {
 
 // Initialize Geo Selection
 function initializeGeoSelection() {
-  const countryInput = document.querySelector(".country-search-input");
-  const regionInput = document.querySelector(".region-search-input");
-  const countrySuggestions = document.querySelector(".country-suggestions");
-  const regionSuggestions = document.querySelector(".region-suggestions");
+  // Scope to adset-config section to avoid conflicts with modal
+  const adsetConfigContainer = document.querySelector(".adset-config");
+  if (!adsetConfigContainer) {
+    console.warn("[initializeGeoSelection] .adset-config container not found");
+    return;
+  }
+
+  const countryInput = adsetConfigContainer.querySelector(".country-search-input");
+  const regionInput = adsetConfigContainer.querySelector(".region-search-input");
+  const countrySuggestions = adsetConfigContainer.querySelector(".country-suggestions");
+  const regionSuggestions = adsetConfigContainer.querySelector(".region-suggestions");
   const selectedCountriesContainer = document.getElementById("selected-countries");
   const selectedRegionsContainer = document.getElementById("selected-regions");
 
-  if (!countryInput || !regionInput) return;
+  if (!countryInput || !regionInput) {
+    console.warn("[initializeGeoSelection] Country or region input not found");
+    return;
+  }
+
+  console.log("[initializeGeoSelection] Initialized successfully", {
+    countryInput: countryInput,
+    regionInput: regionInput,
+    fbDataLoaded: !!appState.getState().fbLocationsData,
+  });
 
   let highlightedCountryIndex = -1;
   let highlightedRegionIndex = -1;
 
   // Make entire container clickable for countries
-  const countryContainer = document.querySelector(".selected-countries-container");
+  const countryContainer = adsetConfigContainer.querySelector(".selected-countries-container");
   if (countryContainer) {
     countryContainer.addEventListener("click", (e) => {
       // Don't focus if clicking on a tag or remove button
@@ -5003,7 +5002,7 @@ function initializeGeoSelection() {
   }
 
   // Make entire container clickable for regions
-  const regionContainer = document.querySelector(".selected-regions-container");
+  const regionContainer = adsetConfigContainer.querySelector(".selected-regions-container");
   if (regionContainer) {
     regionContainer.addEventListener("click", (e) => {
       // Don't focus if clicking on a tag or remove button
@@ -5018,13 +5017,21 @@ function initializeGeoSelection() {
     const searchTerm = e.target.value.toLowerCase();
     const fbData = appState.getState().fbLocationsData;
 
-    if (!fbData || searchTerm.length < 1) {
+    if (!fbData) {
+      countrySuggestions.innerHTML = '<li class="geo-no-results" style="color: #e74c3c;">Loading countries data...</li>';
+      countrySuggestions.style.display = "block";
+      console.warn("[Geo Selection] fbLocationsData not loaded yet");
+      return;
+    }
+
+    if (searchTerm.length < 1) {
       countrySuggestions.style.display = "none";
       return;
     }
 
     const filteredCountries = fbData.countries.filter((country) => country.name.toLowerCase().includes(searchTerm) && !appState.getState().selectedCountries.find((c) => c.key === country.key));
 
+    console.log(`[Geo Search] Searching "${searchTerm}" - Found ${filteredCountries.length} countries`);
     displayCountrySuggestions(filteredCountries);
   });
 
@@ -5161,6 +5168,11 @@ function initializeGeoSelection() {
         removeCountry(index);
       });
     });
+
+    // Trigger validation check when countries change
+    if (typeof checkRequiredFields === "function") {
+      checkRequiredFields();
+    }
   }
 
   // Render selected regions
@@ -5210,6 +5222,11 @@ function initializeGeoSelection() {
 
     // Remove regions from the removed country
     checkAndUpdateRegions();
+
+    // Trigger validation check
+    if (typeof checkRequiredFields === "function") {
+      checkRequiredFields();
+    }
   }
 
   // Remove region
@@ -6392,7 +6409,10 @@ function setupAdSetFormValidation() {
     const geoFieldsVisible = geoContainers.length > 0 && window.getComputedStyle(geoContainers[0]).display !== "none";
     let hasValidGeo = true;
     if (geoFieldsVisible) {
-      hasValidGeo = document.querySelector("#selected-countries").children.length > 0;
+      // Check appState first (source of truth), then fallback to DOM check
+      const selectedCountries = appState.getState().selectedCountries || [];
+      const domElement = document.querySelector("#selected-countries");
+      hasValidGeo = selectedCountries.length > 0 || (domElement && domElement.children.length > 0);
     }
 
     // Check if budget field is required and valid
@@ -6406,6 +6426,7 @@ function setupAdSetFormValidation() {
     const selectedCampaign = document.querySelector(".campaign.selected");
     if (selectedCampaign) {
       const specialAdCategories = JSON.parse(selectedCampaign.dataset.specialAdCategories || "[]");
+      const selectedCountriesInState = appState.getState().selectedCountries || [];
       console.log("Validation check:", {
         campaign: selectedCampaign.querySelector("h3").textContent,
         specialAdCategories: specialAdCategories.length > 0,
@@ -6415,6 +6436,7 @@ function setupAdSetFormValidation() {
         hasEventType,
         hasValidAge,
         hasValidGeo,
+        selectedCountriesCount: selectedCountriesInState.length,
         hasValidBudget,
         shouldActivate: hasAdsetName && hasEventType && hasValidAge && hasValidGeo && hasValidBudget,
       });
