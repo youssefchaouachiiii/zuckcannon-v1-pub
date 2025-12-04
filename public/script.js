@@ -4390,12 +4390,12 @@ class FileUploadHandler {
     // Add file names to each asset for ad naming
     const assetsWithNames = appState.getState().uploadedAssets.map((asset) => {
       // Extract file name without extension
-      const fileName = asset.file;
-      const nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf(".")) || fileName;
+      const fileName = asset.file || asset.name || "creative";
+      const nameWithoutExtension = fileName && fileName.includes(".") ? fileName.substring(0, fileName.lastIndexOf(".")) : fileName;
 
       return {
         value: asset,
-        adName: nameWithoutExtension,
+        adName: nameWithoutExtension || "creative",
       };
     });
 
@@ -4525,11 +4525,11 @@ class FileUploadHandler {
 
     // Add file names to each asset for ad naming
     const assetsWithNames = appState.getState().uploadedAssets.map((asset) => {
-      const fileName = asset.file;
-      const nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf(".")) || fileName;
+      const fileName = asset.file || asset.name || "creative";
+      const nameWithoutExtension = fileName && fileName.includes(".") ? fileName.substring(0, fileName.lastIndexOf(".")) : fileName;
       return {
         value: asset,
-        adName: nameWithoutExtension,
+        adName: nameWithoutExtension || "creative",
       };
     });
 
