@@ -1948,16 +1948,12 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Set pacing_type only if explicitly provided in request
-    // Note: pacing_type controls whether ad sets can use adset_schedule
-    // - day_parting: Allows ad sets to use adset_schedule (day/hour targeting)
-    // - standard: Even distribution, does NOT support adset_schedule
-    // - no_pacing: Accelerated delivery
-    // If not set, Meta will use default based on bid strategy and budget type
-    if (req.body.pacing_type) {
-      formData.append("pacing_type", JSON.stringify(Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type]));
-      console.log("Campaign pacing_type set to:", req.body.pacing_type);
-    }
+    // Set pacing_type to day_parting by default to enable ad set scheduling
+    // This allows all ad sets within this campaign to use adset_schedule (day/hour targeting)
+    // Based on client workflow: all campaigns are scheduled, and non-scheduled ad sets go in separate campaigns
+    const pacingType = req.body.pacing_type || ["day_parting"];
+    formData.append("pacing_type", JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]));
+    console.log("Campaign pacing_type set to:", pacingType);
 
     // Timing (now supported at campaign level)
     if (start_time) {
@@ -1974,6 +1970,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       objective,
       status: status || "PAUSED",
       account: formattedAccountId,
+      pacing_type: pacingType,
       hasCampaignBudget,
       budgetMode: hasCampaignBudget ? "CAMPAIGN_LEVEL" : "ADSET_LEVEL",
       ...(hasCampaignBudget && {
@@ -2021,6 +2018,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       success: true,
       campaign_id: newCampaignId,
       campaign: newCampaign,
+      pacing_type: newCampaign.pacing_type || pacingType,
       message: `Campaign "${name}" created successfully`,
     });
   } catch (error) {
@@ -2049,10 +2047,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     });
   }
 
-  // Fetch campaign details to get special_ad_category_country and pacing_type
+  // Fetch campaign details to get special_ad_category_country and pacing_type for validation
   let campaignCountries = null;
   let campaignPacingType = null;
-  const needsDayParting = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
+  const hasAdsetSchedule = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
 
   try {
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
@@ -2068,29 +2066,22 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
     }
 
-    // campaignPacingType = campaignResponse.data.pacing_type;
-    console.log(`Campaign ${req.body.campaign_id} current pacing_type:`, campaignPacingType);
+    campaignPacingType = campaignResponse.data.pacing_type;
+    console.log(`Campaign ${req.body.campaign_id} pacing_type:`, campaignPacingType);
 
-    // If ad set has scheduling but campaign doesn't have day_parting, update the campaign
-    if (needsDayParting && (!campaignPacingType || !campaignPacingType.includes("day_parting"))) {
-      console.log(`Updating campaign ${req.body.campaign_id} pacing_type to day_parting for scheduled ad set`);
-
-      const updateCampaignUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
-      const updateFormData = new URLSearchParams();
-      // updateFormData.append("pacing_type", JSON.stringify(["day_parting"]));
-      updateFormData.append("access_token", userAccessToken);
-
-      await axios.post(updateCampaignUrl, updateFormData, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+    // Validate: if using adset_schedule, campaign must have day_parting pacing
+    if (hasAdsetSchedule && campaignPacingType && !campaignPacingType.includes("day_parting")) {
+      return res.status(400).json({
+        error: "Cannot create ad set with scheduling on this campaign",
+        error_user_msg: `This campaign has '${campaignPacingType.join(
+          ", "
+        )}' pacing type which is incompatible with ad set scheduling. Ad set scheduling requires campaigns with 'day_parting' pacing type. Please create a new campaign or use a campaign that supports day parting.`,
+        campaign_pacing_type: campaignPacingType,
       });
-
-      console.log(`Successfully updated campaign pacing_type to day_parting`);
     }
   } catch (err) {
-    console.warn("Could not fetch/update campaign details:", err.message);
-    // Continue with ad set creation even if campaign fetch/update fails
+    console.warn("Could not fetch campaign details:", err.message);
+    // Continue with ad set creation even if campaign fetch fails
   }
 
   const payload = {
@@ -2296,11 +2287,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   }
 
   // Add adset_schedule if provided
+  // Note: pacing_type is set at campaign level only, not at ad set level
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
-    payload.pacing_type = ["day_parting"];
-    console.log("Ad set has scheduling, setting pacing_type to day_parting");
+    console.log("Ad set has scheduling, using campaign-level day_parting pacing");
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
