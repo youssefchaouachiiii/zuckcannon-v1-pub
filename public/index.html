@@ -223,6 +223,12 @@
             </div>
           </div>
 
+          <!-- Bid Strategy Helper Note -->
+          <div class="campaign-bid-strategy-note"
+            style="display: none; margin-top: -8px; padding: 8px 12px; background: #e7f3ff; border-left: 3px solid #1877f2; border-radius: 4px; font-size: 12px; color: #004085;">
+            <strong>💡 Recommended:</strong> <span class="bid-strategy-recommendation"></span>
+          </div>
+
           <!-- Bid Amount (shown when bid cap strategy selected) -->
           <div class="campaign-bid-amount-container" style="display: none;">
             <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Bid Amount per Ad
@@ -323,7 +329,7 @@
           <input type="text" value="Campaign Id" class="preselect config-campaign-id" readonly />
           <input type="text" value="WEBSITE" class="preselect config-destination-type" readonly
             style="display: none;" />
-          <input type="text" value="OFFSITE_CONVERSIONS" class="preselect config-optimization-goal" readonly />
+          <input type="text" value="OFFSITE_CONVERSIONS" class="preselect config-optimization-goal" />
           <input type="text" value="IMPRESSIONS" class="preselect config-billing-event" readonly
             style="display: none;" />
           <input type="text" value="LOWEST_COST_WITHOUT_CAP" class="preselect config-bid-strategy" readonly
@@ -384,6 +390,34 @@
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
 
+          <!-- Campaign Budget Display (Read-Only) - Shows when CBO is enabled -->
+          <div class="campaign-budget-display-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fff3cd;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#856404">
+                <path
+                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 11a.75.75 0 01-.75-.75v-3.5a.75.75 0 011.5 0v3.5A.75.75 0 018 11zm0-5.5a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+              <span style="font-size: 13px; color: #856404; font-weight: 600;">Campaign Budget Optimization (CBO)
+                Enabled</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Budget Type</label>
+                <input type="text" class="campaign-budget-type-readonly" readonly
+                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Budget Amount</label>
+                <input type="text" class="campaign-budget-amount-readonly" readonly
+                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+              </div>
+            </div>
+            <small style="display: block; margin-top: 8px; color: #856404; font-size: 12px;">
+              💡 Budget is managed at campaign level. Adset-level budget fields are disabled.
+            </small>
+          </div>
+
           <!-- Budget & Schedule Section -->
           <div class="budget-schedule-section"
             style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
@@ -436,12 +470,32 @@
             </div>
           </div>
 
+          <!-- Campaign Bid Strategy Display (Read-Only) - Shows when CBO is enabled -->
+          <div class="campaign-bid-strategy-display-container"
+            style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #e7f3ff;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#004085">
+                <path
+                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 11a.75.75 0 01-.75-.75v-3.5a.75.75 0 011.5 0v3.5A.75.75 0 018 11zm0-5.5a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+              <span style="font-size: 13px; color: #004085; font-weight: 600;">Campaign-Level Bid Strategy</span>
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Bid Strategy</label>
+              <input type="text" class="campaign-bid-strategy-readonly" readonly
+                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; color: #333; font-weight: 500;" />
+            </div>
+            <small style="display: block; margin-top: 8px; color: #004085; font-size: 12px;">
+              💡 Bid strategy is managed at campaign level. Adset-level bid strategy is disabled.
+            </small>
+          </div>
+
           <!-- Bid Strategy Section  -->
           <div class="bid-strategy-section" style="margin-top: 15px;">
             <div class="dropdown-container">
               <div class="custom-dropdown">
                 <div class="dropdown-selected" data-dropdown="adset-bid-strategy">
-                  <span class="dropdown-display" data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</span>
+                  <span class="dropdown-display" data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap*</span>
                   <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                     <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                       stroke-linejoin="round" />
@@ -457,11 +511,23 @@
             </div>
           </div>
 
-          <div class="budget-input-wrapper cost-per-result">
+          <!-- Bid Amount Field (for BID_CAP and COST_CAP strategies) -->
+          <div class="budget-input-wrapper bid-amount-field" style="display: none; margin-top: 10px;">
             <span class="currency-prefix">$</span>
-            <input type="number" placeholder="12.50" data-container="adset-form-container"
-              class="config-cost-per-result-goal" step="0.01" min="0" />
+            <input type="number" placeholder="Enter bid amount (e.g., 12.50)" data-container="adset-form-container"
+              class="config-bid-amount" step="0.01" min="0" />
             <span class="currency-suffix">per result</span>
+          </div>
+
+          <!-- ROAS Constraints Field (for MIN_ROAS strategy) -->
+          <div class="roas-constraints-field" style="display: none; margin-top: 10px;">
+            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">ROAS Average Floor*</label>
+            <input type="number" placeholder="Enter ROAS value (e.g., 2.5 for 250% ROAS)"
+              data-container="adset-form-container" class="config-roas-average-floor" step="0.01" min="0"
+              style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+            <small style="display: block; margin-top: 4px; color: #666; font-size: 12px;">
+              💡 Minimum return on ad spend target. E.g., 2.5 = 250% ROAS ($2.50 return per $1 spent)
+            </small>
           </div>
 
           <div class="targeting-age">
@@ -608,23 +674,21 @@
               <p class="drop-zone-text">Drag & drop <strong>images and videos</strong> here <br /><br />or</p>
               <input type="file" multiple accept="image/*,video/*" />
               <button class="continue-btn">Browse Files</button>
-              <div class="gdrive-input-container">
-                <p style="margin: 15px 0 10px 0; color: #666; font-size: 14px;">or</p>
-                <div style="display: flex; align-items: center; gap: 8px; max-width: 400px; margin: 0 auto;">
+              <div class="upload-options-container" style="margin-top: 15px;">
+                <p style="margin: 0 0 10px 0; color: #666; font-size: 14px; text-align: center;">or</p>
+                <div style="display: flex; align-items: center; gap: 8px; max-width: 500px; margin: 0 auto;">
                   <input type="text" class="gdrive-link-input" placeholder="Paste Google Drive link..."
-                    style="flex: 1; padding: 8px 12px; font-size: 14px;">
+                    style="flex: 1; padding: 8px 12px; font-size: 14px; border: 1px solid #d0d0d0; border-radius: 4px;">
                   <button class="gdrive-fetch-btn"
-                    style="padding: 8px 12px; background: #103dee; color: white; border: none;  cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px;">
+                    style="padding: 8px 16px; background: #103dee; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; border-radius: 4px; white-space: nowrap;">
                     <img src="icons/drive-icon.svg" alt="Drive" style="width: 16px; height: 16px;">
                     Fetch
                   </button>
                 </div>
-              </div>
-              <div class="creative-library-link-container" style="margin-top: 15px;">
-                <p style="margin: 10px 0; color: #666; font-size: 14px;">or</p>
+                <p style="margin: 15px 0 10px 0; color: #666; font-size: 14px; text-align: center;">or</p>
                 <button class="open-library-btn"
-                  style="padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; font-size: 14px;">
-                  📚 Browse Creative Library
+                  style="padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; font-size: 14px; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 auto;">
+                  <span style="font-size: 16px;">🖼️</span> Browse Creative Library
                 </button>
               </div>
             </div>
@@ -652,7 +716,7 @@
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="page">
-                <span class="dropdown-display">Page*</span>
+                <span class="dropdown-display">Page</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
@@ -661,19 +725,21 @@
               <ul class="dropdown-options pages">
               </ul>
             </div>
+            <small style="color: #666; font-size: 11px; margin-top: 4px; display: block;">Optional, but required by Meta
+              for certain objectives (e.g., Lead Generation, Page Likes)</small>
           </div>
           <!-- Call to Action dropdown -->
           <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="cta">
-                <span class="dropdown-display">Learn more</span>
+                <span class="dropdown-display">No Button</span>
                 <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                   <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                     stroke-linejoin="round" />
                 </svg>
               </div>
               <ul class="dropdown-options cta">
-                <li class="cta-option" data-value="NO_BUTTON">No button</li>
+                <li class="cta-option selected" data-value="NO_BUTTON">No button</li>
                 <li class="cta-option" data-value="OPEN_LINK">Open link</li>
                 <li class="cta-option" data-value="LIKE_PAGE">Like page</li>
                 <li class="cta-option" data-value="SHOP_NOW">Shop now</li>
@@ -689,7 +755,7 @@
                 <li class="cta-option" data-value="BOOK_TRAVEL">Book travel</li>
                 <li class="cta-option" data-value="LISTEN_MUSIC">Listen music</li>
                 <li class="cta-option" data-value="WATCH_VIDEO">Watch video</li>
-                <li class="cta-option selected" data-value="LEARN_MORE">Learn more</li>
+                <li class="cta-option" data-value="LEARN_MORE">Learn more</li>
                 <li class="cta-option" data-value="SIGN_UP">Sign up</li>
                 <li class="cta-option" data-value="DOWNLOAD">Download</li>
                 <li class="cta-option" data-value="WATCH_MORE">Watch more</li>
@@ -2250,7 +2316,7 @@
             <div class="dropdown-container">
               <div class="custom-dropdown">
                 <div class="dropdown-selected" data-dropdown="page-multi-campaign">
-                  <span class="dropdown-display placeholder">Page*</span>
+                  <span class="dropdown-display placeholder">Page</span>
                   <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
                     <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
                       stroke-linejoin="round" />
@@ -2259,6 +2325,8 @@
                 <ul class="dropdown-options pages-multi-campaign">
                 </ul>
               </div>
+              <small style="color: #666; font-size: 11px; margin-top: 4px; display: block;">Optional, but required by
+                Meta for certain objectives (e.g., Lead Generation, Page Likes)</small>
             </div>
 
             <!-- Call to Action dropdown -->
