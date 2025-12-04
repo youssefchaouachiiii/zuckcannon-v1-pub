@@ -7062,7 +7062,7 @@ function setupCampaignObjectiveBidStrategyRecommendations(column) {
     OUTCOME_ENGAGEMENT: ["LOWEST_COST_WITH_BID_CAP", "Optimize for engagement while managing costs per result"],
     OUTCOME_LEADS: ["LOWEST_COST_WITHOUT_CAP", "Meta will optimize for maximum reach within your budget"],
     OUTCOME_SALES: ["COST_CAP", "Control cost per conversion while scaling sales"],
-    OUTCOME_APP_PROMOTION: ["COST_CAP", "Optimize app installs while keeping costs predictable"],
+    OUTCOME_APP_PROMOTION: ["LOWEST_COST_WITHOUT_CAP", "Meta will optimize for maximum reach within your budget"],
   };
 
   objectiveOptions.forEach((option) => {
