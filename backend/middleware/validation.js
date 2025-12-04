@@ -1091,9 +1091,10 @@ export const validateRequest = {
       return res.status(400).json({ error: "adset_id is required" });
     }
 
-    if (!page_id) {
-      return res.status(400).json({ error: "page_id is required" });
-    }
+    // page_id is now optional
+    // if (!page_id) {
+    //   return res.status(400).json({ error: "page_id is required" });
+    // }
 
     if (!ads || !Array.isArray(ads) || ads.length === 0) {
       return res.status(400).json({

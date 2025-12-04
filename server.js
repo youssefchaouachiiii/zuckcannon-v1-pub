@@ -1782,9 +1782,6 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       daily_budget,
       lifetime_budget,
       spend_cap,
-      // Pacing options (campaign-level)
-      pacing_type,
-      campaign_schedule,
       // Special categories
       special_ad_categories,
       special_ad_category,
@@ -1951,6 +1948,17 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
+    // Set pacing_type only if explicitly provided in request
+    // Note: pacing_type controls whether ad sets can use adset_schedule
+    // - day_parting: Allows ad sets to use adset_schedule (day/hour targeting)
+    // - standard: Even distribution, does NOT support adset_schedule
+    // - no_pacing: Accelerated delivery
+    // If not set, Meta will use default based on bid strategy and budget type
+    if (req.body.pacing_type) {
+      formData.append("pacing_type", JSON.stringify(Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type]));
+      console.log("Campaign pacing_type set to:", req.body.pacing_type);
+    }
+
     // Timing (now supported at campaign level)
     if (start_time) {
       formData.append("start_time", start_time);
@@ -1990,7 +1998,8 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
     const detailsResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time",
+        fields:
+          "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,special_ad_category_country,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -2040,13 +2049,16 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     });
   }
 
-  // Fetch campaign details to get special_ad_category_country
+  // Fetch campaign details to get special_ad_category_country and pacing_type
   let campaignCountries = null;
+  let campaignPacingType = null;
+  const needsDayParting = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
+
   try {
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
     const campaignResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "special_ad_category_country",
+        fields: "special_ad_category_country,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -2055,9 +2067,30 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       campaignCountries = campaignResponse.data.special_ad_category_country;
       console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
     }
+
+    // campaignPacingType = campaignResponse.data.pacing_type;
+    console.log(`Campaign ${req.body.campaign_id} current pacing_type:`, campaignPacingType);
+
+    // If ad set has scheduling but campaign doesn't have day_parting, update the campaign
+    if (needsDayParting && (!campaignPacingType || !campaignPacingType.includes("day_parting"))) {
+      console.log(`Updating campaign ${req.body.campaign_id} pacing_type to day_parting for scheduled ad set`);
+
+      const updateCampaignUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
+      const updateFormData = new URLSearchParams();
+      // updateFormData.append("pacing_type", JSON.stringify(["day_parting"]));
+      updateFormData.append("access_token", userAccessToken);
+
+      await axios.post(updateCampaignUrl, updateFormData, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      console.log(`Successfully updated campaign pacing_type to day_parting`);
+    }
   } catch (err) {
-    console.warn("Could not fetch campaign details for special_ad_category_country:", err.message);
-    // Continue with ad set creation even if campaign fetch fails
+    console.warn("Could not fetch/update campaign details:", err.message);
+    // Continue with ad set creation even if campaign fetch/update fails
   }
 
   const payload = {
@@ -2235,14 +2268,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   if (bidAmountRequired) {
     if (!req.body.bid_amount || req.body.bid_amount <= 0) {
-      // return res.status(400).json({
-      //   error: `Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.`,
-      //   details: "Bid amount required for bid strategy provided",
-      //   missing_fields: { bid_amount: true },
-      // });
-      console.log("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.");
+      console.log(`[WARNING] Bid amount required but not provided for ${bidStrategy}`);
+    } else {
+      payload.bid_amount = parseInt(req.body.bid_amount);
     }
-    payload.bid_amount = parseInt(req.body.bid_amount);
   } else if (req.body.bid_amount) {
     // Optional bid_amount for other strategies
     payload.bid_amount = parseInt(req.body.bid_amount);
@@ -2251,7 +2280,9 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   // Add adset_schedule if provided
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    payload.pacing_type = ["day_parting"]; // Only set pacing for scheduled ads
+    // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
+    payload.pacing_type = ["day_parting"];
+    console.log("Ad set has scheduling, setting pacing_type to day_parting");
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2358,10 +2389,12 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       adSetPayload.promoted_object = JSON.stringify(adSetPayload.promoted_object);
     }
 
-    // Handle ad scheduling - must set pacing_type if adset_schedule is provided
+    // Handle ad scheduling
     if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
       adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
+      // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
       adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
+      console.log("Ad set has scheduling, setting pacing_type to day_parting");
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2782,8 +2815,13 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
-      if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
-      if (sourceAdSet.adset_schedule) createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+      // if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
+      if (sourceAdSet.adset_schedule) {
+        createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+        // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
+        createAdSetPayload.pacing_type = ["day_parting"];
+        console.log("Ad set has scheduling, setting pacing_type to day_parting");
+      }
 
       // Create ad set in target account
       const createAdSetUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
@@ -3622,7 +3660,7 @@ async function addCampaignToDatabase(campaignId, campaignName, accountId) {
   }
 }
 
-app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   try {
     const files = req.files;
     const adAccountId = req.body.account_id;
@@ -3661,38 +3699,36 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
       });
     }
 
-    async function videoUploadPromise() {
-      const results = await Promise.allSettled(
-        files.map((file, index) => {
-          return handleVideoUpload(file, index, userAccessToken)
-            .then((response) => ({
-              type: "video",
-              file: file.originalname,
-              data: response,
-              status: "success",
-            }))
-            .then((data) => {
-              return data;
-            })
-            .catch((error) => ({
-              file: file.originalname,
-              status: "failed",
-              error: error.message,
-            }));
-        })
-      );
+    // Process all video uploads and AWAIT completion before sending response
+    const results = await Promise.allSettled(
+      files.map((file, index) => {
+        return handleVideoUpload(file, index, userAccessToken)
+          .then((response) => ({
+            type: "video",
+            file: file.originalname,
+            data: response,
+            status: "success",
+          }))
+          .then((data) => {
+            return data;
+          })
+          .catch((error) => ({
+            file: file.originalname,
+            status: "failed",
+            error: error.message,
+          }));
+      })
+    );
 
-      // Send session complete event
-      broadcastToSession(sessionId, "session-complete", {
-        totalFiles: files.length,
-        processedFiles: session.processedFiles,
-        results: results,
-      });
+    // Send session complete event
+    broadcastToSession(sessionId, "session-complete", {
+      totalFiles: files.length,
+      processedFiles: session.processedFiles,
+      results: results,
+    });
 
-      res.status(200).json({ results, sessionId });
-    }
-
-    videoUploadPromise();
+    // Now send response AFTER all processing is complete
+    res.status(200).json({ results, sessionId });
 
     async function handleVideoUpload(file, index, userAccessToken) {
       console.log("File: ", file);
@@ -3855,7 +3891,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
     }
   } catch (err) {
     console.log("There was an error in uploading videos to facebook.", err);
-    res.status(500).send("Could not upload videos to facebook.", err);
+    res.status(500).send("Could not upload videos to facebook.");
   }
 
   // function to get thumbnail from video
@@ -4048,7 +4084,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
   }
 });
 
-app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   const files = req.files;
   const accountId = req.body.account_id;
   const userAccessToken = req.user?.facebook_access_token;
@@ -4062,7 +4098,8 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
     });
   }
 
-  async function imageUploadPromise() {
+  try {
+    // Process all image uploads and AWAIT completion before sending response
     const results = await Promise.allSettled(
       files.map(async (file) => {
         try {
@@ -4118,10 +4155,12 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
       })
     );
 
+    // Now send response AFTER all processing is complete
     res.status(200).json(results);
+  } catch (err) {
+    console.log("There was an error in uploading images to facebook.", err);
+    res.status(500).send("Could not upload images to facebook.");
   }
-
-  imageUploadPromise();
 
   async function uploadImages(filePath, originalName) {
     const file_path = fs.createReadStream(filePath);
@@ -4391,7 +4430,6 @@ app.post("/api/create-ad-creative", (req, res) => {
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             video_data: {
               message,
               title: headline,
@@ -4407,12 +4445,16 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       } else {
         // payload for image upload
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             link_data: {
               message,
               link,
@@ -4428,6 +4470,11 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       }
 
       const normalizedAccountId = normalizeAdAccountId(account_id);
@@ -4471,6 +4518,13 @@ app.post("/api/create-ad-creative", (req, res) => {
             }
           } else {
             errorMessage = err.message;
+          }
+
+          // Provide helpful context for page_id errors
+          if (errorMessage.includes("Facebook Page is missing") || errorMessage.includes("page") || errorMessage.includes("Page")) {
+            throw new Error(
+              `Ad "${adName}": ${errorMessage}\n\nNote: While page_id is optional in our system, Meta's API may require it for certain ad objectives (like LEAD_GENERATION, PAGE_LIKES, etc.). Please select a Facebook Page in the ad copy section.`
+            );
           }
 
           throw new Error(`Ad "${adName}": ${errorMessage}`);
@@ -4527,7 +4581,7 @@ app.post("/api/create-ad-creative", (req, res) => {
  * {
  *   "account_id": "123456789",
  *   "adset_id": "120123456789",
- *   "page_id": "987654321",
+ *   "page_id": "987654321", // Optional: Facebook Page ID for the ads
  *   "ads": [
  *     {
  *       "name": "Ad 1",
@@ -4556,9 +4610,9 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       });
     }
 
-    if (!account_id || !adset_id || !page_id) {
+    if (!account_id || !adset_id) {
       return res.status(400).json({
-        error: "account_id, adset_id, and page_id are required",
+        error: "account_id and adset_id are required",
       });
     }
 
@@ -4584,7 +4638,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       if (ad.video_id) {
         // Video ad
         object_story_spec = {
-          page_id,
           video_data: {
             message: ad.message || "",
             title: ad.headline || "",
@@ -4599,6 +4652,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
           },
         };
 
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
+
         // Add thumbnail if provided
         if (ad.thumbnailHash) {
           object_story_spec.video_data.image_hash = ad.thumbnailHash;
@@ -4606,7 +4664,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       } else if (ad.imageHash) {
         // Image ad
         object_story_spec = {
-          page_id,
           link_data: {
             message: ad.message || "",
             link: ad.link || "",
@@ -4621,6 +4678,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
       } else {
         throw new Error(`Ad "${ad.name}" must have either imageHash or video_id`);
       }
