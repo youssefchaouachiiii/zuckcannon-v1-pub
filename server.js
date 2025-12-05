@@ -1948,12 +1948,18 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Set pacing_type to day_parting by default to enable ad set scheduling
-    // This allows all ad sets within this campaign to use adset_schedule (day/hour targeting)
-    // Based on client workflow: all campaigns are scheduled, and non-scheduled ad sets go in separate campaigns
-    const pacingType = req.body.pacing_type || ["day_parting"];
-    formData.append("pacing_type", JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]));
-    console.log("Campaign pacing_type set to:", pacingType);
+    // Set pacing_type only for campaign-level budgets
+    // Meta API rejects pacing_type when campaign has no budget (ad set-level budget)
+    let pacingType = null;
+    if (hasCampaignBudget) {
+      // Campaign budget: use user selection or default to day_parting for scheduling support
+      pacingType = req.body.pacing_type || ["day_parting"];
+      formData.append("pacing_type", JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]));
+      console.log("Campaign pacing_type set to:", pacingType);
+    } else {
+      // Ad set budget: cannot set pacing_type (Meta API restriction)
+      console.log("Ad set budget mode: pacing_type not set (campaign has no budget)");
+    }
 
     // Timing (now supported at campaign level)
     if (start_time) {
@@ -2286,11 +2292,17 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.bid_amount = parseInt(req.body.bid_amount);
   }
 
-  // Add adset_schedule if provided
-  // Note: pacing_type is set at campaign level only, not at ad set level
+  // Add adset_schedule and pacing_type if provided
+  // pacing_type can be set at ad set level to override campaign-level pacing
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    console.log("Ad set has scheduling, using campaign-level day_parting pacing");
+    // Automatically set day_parting pacing when ad set has scheduling
+    payload.pacing_type = ["day_parting"];
+    console.log("Ad set has scheduling, setting ad set-level pacing_type to day_parting");
+  } else if (req.body.pacing_type) {
+    // Use user-specified pacing_type if no scheduling
+    payload.pacing_type = Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type];
+    console.log("Ad set pacing_type set to:", payload.pacing_type);
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2533,13 +2545,17 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
       }
 
-      // Set pacing_type to day_parting by default to enable ad set scheduling
-      // This allows all ad sets within this campaign to use adset_schedule (day/hour targeting)
-      campaignPayload.pacing_type = JSON.stringify(["day_parting"]);
-
       // ===== BUDGET MODE LOGIC =====
       // Determine if campaign-level budget is being used
       const hasCampaignBudget = !!(daily_budget || lifetime_budget);
+
+      // Set pacing_type only for campaign-level budgets
+      if (hasCampaignBudget) {
+        // Campaign budget: use user selection or default to day_parting
+        const pacingType = req.body.pacing_type || ["day_parting"];
+        campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
+      }
+      // Ad set budget: do not set pacing_type (Meta API restriction)
 
       if (hasCampaignBudget) {
         // Campaign-level budget mode (Advantage+ campaign budget)
