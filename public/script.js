@@ -200,6 +200,9 @@ function updateConversionFieldsVisibility(optimizationGoal) {
   const pageDropdownContainer = document.querySelector('.dropdown-container .custom-dropdown .dropdown-selected[data-dropdown="pages"]');
   const pageDisplay = pageDropdownContainer ? pageDropdownContainer.querySelector(".dropdown-display") : null;
 
+  // Get app promotion container
+  const appPromotionContainer = document.querySelector(".app-promotion-container");
+
   const requiresPixelAndEvent = optimizationGoal === "OFFSITE_CONVERSIONS";
 
   // Goals that require page_id (not pixel_id)
@@ -207,6 +210,9 @@ function updateConversionFieldsVisibility(optimizationGoal) {
 
   // Goals that use pixel_id for conversions
   const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
+
+  // Check if optimization goal is for app promotion
+  const isAppPromotion = optimizationGoal === "APP_INSTALLS";
 
   // Update placeholder text to indicate if required
   if (pixelDisplay) {
@@ -219,8 +225,8 @@ function updateConversionFieldsVisibility(optimizationGoal) {
 
   // Update page dropdown visibility and requirement
   if (pageDropdownContainer && pageDisplay) {
-    if (usesPixel) {
-      // Hide page dropdown for pixel-based optimization goals
+    if (usesPixel || isAppPromotion) {
+      // Hide page dropdown for pixel-based optimization goals and app promotion
       pageDropdownContainer.parentElement.style.display = "none";
     } else {
       // Show page dropdown for page-based optimization goals
@@ -236,13 +242,36 @@ function updateConversionFieldsVisibility(optimizationGoal) {
     }
   }
 
+  // Show/hide app promotion fields based on optimization goal
+  if (appPromotionContainer) {
+    if (isAppPromotion) {
+      appPromotionContainer.style.display = "block";
+      // Hide pixel and event type containers for app promotion
+      if (pixelDropdownContainer) {
+        pixelDropdownContainer.parentElement.style.display = "none";
+      }
+      if (eventTypeContainer) {
+        eventTypeContainer.style.display = "none";
+      }
+    } else {
+      appPromotionContainer.style.display = "none";
+      // Show pixel and event type containers for non-app-promotion goals
+      if (pixelDropdownContainer) {
+        pixelDropdownContainer.parentElement.style.display = "block";
+      }
+      if (eventTypeContainer) {
+        eventTypeContainer.style.display = "block";
+      }
+    }
+  }
+
   // Show/hide conversion fields based on requirement
   // For now, always show them but mark as optional unless required
-  if (pixelDropdownContainer) {
+  if (pixelDropdownContainer && !isAppPromotion) {
     pixelDropdownContainer.parentElement.style.opacity = requiresPixelAndEvent ? "1" : "1";
   }
 
-  if (eventTypeContainer) {
+  if (eventTypeContainer && !isAppPromotion) {
     eventTypeContainer.style.opacity = requiresPixelAndEvent ? "1" : "1";
   }
 
@@ -2265,9 +2294,28 @@ class UploadForm {
     // Build promoted_object based on optimization goal
     const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
     const requiresPage = ["LEAD_GENERATION", "PAGE_LIKES", "OFFER_CLAIMS", "POST_ENGAGEMENT", "EVENT_RESPONSES"].includes(optimizationGoal);
+    const isAppPromotion = optimizationGoal === "APP_INSTALLS";
 
+    // For app promotion optimization goals, only add application_id and object_store_url
+    if (isAppPromotion) {
+      const applicationIdInput = document.querySelector(".config-application-id");
+      const objectStoreUrlInput = document.querySelector(".config-object-store-url");
+
+      const applicationId = applicationIdInput ? applicationIdInput.value : "";
+      const objectStoreUrl = objectStoreUrlInput ? objectStoreUrlInput.value : "";
+
+      if (applicationId || objectStoreUrl) {
+        payload.promoted_object = {};
+        if (applicationId) {
+          payload.promoted_object.application_id = applicationId;
+        }
+        if (objectStoreUrl) {
+          payload.promoted_object.object_store_url = objectStoreUrl;
+        }
+      }
+    }
     // For pixel-based optimization goals, only add pixel_id and custom_event_type
-    if (usesPixel && pixelId) {
+    else if (usesPixel && pixelId) {
       payload.promoted_object = {
         pixel_id: pixelId,
       };
@@ -11199,7 +11247,9 @@ async function processBulkAdSetDuplication(account) {
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || errorData.details || `Failed with status ${response.status}`);
+      // Extract the most user-friendly error message
+      const userMessage = errorData.details?.error_user_msg || errorData.details?.error_user_title || errorData.details?.message || errorData.error || `Failed with status ${response.status}`;
+      throw new Error(userMessage);
     }
 
     const data = await response.json();
@@ -11216,14 +11266,25 @@ async function processBulkAdSetDuplication(account) {
   } catch (error) {
     console.error(`Error duplicating ad set to account ${accountId}:`, error);
 
+    // Extract error_user_msg from response if available
+    let errorMessage = error.message;
+    if (error.message.includes("Failed with status")) {
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.details?.error_user_msg || errorData.details?.message || errorData.error || error.message;
+      } catch (e) {
+        // If parsing fails, use original error message
+      }
+    }
+
     statusSpan.textContent = "Failed";
     statusSpan.className = "account-progress-status failed";
-    detailsDiv.textContent = `✗ ${error.message}`;
+    detailsDiv.textContent = `✗ ${errorMessage}`;
 
     return {
       account,
       success: false,
-      error: error.message,
+      error: errorMessage,
     };
   }
 }
@@ -12341,6 +12402,28 @@ function setupMultiCampaignAdSetModal() {
         // Then initialize all custom dropdowns
         new CustomDropdown(".multi-campaign-adset-form .custom-dropdown");
 
+        // Add optimization goal change listener to update app promotion fields visibility
+        const optimizationGoalDropdown = document.querySelector('.multi-campaign-adset-form [data-dropdown="optimization-goal"]');
+        if (optimizationGoalDropdown) {
+          // Use MutationObserver to detect when dropdown value changes
+          const observer = new MutationObserver(() => {
+            const display = optimizationGoalDropdown.querySelector(".dropdown-display");
+            const optimizationGoal = display?.dataset?.value;
+
+            if (optimizationGoal) {
+              updateMultiCampaignFieldsVisibility(optimizationGoal);
+            }
+          });
+
+          const display = optimizationGoalDropdown.querySelector(".dropdown-display");
+          if (display) {
+            observer.observe(display, {
+              attributes: true,
+              attributeFilter: ["data-value", "class"],
+            });
+          }
+        }
+
         // Initialize other features
         initializeGeoSelectionForModal();
         initializeEventTypeForModal();
@@ -12586,8 +12669,26 @@ function setupMultiCampaignAdSetModal() {
     const optimizationGoal = payload.optimization_goal;
 
     if (optimizationGoal) {
+      // Goals that require application_id and object_store_url (App Promotion)
+      if (optimizationGoal === "APP_INSTALLS") {
+        const applicationIdInput = form.querySelector(".config-application-id-multi");
+        const objectStoreUrlInput = form.querySelector(".config-object-store-url-multi");
+
+        const applicationId = applicationIdInput ? applicationIdInput.value : "";
+        const objectStoreUrl = objectStoreUrlInput ? objectStoreUrlInput.value : "";
+
+        if (applicationId || objectStoreUrl) {
+          payload.promoted_object = {};
+          if (applicationId) {
+            payload.promoted_object.application_id = applicationId;
+          }
+          if (objectStoreUrl) {
+            payload.promoted_object.object_store_url = objectStoreUrl;
+          }
+        }
+      }
       // Goals that require pixel_id + custom_event_type
-      if (optimizationGoal === "OFFSITE_CONVERSIONS" || optimizationGoal === "VALUE" || optimizationGoal === "APP_INSTALLS_AND_OFFSITE_CONVERSIONS") {
+      else if (optimizationGoal === "OFFSITE_CONVERSIONS" || optimizationGoal === "VALUE" || optimizationGoal === "APP_INSTALLS_AND_OFFSITE_CONVERSIONS") {
         if (pixelDropdown?.dataset.value && !pixelDropdown.classList.contains("placeholder")) {
           payload.promoted_object = payload.promoted_object || {};
           payload.promoted_object.pixel_id = pixelDropdown.dataset.value;
@@ -12605,10 +12706,6 @@ function setupMultiCampaignAdSetModal() {
           payload.promoted_object.page_id = pageDropdown.dataset.value;
         }
       }
-      // Goals that require application_id (not implemented yet, would need app_id input)
-      // else if (optimizationGoal === 'APP_INSTALLS' || optimizationGoal === 'ENGAGED_USERS') {
-      //   payload.promoted_object = { application_id: "..." };
-      // }
     }
     // Fallback: If no optimization_goal, only add page_id if selected
     else if (pageDropdown?.dataset.value && !pageDropdown.classList.contains("placeholder")) {
@@ -12811,6 +12908,49 @@ function setupMultiCampaignAdSetModal() {
 }
 
 // Initialize Page & Pixel dropdowns for Multi-Campaign Modal
+// Helper function to update multi-campaign modal field visibility based on optimization goal
+function updateMultiCampaignFieldsVisibility(optimizationGoal) {
+  const pixelDropdownContainer = document.querySelector('.multi-campaign-adset-form [data-dropdown="pixel-multi"]');
+  const eventTypeContainer = document.querySelector(".event-type-container-multi");
+  const pageDropdownContainer = document.querySelector('.multi-campaign-adset-form [data-dropdown="pages-multi"]');
+  const appPromotionContainer = document.querySelector(".app-promotion-container-multi");
+
+  const isAppPromotion = optimizationGoal === "APP_INSTALLS";
+  const usesPixel = ["OFFSITE_CONVERSIONS", "VALUE", "APP_INSTALLS_AND_OFFSITE_CONVERSIONS"].includes(optimizationGoal);
+
+  // Show/hide app promotion fields
+  if (appPromotionContainer) {
+    if (isAppPromotion) {
+      appPromotionContainer.style.display = "block";
+      // Hide pixel, event type, and page containers for app promotion
+      if (pixelDropdownContainer) {
+        pixelDropdownContainer.closest(".dropdown-container").style.display = "none";
+      }
+      if (eventTypeContainer) {
+        eventTypeContainer.style.display = "none";
+      }
+      if (pageDropdownContainer) {
+        pageDropdownContainer.closest(".dropdown-container").style.display = "none";
+      }
+    } else {
+      appPromotionContainer.style.display = "none";
+      // Show pixel and event type for pixel-based goals
+      if (pixelDropdownContainer) {
+        pixelDropdownContainer.closest(".dropdown-container").style.display = usesPixel ? "block" : "none";
+      }
+      if (eventTypeContainer) {
+        eventTypeContainer.style.display = usesPixel ? "block" : "none";
+      }
+      // Show page dropdown for non-pixel, non-app-promotion goals
+      if (pageDropdownContainer) {
+        pageDropdownContainer.closest(".dropdown-container").style.display = usesPixel ? "none" : "block";
+      }
+    }
+  }
+
+  console.log(`[Multi-Campaign] Updated field visibility for optimization goal: ${optimizationGoal}, isAppPromotion: ${isAppPromotion}`);
+}
+
 function initializePagePixelForModal() {
   const pages = window.metaData?.pages || [];
   const pixelsRaw = window.metaData?.pixels || [];
@@ -13237,6 +13377,7 @@ function setupMultiAccountCampaignModal() {
 
       if (nextBtn) nextBtn.style.display = "block";
       if (backBtn) backBtn.style.display = "none";
+      if (previewBtn) previewBtn.style.display = "none";
       if (createBtn) createBtn.style.display = "none";
     } else if (step === 2) {
       step1?.classList.remove("active");
@@ -13490,12 +13631,6 @@ function setupMultiAccountCampaignModal() {
         payload.daily_budget = parseFloat(budgetAmount);
       } else if (budgetType === "lifetime") {
         payload.lifetime_budget = parseFloat(budgetAmount);
-
-        // Get end date if lifetime budget
-        const endDate = modal.querySelector(".multi-campaign-end-date")?.value;
-        if (endDate) {
-          payload.end_time = new Date(endDate).toISOString();
-        }
       }
 
       // Get bid strategy from dropdown
@@ -13837,7 +13972,6 @@ function setupMultiAccountBudgetMode() {
   const campaignBudgetFields = modal.querySelector(".multi-campaign-budget-fields");
   const budgetTypeDisplay = modal.querySelector('[data-dropdown="multi-campaign-budget-type"] .dropdown-display');
   const budgetSuffix = modal.querySelector(".multi-campaign-budget-suffix");
-  const endDateContainer = modal.querySelector(".multi-campaign-end-date-container");
   const bidStrategyDisplay = modal.querySelector('[data-dropdown="multi-campaign-bid-strategy"] .dropdown-display');
   const bidAmountContainer = modal.querySelector(".multi-campaign-bid-amount-container");
 
@@ -13871,10 +14005,8 @@ function setupMultiAccountBudgetMode() {
       const budgetType = option.dataset.value;
       if (budgetType === "daily") {
         budgetSuffix.textContent = "/day";
-        if (endDateContainer) endDateContainer.style.display = "none";
       } else if (budgetType === "lifetime") {
         budgetSuffix.textContent = " (Total)";
-        if (endDateContainer) endDateContainer.style.display = "block";
       }
     });
   });

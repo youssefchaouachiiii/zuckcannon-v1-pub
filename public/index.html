@@ -390,6 +390,26 @@
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
 
+          <!-- App Promotion Fields (for OUTCOME_APP_PROMOTION campaigns) -->
+          <div class="app-promotion-container" style="display: none;">
+            <small style="display: block; margin-bottom: 12px; color: #666; font-size: 12px; line-height: 1.4;">
+              Recommended to create ad sets for App Promotion campaigns directly in Meta Ad Manager for more
+              comprehensive App ID choices and Object Store URL configuration.
+            </small>
+            <input type="text" placeholder="App ID" data-container="adset-form-container" class="config-application-id">
+            <small
+              style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+              Example: Telegram have an App ID of 733622959983198
+            </small>
+            <input type="text" placeholder="Object Store URL" data-container="adset-form-container"
+              class="config-object-store-url">
+            <small
+              style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+              Example: Telegram have an Object Store URL of
+              http://play.google.com/store/apps/details?id=org.telegram.messenger&referrer=utm_source%3Dapps.facebook.com%26utm_campaign%3Dfb4a%26utm_content%3D%257B%2522app%2522%253A0%252C%2522t%2522%253A1764864126%252C%2522source%2522%253Anull%257D
+            </small>
+          </div>
+
           <!-- Campaign Budget Display (Read-Only) - Shows when CBO is enabled -->
           <div class="campaign-budget-display-container"
             style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fff3cd;">
@@ -2089,6 +2109,25 @@
               <ul class="event-type-suggestions-multi" style="display: none;"></ul>
             </div>
 
+            <!-- App Promotion Fields (for OUTCOME_APP_PROMOTION campaigns) -->
+            <div class="app-promotion-container-multi" style="display: none;">
+              <small style="display: block; margin-bottom: 12px; color: #666; font-size: 12px; line-height: 1.4;">
+                Recommended to create ad sets for App Promotion campaigns directly in Meta Ad Manager for more
+                comprehensive App ID choices and Object Store URL configuration.
+              </small>
+              <input type="text" placeholder="App ID" class="config-application-id-multi">
+              <small
+                style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+                Example: Telegram have an App ID of 733622959983198
+              </small>
+              <input type="text" placeholder="Object Store URL" class="config-object-store-url-multi">
+              <small
+                style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+                Example: Telegram have an Object Store URL of
+                http://play.google.com/store/apps/details?id=org.telegram.messenger&referrer=utm_source%3Dapps.facebook.com%26utm_campaign%3Dfb4a%26utm_content%3D%257B%2522app%2522%253A0%252C%2522t%2522%253A1764864126%252C%2522source%2522%253Anull%257D
+              </small>
+            </div>
+
             <!-- Bid Strategy dropdown -->
             <div class="dropdown-container">
               <div class="custom-dropdown">
@@ -2568,14 +2607,6 @@
                 style="padding: 10px; background: #f5f5f5; color: #666; font-size: 12px;">/day</span>
             </div>
 
-            <!-- Campaign End Date (for lifetime budget) - HIDDEN -->
-            <div class="multi-campaign-end-date-container" style="display: none;">
-              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Campaign End
-                Date*</label>
-              <input type="datetime-local" id="multi-campaign-end-date" class="multi-campaign-end-date"
-                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-
             <!-- Pacing Type - HIDDEN -->
             <div class="dropdown-container" style="display: none;">
               <div class="custom-dropdown">
@@ -2701,8 +2732,7 @@
           <button class="btn-cancel">Cancel</button>
           <button class="btn-next">Next</button>
           <button class="btn-back" style="display: none;">Back</button>
-          <button class="btn-preview" style="display: none; background: #42b72a; margin-right: 8px;">Preview
-            Campaign</button>
+          <button class="btn-preview" style="display: none;">Preview Campaign</button>
           <button class="btn-create" style="display: none;">Create Campaign</button>
         </div>
       </div>
