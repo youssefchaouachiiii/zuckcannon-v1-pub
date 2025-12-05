@@ -1844,6 +1844,100 @@ h2 {
   line-height: 1.5;
 }
 
+/* App Promotion Fields */
+.app-promotion-container {
+  display: none;
+  margin-top: 4px;
+}
+
+.app-promotion-container > small:first-child {
+  display: block;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.app-promotion-container input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.app-promotion-container input:focus {
+  border-color: #103dee;
+  box-shadow: 0 0 0 1px #103dee;
+}
+
+.app-promotion-container small {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  color: #999;
+  font-size: 11px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+/* App Promotion Fields for Multi-Campaign Modal */
+.app-promotion-container-multi {
+  display: none;
+  margin-top: 4px;
+}
+
+.app-promotion-container-multi > small:first-child {
+  display: block;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.app-promotion-container-multi input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.app-promotion-container-multi input:focus {
+  border-color: #103dee;
+  box-shadow: 0 0 0 1px #103dee;
+}
+
+.app-promotion-container-multi small {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  color: #999;
+  font-size: 11px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
 /* Event Type Container for Multi-Campaign Modal */
 .event-type-container-multi {
   position: relative;
@@ -4945,6 +5039,7 @@ input.bulk-adset-name {
 .multi-account-campaign-modal .btn-cancel,
 .multi-account-campaign-modal .btn-back,
 .multi-account-campaign-modal .btn-next,
+.multi-account-campaign-modal .btn-preview,
 .multi-account-campaign-modal .btn-create {
   padding: 10px 20px;
   border: none;
@@ -4975,6 +5070,15 @@ input.bulk-adset-name {
 
 .multi-account-campaign-modal .btn-back:hover {
   background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .btn-preview {
+  background-color: #42b72a;
+  color: white;
+}
+
+.multi-account-campaign-modal .btn-preview:hover {
+  background-color: #36a420;
 }
 
 .multi-account-campaign-modal .btn-next,

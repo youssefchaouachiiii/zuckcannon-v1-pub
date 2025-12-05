@@ -390,6 +390,26 @@
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
 
+          <!-- App Promotion Fields (for OUTCOME_APP_PROMOTION campaigns) -->
+          <div class="app-promotion-container" style="display: none;">
+            <small style="display: block; margin-bottom: 12px; color: #666; font-size: 12px; line-height: 1.4;">
+              Recommended to create ad sets for App Promotion campaigns directly in Meta Ad Manager for more
+              comprehensive App ID choices and Object Store URL configuration.
+            </small>
+            <input type="text" placeholder="App ID" data-container="adset-form-container" class="config-application-id">
+            <small
+              style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+              Example: Telegram have an App ID of 733622959983198
+            </small>
+            <input type="text" placeholder="Object Store URL" data-container="adset-form-container"
+              class="config-object-store-url">
+            <small
+              style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+              Example: Telegram have an Object Store URL of
+              http://play.google.com/store/apps/details?id=org.telegram.messenger&referrer=utm_source%3Dapps.facebook.com%26utm_campaign%3Dfb4a%26utm_content%3D%257B%2522app%2522%253A0%252C%2522t%2522%253A1764864126%252C%2522source%2522%253Anull%257D
+            </small>
+          </div>
+
           <!-- Campaign Budget Display (Read-Only) - Shows when CBO is enabled -->
           <div class="campaign-budget-display-container"
             style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fff3cd;">
@@ -2089,6 +2109,25 @@
               <ul class="event-type-suggestions-multi" style="display: none;"></ul>
             </div>
 
+            <!-- App Promotion Fields (for OUTCOME_APP_PROMOTION campaigns) -->
+            <div class="app-promotion-container-multi" style="display: none;">
+              <small style="display: block; margin-bottom: 12px; color: #666; font-size: 12px; line-height: 1.4;">
+                Recommended to create ad sets for App Promotion campaigns directly in Meta Ad Manager for more
+                comprehensive App ID choices and Object Store URL configuration.
+              </small>
+              <input type="text" placeholder="App ID" class="config-application-id-multi">
+              <small
+                style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+                Example: Telegram have an App ID of 733622959983198
+              </small>
+              <input type="text" placeholder="Object Store URL" class="config-object-store-url-multi">
+              <small
+                style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+                Example: Telegram have an Object Store URL of
+                http://play.google.com/store/apps/details?id=org.telegram.messenger&referrer=utm_source%3Dapps.facebook.com%26utm_campaign%3Dfb4a%26utm_content%3D%257B%2522app%2522%253A0%252C%2522t%2522%253A1764864126%252C%2522source%2522%253Anull%257D
+              </small>
+            </div>
+
             <!-- Bid Strategy dropdown -->
             <div class="dropdown-container">
               <div class="custom-dropdown">
@@ -2462,47 +2501,185 @@
           <h3 class="section-title">Campaign Configuration</h3>
 
           <div class="form-group">
-            <label for="campaign_name">Campaign Name *</label>
-            <input type="text" name="campaign_name" id="campaign_name" placeholder="Enter campaign name" required>
+            <label for="multi_campaign_name">Campaign Name *</label>
+            <input type="text" name="campaign_name" id="multi_campaign_name" placeholder="Enter campaign name" required>
           </div>
 
-          <div class="form-group">
-            <label for="objective">Campaign Objective *</label>
-            <select name="objective" id="objective" required>
-              <option value="">Select objective...</option>
-              <option value="OUTCOME_TRAFFIC">Traffic</option>
-              <option value="OUTCOME_ENGAGEMENT">Engagement</option>
-              <option value="OUTCOME_LEADS">Leads</option>
-              <option value="OUTCOME_SALES">Sales</option>
-              <option value="OUTCOME_AWARENESS">Awareness</option>
-            </select>
+          <!-- Objective dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="multi-campaign-objective">
+                <span class="dropdown-display placeholder" placeholder="Campaign Objective*">Campaign Objective*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options multi-campaign-objective">
+                <li data-value="OUTCOME_TRAFFIC">Traffic</li>
+                <li data-value="OUTCOME_ENGAGEMENT">Engagement</li>
+                <li data-value="OUTCOME_LEADS">Leads</li>
+                <li data-value="OUTCOME_SALES">Sales</li>
+                <li data-value="OUTCOME_APP_PROMOTION">App Promotion</li>
+                <li data-value="OUTCOME_AWARENESS">Awareness</li>
+              </ul>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="status">Campaign Status</label>
-            <select name="status" id="status">
-              <option value="PAUSED">PAUSED</option>
-              <option value="ACTIVE">ACTIVE</option>
-            </select>
+          <!-- Status dropdown -->
+          <div class="dropdown-container">
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" data-dropdown="multi-campaign-status">
+                <span class="dropdown-display placeholder" placeholder="Status*">Status*</span>
+                <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                  <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </div>
+              <ul class="dropdown-options multi-campaign-status">
+                <li data-value="PAUSED">Paused</li>
+                <li data-value="ACTIVE">Active</li>
+              </ul>
+            </div>
           </div>
 
-          <!-- Budget fields hidden - budget managed at ad set level -->
-          <div class="form-group" style="display: none;">
-            <label for="budget_type">Campaign Budget Type (Optional - CBO)</label>
-            <select name="budget_type" id="budget_type">
-              <option value="NONE">No Campaign Budget (CBO Off)</option>
-              <option value="DAILY">Daily Budget</option>
-              <option value="LIFETIME">Lifetime Budget</option>
-            </select>
+          <!-- Budget Mode Selection -->
+          <div class="budget-mode-container"
+            style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <h4 style="margin: 0 0 15px 0; font-size: 14px; color: #333; display: flex; align-items: center; gap: 8px;">
+              Budget*
+              <span style="color: #42b72a; font-size: 12px; font-weight: 600;">Advantage+ on</span>
+            </h4>
+            <div class="budget-mode-options" style="display: flex; flex-direction: column; gap: 10px;">
+              <label
+                style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #1877f2; border-radius: 4px; background: #e7f3ff; transition: all 0.2s;">
+                <input type="radio" name="multi-campaign-budget-mode" value="CAMPAIGN_LEVEL" checked
+                  style="cursor: pointer;">
+                <div>
+                  <div style="font-weight: 600; font-size: 14px; color: #333;">Campaign budget</div>
+                  <div style="font-size: 12px; color: #666; margin-top: 2px;">Automatically distribute your budget to
+                    the
+                    best opportunities across your campaign. Also known as Advantage+ campaign budget. <a
+                      href="https://www.facebook.com/business/help/1602924913861363" target="_blank"
+                      style="color: #1877f2; text-decoration: none;">About campaign budget</a></div>
+                </div>
+              </label>
+              <label
+                style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; border: 2px solid #ddd; border-radius: 4px; background: white; transition: all 0.2s;">
+                <input type="radio" name="multi-campaign-budget-mode" value="ADSET_LEVEL" style="cursor: pointer;">
+                <div>
+                  <div style="font-weight: 600; font-size: 14px; color: #333;">Ad set budget</div>
+                  <div style="font-size: 12px; color: #666; margin-top: 2px;">Set different bid strategies or budget
+                    schedules for each ad set.</div>
+                </div>
+              </label>
+            </div>
           </div>
 
-          <div class="form-group budget-amount-group" style="display: none;">
-            <label for="budget_amount">Budget Amount ($)</label>
-            <input type="number" name="budget_amount" id="budget_amount" placeholder="Enter budget amount" step="0.01"
-              min="1">
-            <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-              💡 Campaign Budget Optimization - Budget managed at campaign level
-            </small>
+          <!-- Campaign-Level Budget Fields (Shown by default since CAMPAIGN_LEVEL is default) -->
+          <div class="multi-campaign-budget-fields" style="display: block; margin-top: 15px;">
+            <!-- Budget Type Selection -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="multi-campaign-budget-type">
+                  <span class="dropdown-display placeholder" placeholder="Budget Type*">Budget Type*</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options multi-campaign-budget-type">
+                  <li data-value="daily">Daily Budget</li>
+                  <li data-value="lifetime">Lifetime Budget</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Budget Amount Input -->
+            <div class="budget-input-wrapper"
+              style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+              <span class="currency-prefix"
+                style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+              <input type="number" id="multi-campaign-budget-amount" class="multi-campaign-budget-amount"
+                placeholder="Budget Amount*" step="0.01" min="1" required
+                style="flex: 1; border: none; padding: 10px; outline: none;">
+              <span class="currency-suffix multi-campaign-budget-suffix"
+                style="padding: 10px; background: #f5f5f5; color: #666; font-size: 12px;">/day</span>
+            </div>
+
+            <!-- Pacing Type - HIDDEN -->
+            <div class="dropdown-container" style="display: none;">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="multi-campaign-pacing-type">
+                  <span class="dropdown-display placeholder" placeholder="Pacing Type">Pacing Type</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options multi-campaign-pacing-type">
+                  <li data-value="standard">Standard Pacing (Recommended)</li>
+                  <li data-value="no_pacing">No Pacing (Accelerated)</li>
+                  <li data-value="day_parting">Day Parting (Schedule)</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Campaign Schedule - HIDDEN -->
+            <div class="multi-campaign-schedule-container"
+              style="display: none; margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; font-size: 14px; color: #333;">Campaign Schedule</h4>
+                <button type="button" class="add-multi-campaign-schedule-btn"
+                  style="padding: 6px 12px; background: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">+
+                  Add Schedule</button>
+              </div>
+              <p style="margin: 8px 0; font-size: 12px; color: #666;">Schedule specific days and hours when your ads
+                should run.</p>
+              <div class="multi-campaign-schedule-list"></div>
+            </div>
+
+            <!-- Bid Strategy -->
+            <div class="dropdown-container">
+              <div class="custom-dropdown">
+                <div class="dropdown-selected" data-dropdown="multi-campaign-bid-strategy">
+                  <span class="dropdown-display placeholder" placeholder="Bid Strategy">Bid Strategy</span>
+                  <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                </div>
+                <ul class="dropdown-options multi-campaign-bid-strategy">
+                  <li data-value="">None (Meta optimizes automatically)</li>
+                  <li data-value="LOWEST_COST_WITHOUT_CAP">Lowest Cost Without Cap</li>
+                  <li data-value="LOWEST_COST_WITH_BID_CAP">Lowest Cost With Bid Cap</li>
+                  <li data-value="COST_CAP">Cost Cap</li>
+                  <li data-value="LOWEST_COST_WITH_MIN_ROAS">Lowest Cost With Min ROAS</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Bid Strategy Helper Note -->
+            <div class="multi-campaign-bid-strategy-note"
+              style="display: none; margin-top: -8px; padding: 8px 12px; background: #e7f3ff; border-left: 3px solid #1877f2; border-radius: 4px; font-size: 12px; color: #004085;">
+              <strong>💡 Recommended:</strong> <span class="multi-bid-strategy-recommendation"></span>
+            </div>
+
+            <!-- Bid Amount (shown when bid cap strategy selected) -->
+            <div class="multi-campaign-bid-amount-container" style="display: none;">
+              <label style="display: block; font-size: 13px; color: #666; margin-bottom: 4px;">Bid Amount per Ad
+                Set*</label>
+              <div class="budget-input-wrapper"
+                style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: white;">
+                <span class="currency-prefix"
+                  style="padding: 10px; background: #f5f5f5; color: #666; font-weight: 600;">$</span>
+                <input type="number" id="multi-campaign-bid-amount" class="multi-campaign-bid-amount"
+                  placeholder="Bid Amount*" step="0.01" min="0.01"
+                  style="flex: 1; border: none; padding: 10px; outline: none;">
+              </div>
+              <small style="display: block; margin-top: 4px; color: #666; font-size: 11px;">This bid amount will be
+                applied to all ad sets in this campaign</small>
+            </div>
           </div>
 
           <!-- Special Categories dropdown -->
@@ -2555,6 +2732,7 @@
           <button class="btn-cancel">Cancel</button>
           <button class="btn-next">Next</button>
           <button class="btn-back" style="display: none;">Back</button>
+          <button class="btn-preview" style="display: none;">Preview Campaign</button>
           <button class="btn-create" style="display: none;">Create Campaign</button>
         </div>
       </div>

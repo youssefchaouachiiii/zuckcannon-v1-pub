@@ -1948,16 +1948,12 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Set pacing_type only if explicitly provided in request
-    // Note: pacing_type controls whether ad sets can use adset_schedule
-    // - day_parting: Allows ad sets to use adset_schedule (day/hour targeting)
-    // - standard: Even distribution, does NOT support adset_schedule
-    // - no_pacing: Accelerated delivery
-    // If not set, Meta will use default based on bid strategy and budget type
-    if (req.body.pacing_type) {
-      formData.append("pacing_type", JSON.stringify(Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type]));
-      console.log("Campaign pacing_type set to:", req.body.pacing_type);
-    }
+    // Set pacing_type to day_parting by default to enable ad set scheduling
+    // This allows all ad sets within this campaign to use adset_schedule (day/hour targeting)
+    // Based on client workflow: all campaigns are scheduled, and non-scheduled ad sets go in separate campaigns
+    const pacingType = req.body.pacing_type || ["day_parting"];
+    formData.append("pacing_type", JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]));
+    console.log("Campaign pacing_type set to:", pacingType);
 
     // Timing (now supported at campaign level)
     if (start_time) {
@@ -1974,6 +1970,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       objective,
       status: status || "PAUSED",
       account: formattedAccountId,
+      pacing_type: pacingType,
       hasCampaignBudget,
       budgetMode: hasCampaignBudget ? "CAMPAIGN_LEVEL" : "ADSET_LEVEL",
       ...(hasCampaignBudget && {
@@ -2021,6 +2018,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       success: true,
       campaign_id: newCampaignId,
       campaign: newCampaign,
+      pacing_type: newCampaign.pacing_type || pacingType,
       message: `Campaign "${name}" created successfully`,
     });
   } catch (error) {
@@ -2049,10 +2047,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     });
   }
 
-  // Fetch campaign details to get special_ad_category_country and pacing_type
+  // Fetch campaign details to get special_ad_category_country and pacing_type for validation
   let campaignCountries = null;
   let campaignPacingType = null;
-  const needsDayParting = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
+  const hasAdsetSchedule = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
 
   try {
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
@@ -2068,29 +2066,22 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
     }
 
-    // campaignPacingType = campaignResponse.data.pacing_type;
-    console.log(`Campaign ${req.body.campaign_id} current pacing_type:`, campaignPacingType);
+    campaignPacingType = campaignResponse.data.pacing_type;
+    console.log(`Campaign ${req.body.campaign_id} pacing_type:`, campaignPacingType);
 
-    // If ad set has scheduling but campaign doesn't have day_parting, update the campaign
-    if (needsDayParting && (!campaignPacingType || !campaignPacingType.includes("day_parting"))) {
-      console.log(`Updating campaign ${req.body.campaign_id} pacing_type to day_parting for scheduled ad set`);
-
-      const updateCampaignUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
-      const updateFormData = new URLSearchParams();
-      // updateFormData.append("pacing_type", JSON.stringify(["day_parting"]));
-      updateFormData.append("access_token", userAccessToken);
-
-      await axios.post(updateCampaignUrl, updateFormData, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+    // Validate: if using adset_schedule, campaign must have day_parting pacing
+    if (hasAdsetSchedule && campaignPacingType && !campaignPacingType.includes("day_parting")) {
+      return res.status(400).json({
+        error: "Cannot create ad set with scheduling on this campaign",
+        error_user_msg: `This campaign has '${campaignPacingType.join(
+          ", "
+        )}' pacing type which is incompatible with ad set scheduling. Ad set scheduling requires campaigns with 'day_parting' pacing type. Please create a new campaign or use a campaign that supports day parting.`,
+        campaign_pacing_type: campaignPacingType,
       });
-
-      console.log(`Successfully updated campaign pacing_type to day_parting`);
     }
   } catch (err) {
-    console.warn("Could not fetch/update campaign details:", err.message);
-    // Continue with ad set creation even if campaign fetch/update fails
+    console.warn("Could not fetch campaign details:", err.message);
+    // Continue with ad set creation even if campaign fetch fails
   }
 
   const payload = {
@@ -2130,11 +2121,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.destination_type = req.body.destination_type;
   }
 
-  // Add page_id if provided (for objectives that require a page)
-  if (req.body.page_id) {
-    payload.promoted_object = payload.promoted_object || {};
-    payload.promoted_object.page_id = req.body.page_id;
-  }
+  // Note: page_id is now handled in the optimization goal specific section below
+  // to ensure it's only added for goals that support it
 
   // Add budget - either daily_budget or lifetime_budget (moved from campaign level)
   if (req.body.daily_budget) {
@@ -2169,18 +2157,39 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   // Build promoted_object based on optimization goal requirements
   if (optimizationGoal === "OFFSITE_CONVERSIONS") {
-    // CONVERSIONS objective - pixel_id and event_type are optional, user decides if needed
-    if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
-      // Validate that pixel_id doesn't start with "act_"
-      if (req.body.pixel_id.startsWith("act_")) {
-        console.log("⚠️ WARNING: Invalid pixel ID - appears to be an account ID.");
-      } else {
-        // Merge with existing promoted_object if it exists
-        payload.promoted_object = payload.promoted_object || {};
-        payload.promoted_object.pixel_id = req.body.pixel_id;
-        payload.promoted_object.custom_event_type = req.body.event_type;
-      }
+    // OFFSITE_CONVERSIONS - Requires pixel_id and custom_event_type
+    // NEVER include page_id for this optimization goal
+
+    if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a pixel_id. This ad set may fail to create.");
+      return res.status(400).json({
+        error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Facebook Pixel for conversion tracking. OFFSITE_CONVERSIONS optimization goal requires a pixel.",
+      });
     }
+
+    if (!req.body.event_type || req.body.event_type.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a custom_event_type.");
+      return res.status(400).json({
+        error: "Custom Event Type is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Custom Event Type (e.g., PURCHASE, LEAD). OFFSITE_CONVERSIONS optimization goal requires an event type.",
+      });
+    }
+
+    // Validate that pixel_id doesn't start with "act_"
+    if (req.body.pixel_id.startsWith("act_")) {
+      console.log("⚠️ ERROR: Invalid pixel ID - appears to be an account ID.");
+      return res.status(400).json({
+        error: "Invalid Pixel ID format",
+        error_user_msg: "The Pixel ID appears to be an account ID. Please provide a valid Facebook Pixel ID.",
+      });
+    }
+
+    // Set promoted_object with only pixel_id and custom_event_type
+    payload.promoted_object = {
+      pixel_id: req.body.pixel_id,
+      custom_event_type: req.body.event_type,
+    };
   } else if (optimizationGoal === "LEAD_GENERATION") {
     // LEAD_GENERATION - requires page_id, optionally pixel_id
     // custom_event_type should be a separate field, not in promoted_object
@@ -2229,8 +2238,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.promoted_object = payload.promoted_object || {};
     payload.promoted_object.application_id = req.body.application_id;
     payload.promoted_object.object_store_url = req.body.object_store_url;
-  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS") {
-    // PAGE_LIKES or OFFER_CLAIMS - page_id is recommended
+  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS" || optimizationGoal === "POST_ENGAGEMENT" || optimizationGoal === "EVENT_RESPONSES") {
+    // PAGE_LIKES, OFFER_CLAIMS, POST_ENGAGEMENT, EVENT_RESPONSES - page_id is recommended
     if (!req.body.page_id) {
       console.log(`⚠️ WARNING: Page ID is recommended for ${optimizationGoal} optimization goal.`);
     } else {
@@ -2278,11 +2287,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   }
 
   // Add adset_schedule if provided
+  // Note: pacing_type is set at campaign level only, not at ad set level
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
-    payload.pacing_type = ["day_parting"];
-    console.log("Ad set has scheduling, setting pacing_type to day_parting");
+    console.log("Ad set has scheduling, using campaign-level day_parting pacing");
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2390,11 +2398,11 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
     }
 
     // Handle ad scheduling
+    // Note: pacing_type is a CAMPAIGN-LEVEL setting, not ad set level
+    // Ad sets can have adset_schedule regardless of pacing_type
     if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
       adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
-      // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
-      adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
-      console.log("Ad set has scheduling, setting pacing_type to day_parting");
+      console.log("Ad set has scheduling (adset_schedule configured)");
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2487,7 +2495,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 // Create Campaign in Multiple Ad Accounts
 app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
   const userAccessToken = req.user.facebook_access_token;
-  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, budget_type, budget_amount } = req.body;
+  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, special_ad_category_country, daily_budget, lifetime_budget, bid_strategy, bid_amount } = req.body;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2518,14 +2526,47 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         // Always include special_ad_categories, defaulting to an empty array.
         // The value must be a JSON string as per Meta API requirements.
         special_ad_categories: JSON.stringify(special_ad_categories || []),
-        // Since we are not using a campaign-level budget, this field is required.
-        // Defaulting to 'false' is the safest option.
-        is_adset_budget_sharing_enabled: false,
       };
 
-      // Budget (daily_budget, lifetime_budget) is set at the Ad Set level,
-      // not at the Campaign level in this application's architecture.
-      // It is intentionally omitted here to maintain consistency.
+      // Add special ad category country if provided
+      if (special_ad_category_country && special_ad_category_country.length > 0) {
+        campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
+      }
+
+      // Set pacing_type to day_parting by default to enable ad set scheduling
+      // This allows all ad sets within this campaign to use adset_schedule (day/hour targeting)
+      campaignPayload.pacing_type = JSON.stringify(["day_parting"]);
+
+      // ===== BUDGET MODE LOGIC =====
+      // Determine if campaign-level budget is being used
+      const hasCampaignBudget = !!(daily_budget || lifetime_budget);
+
+      if (hasCampaignBudget) {
+        // Campaign-level budget mode (Advantage+ campaign budget)
+        if (daily_budget) {
+          const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+          campaignPayload.daily_budget = budgetInCents.toString();
+        }
+
+        if (lifetime_budget) {
+          const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+          campaignPayload.lifetime_budget = budgetInCents.toString();
+        }
+
+        if (bid_strategy) {
+          campaignPayload.bid_strategy = bid_strategy;
+
+          // Add bid amount for bid cap strategies
+          if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
+            const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
+            campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+          }
+        }
+      } else {
+        // Ad set-level budget mode
+        // When not using campaign budget, we must explicitly disable budget sharing
+        campaignPayload.is_adset_budget_sharing_enabled = false;
+      }
 
       return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
     });
@@ -2815,12 +2856,10 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
-      // if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
+      // Note: pacing_type is a CAMPAIGN-LEVEL setting only. Do not copy to ad set level.
       if (sourceAdSet.adset_schedule) {
         createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
-        // When using adset_schedule (day parting), pacing_type MUST be set to ["day_parting"]
-        createAdSetPayload.pacing_type = ["day_parting"];
-        console.log("Ad set has scheduling, setting pacing_type to day_parting");
+        console.log("Ad set has scheduling (adset_schedule configured)");
       }
 
       // Create ad set in target account
