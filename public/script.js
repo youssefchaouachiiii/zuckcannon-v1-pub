@@ -7033,6 +7033,8 @@ function setupCampaignBudgetMode() {
   const budgetSuffix = column.querySelector(".campaign-budget-suffix");
   const endDateContainer = column.querySelector(".campaign-end-date-container");
   const pacingTypeDisplay = column.querySelector('[data-dropdown="campaign-pacing-type"] .dropdown-display');
+  const pacingTypeOptions = column.querySelector(".dropdown-options.campaign-pacing-type");
+  const pacingRecommendation = column.querySelector(".pacing-recommendation");
   const scheduleContainer = column.querySelector(".campaign-schedule-container");
   const addScheduleBtn = column.querySelector(".add-campaign-schedule-btn");
   const scheduleList = column.querySelector(".campaign-schedule-list");
@@ -7041,6 +7043,41 @@ function setupCampaignBudgetMode() {
   const minRoasContainer = column.querySelector(".campaign-min-roas-container");
 
   let campaignScheduleCounter = 0;
+
+  // Helper function to update pacing recommendation
+  function updatePacingRecommendation(budgetMode) {
+    if (!pacingRecommendation) return;
+
+    if (budgetMode === "CAMPAIGN_LEVEL") {
+      pacingRecommendation.innerHTML = "Use <strong>Scheduled Delivery</strong> if you want to run ads on specific days/times. Otherwise, choose <strong>Standard Delivery</strong> for balanced spending.";
+
+      // Auto-select day_parting for campaign budget
+      if (pacingTypeDisplay && pacingTypeOptions) {
+        const dayPartingOption = pacingTypeOptions.querySelector('li[data-value="day_parting"]');
+        if (dayPartingOption) {
+          pacingTypeDisplay.textContent = dayPartingOption.textContent;
+          pacingTypeDisplay.classList.remove("placeholder");
+          pacingTypeDisplay.dataset.value = "day_parting";
+          pacingTypeOptions.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+          dayPartingOption.classList.add("selected");
+        }
+      }
+    } else {
+      pacingRecommendation.innerHTML = "Use <strong>Standard Delivery</strong> to spread your budget evenly throughout the day (recommended for most campaigns).";
+
+      // Auto-select standard for ad set budget
+      if (pacingTypeDisplay && pacingTypeOptions) {
+        const standardOption = pacingTypeOptions.querySelector('li[data-value="standard"]');
+        if (standardOption) {
+          pacingTypeDisplay.textContent = standardOption.textContent;
+          pacingTypeDisplay.classList.remove("placeholder");
+          pacingTypeDisplay.dataset.value = "standard";
+          pacingTypeOptions.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+          standardOption.classList.add("selected");
+        }
+      }
+    }
+  }
 
   // Toggle budget fields based on mode selection
   budgetModeRadios.forEach((radio) => {
@@ -7062,8 +7099,17 @@ function setupCampaignBudgetMode() {
         allLabels[0].style.borderColor = "#ddd";
         allLabels[0].style.background = "white";
       }
+
+      // Update pacing recommendation based on budget mode
+      updatePacingRecommendation(e.target.value);
     });
   });
+
+  // Set initial pacing recommendation
+  const initialBudgetMode = column.querySelector('input[name="campaign-budget-mode"]:checked')?.value;
+  if (initialBudgetMode) {
+    updatePacingRecommendation(initialBudgetMode);
+  }
 
   // Budget type change handler (Daily vs Lifetime) - Simplified since pacing/schedule are hidden
   const budgetTypeOptions = column.querySelectorAll(".dropdown-options.campaign-budget-type li");
@@ -7509,6 +7555,13 @@ async function handleCampaignCreation() {
 
       if (bidStrategy) {
         requestBody.bid_strategy = bidStrategy;
+      }
+
+      // Get pacing type (only for campaign-level budget)
+      const pacingTypeDisplay = column.querySelector('[data-dropdown="campaign-pacing-type"] .dropdown-display');
+      const pacingType = pacingTypeDisplay?.dataset.value;
+      if (pacingType) {
+        requestBody.pacing_type = [pacingType];
       }
 
       // Note: Bid amount and ROAS constraints are managed at ad set level

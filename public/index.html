@@ -171,8 +171,8 @@
               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
           </div>
 
-          <!-- Pacing Type - HIDDEN -->
-          <div class="dropdown-container" style="display: none;">
+          <!-- Pacing Type -->
+          <div class="dropdown-container">
             <div class="custom-dropdown">
               <div class="dropdown-selected" data-dropdown="campaign-pacing-type">
                 <span class="dropdown-display placeholder" placeholder="Pacing Type">Pacing Type</span>
@@ -182,11 +182,19 @@
                 </svg>
               </div>
               <ul class="dropdown-options campaign-pacing-type">
-                <li data-value="standard">Standard Pacing (Recommended)</li>
-                <li data-value="no_pacing">No Pacing (Accelerated)</li>
-                <li data-value="day_parting">Day Parting (Schedule)</li>
+                <li data-value="standard">Standard</li>
+                <li data-value="no_pacing">No pacing - accelerated delivery</li>
+                <li data-value="day_parting">Day parting - for adset/ad scheduling</li>
               </ul>
             </div>
+          </div>
+          <small style="display: block; margin-top: 4px; margin-bottom: 12px; color: #666; font-size: 11px;">Shared
+            across the ad sets in this campaign. For now, it cannot be changed later. Recommended to create separate
+            campaign for each pacing type.</small>
+          <div class="pacing-type-help"
+            style="margin-top: 4px; margin-bottom: 12px; padding: 8px 12px; background: #e7f3ff; border-left: 3px solid #1877f2; border-radius: 4px; font-size: 12px; color: #004085;">
+            <strong>💡 Recommendation:</strong> <span class="pacing-recommendation">Choose your delivery preference
+              above</span>
           </div>
 
           <!-- Campaign Schedule - HIDDEN -->
@@ -387,6 +395,10 @@
             <input type="text" placeholder="Custom Event Type " data-container="adset-form-container"
               class="config-event-type" readonly>
             <input type="text" placeholder="Type to search events..." class="event-type-search" style="display: none;">
+            <small
+              style="display: block; margin-top: -8px; margin-bottom: 12px; color: #999; font-size: 11px; line-height: 1.4; margin-top: 1px;">
+              Please choose event type that matches your campaign objective/optimization goal/page/pixel.
+            </small>
             <ul class="event-type-suggestions" style="display: none;"></ul>
           </div>
 
@@ -591,7 +603,7 @@
               </label>
             </div>
             <p style="margin: 8px 0; font-size: 13px; color: #666;">Schedule specific days and hours when your ads
-              should run.</p>
+              should run. Make sure end time must be at least 1 hour after start time.</p>
 
             <div class="scheduling-controls" style="display: none;">
               <!-- Schedule List -->
@@ -1159,6 +1171,32 @@
             <small style="display: block; margin-top: 4px; color: #666; font-size: 11px;">This bid amount will be
               applied to all ad sets in this campaign</small>
           </div>
+        </div>
+
+        <!-- Pacing Type (Available for both budget modes) -->
+        <div class="dropdown-container">
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" data-dropdown="campaign-pacing-type">
+              <span class="dropdown-display">Pacing Type</span>
+              <svg class="dropdown-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="#666" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <ul class="dropdown-options campaign-pacing-type">
+              <li data-value="standard">Standard</li>
+              <li data-value="no_pacing">No pacing - accelerated delivery</li>
+              <li data-value="day_parting">Day parting - for adset/ad scheduling</li>
+            </ul>
+          </div>
+        </div>
+        <small style="display: block; margin-top: 4px; margin-bottom: 12px; color: #666; font-size: 11px;">Shared across
+          the ad sets in this campaign. For now, it cannot be changed later. Recommended to create separate campaign for
+          each pacing type.</small>
+        <div class="pacing-type-help"
+          style="margin-top: 4px; margin-bottom: 12px; padding: 8px 12px; background: #e7f3ff; border-left: 3px solid #1877f2; border-radius: 4px; font-size: 12px; color: #004085;">
+          <strong>💡 Recommendation:</strong> <span class="pacing-recommendation">Choose your delivery preference
+            above</span>
         </div>
 
         <div class="dropdown-container">
