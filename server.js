@@ -3115,55 +3115,73 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               timeout: 30000, // 30 second timeout
             });
 
-            // DETAILED RESPONSE LOGGING
-            // console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
-            //   status: batchResponse.status,
-            //   statusText: batchResponse.statusText,
-            //   data_type: typeof batchResponse.data,
-            //   data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
-            //   raw_data: JSON.stringify(batchResponse.data, null, 2),
-            // });
+            // Per Meta API docs: async_batch_requests endpoint returns { id, owner_id, name, is_completed, ... }
+            console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
+              status: batchResponse.status,
+              data_type: typeof batchResponse.data,
+              data_keys: Object.keys(batchResponse.data || {}),
+            });
 
-            // Extract batch request ID from potentially varied response formats
-            let batchRequestId = batchResponse.data.id;
-            if (typeof batchResponse.data === "string") {
-              batchRequestId = batchResponse.data;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from string response`);
-            } else if (batchResponse.data?.id) {
+            // Extract batch request ID following Meta API documentation
+            // The response should have an 'id' field (shown by default per Meta docs)
+            let batchRequestId = null;
+
+            // Priority: Try the documented response format first
+            if (batchResponse.data?.id) {
               batchRequestId = batchResponse.data.id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.id`);
+              console.log(`[AD-BATCH ${index + 1}] ✅ ID extracted from data.id: ${batchRequestId}`);
+            }
+            // Fallback for alternate formats
+            else if (typeof batchResponse.data === "string") {
+              batchRequestId = batchResponse.data;
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from string response: ${batchRequestId}`);
             } else if (batchResponse.data?.async_batch_request_id) {
               batchRequestId = batchResponse.data.async_batch_request_id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from async_batch_request_id: ${batchRequestId}`);
             } else if (batchResponse.data?.handle) {
               batchRequestId = batchResponse.data.handle;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.handle`);
-            } else if (batchResponse.data?.batch_id) {
-              batchRequestId = batchResponse.data.batch_id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.batch_id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from handle: ${batchRequestId}`);
             } else if (Array.isArray(batchResponse.data) && batchResponse.data[0]?.id) {
               batchRequestId = batchResponse.data[0].id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id: ${batchRequestId}`);
             }
 
+            // If still no ID, attempt fallback: fetch pending batches from account
             if (!batchRequestId) {
-              // console.error(`[AD-BATCH ${index + 1}] ❌ No batch request ID found in response`);
-              // console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
-              // console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
-              //   hasError: !!batchResponse.data?.error,
-              //   error: batchResponse.data?.error,
-              //   allKeys: Object.keys(batchResponse.data || {}),
-              // });
-              // ✅ Retry logic if no ID returned
-              // if (retryCount < 2) {
-              //   console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
-              //   await new Promise(resolve => setTimeout(resolve, 1000));
-              //   return sendBatchWithRetry(retryCount + 1);
-              // }
-              // throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
+              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID in response, attempting to fetch from pending requests...`);
+              console.warn(`[AD-BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
+
+              try {
+                // Per Meta docs: GET /act_{account_id}/async_requests lists all pending batch requests
+                const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+                  params: {
+                    fields: "id,name,is_completed,total_count,success_count,error_count,in_progress_count,initial_count",
+                    access_token: userAccessToken,
+                    limit: 10,
+                  },
+                });
+
+                // Get the most recent pending batch (likely ours - created just now)
+                const recentBatch = pendingResponse.data?.data?.[0];
+                if (recentBatch?.id) {
+                  batchRequestId = recentBatch.id;
+                  console.log(`[AD-BATCH ${index + 1}] ✅ Retrieved batch ID from pending requests: ${batchRequestId}`);
+                } else {
+                  console.error(`[AD-BATCH ${index + 1}] ❌ No pending batches found`);
+                }
+              } catch (fetchErr) {
+                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, fetchErr.message);
+              }
             }
 
-            // console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+            // If STILL no ID after all attempts, throw descriptive error
+            if (!batchRequestId) {
+              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response structure: ${Object.keys(batchResponse.data || {}).join(", ")}`;
+              console.error(`[AD-BATCH ${index + 1}] ❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+
+            console.log(`[AD-BATCH ${index + 1}] ✅ Batch request ID: ${batchRequestId}`);
             return batchRequestId;
           } catch (axiosError) {
             console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
@@ -3172,14 +3190,14 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               response_data: axiosError.response?.data,
             });
 
-            // ✅ Retry on network errors
-            // if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
-            //   console.warn(`[AD-BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
-            //   await new Promise(resolve => setTimeout(resolve, 1000));
-            //   return sendBatchWithRetry(retryCount + 1);
-            // }
+            // Retry on network errors (5xx or network timeout)
+            if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
+              console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              return sendBatchWithRetry(retryCount + 1);
+            }
 
-            // throw axiosError;
+            throw axiosError;
           }
         };
 
@@ -3467,26 +3485,141 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
     const FormData = (await import("form-data")).default;
 
-    // Send async batch
-    const sendAsyncBatch = async (ops, label) => {
+    // Send async batch with improved ID extraction per Meta API docs
+    const sendAsyncBatch = async (ops, label, retryCount = 0) => {
       const formData = new FormData();
       formData.append("access_token", userAccessToken);
       formData.append("name", label);
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
 
-      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+      try {
+        const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
-      const data = resp.data;
-      return data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || (typeof data === "string" ? data : null);
+        const data = resp.data;
+        console.log(`[CAMPAIGN-BATCH] ${label} - Response type:`, typeof data, Array.isArray(data) ? "array" : "");
+        console.log(`[CAMPAIGN-BATCH] ${label} - Full response:`, JSON.stringify(data, null, 2));
+
+        // Check if Meta executed synchronously (returns array of results)
+        if (Array.isArray(data)) {
+          console.log(`[CAMPAIGN-BATCH] ${label} - Array response (synchronous execution)`);
+          // For synchronous execution, there's no batch ID - operation completed immediately
+          return "sync_" + Date.now();
+        }
+
+        // Extract batch ID per Meta API docs: response should have 'id' field (shown by default)
+        let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Fallback: Query pending batches if ID not in response
+        if (!batchId) {
+          console.warn(`[CAMPAIGN-BATCH] ${label} - No ID in response, fetching pending batches...`);
+          try {
+            const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+              params: {
+                fields: "id,name,is_completed,total_count,success_count,error_count",
+                access_token: userAccessToken,
+                limit: 10,
+              },
+            });
+            const recentBatch = pendingResponse.data?.data?.[0];
+            if (recentBatch?.id) {
+              batchId = recentBatch.id;
+              console.log(`[CAMPAIGN-BATCH] ${label} - Retrieved from pending: ${batchId}`);
+            }
+          } catch (fetchErr) {
+            console.error(`[CAMPAIGN-BATCH] ${label} - Failed to fetch pending:`, fetchErr.message);
+          }
+        }
+
+        if (!batchId) {
+          const errorMsg = `Failed to get batch ID. Response structure: ${Object.keys(data || {}).join(", ")}`;
+          console.error(`[CAMPAIGN-BATCH] ${label} - ${errorMsg}`);
+          console.error(`[CAMPAIGN-BATCH] ${label} - Full data:`, JSON.stringify(data, null, 2));
+          throw new Error(errorMsg);
+        }
+
+        console.log(`[CAMPAIGN-BATCH] ${label} - Batch ID: ${batchId}`);
+        return batchId;
+      } catch (error) {
+        // Retry on network/server errors
+        if (retryCount < 2 && (!error.response || error.response.status >= 500)) {
+          console.warn(`[CAMPAIGN-BATCH] ${label} - Retrying (${retryCount + 1}/2)...`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return sendAsyncBatch(ops, label, retryCount + 1);
+        }
+        throw error;
+      }
     };
 
     // STEP 3 First async batch: duplicate adsets
-    const adsetOps = adsetsData.map((adset) => ({
-      method: "POST",
-      relative_url: `${adset.id}/copies`,
-      body: `campaign_id=${newCampaignId}&deep_copy=false&status_option=${status_option || "PAUSED"}`,
-    }));
+    // For cross-account duplication, we need to fetch full ad set details and create new ones
+    // because /copies endpoint doesn't work across accounts
+    let adsetOps = [];
+
+    if (isCrossAccount) {
+      console.log("🔄 Cross-account detected: Fetching full ad set details for recreation...");
+
+      // Fetch full details for each ad set
+      const adsetDetailsPromises = adsetsData.map(async (adset) => {
+        try {
+          const adsetDetailUrl = `https://graph.facebook.com/${api_version}/${adset.id}`;
+          const adsetDetailResponse = await axios.get(adsetDetailUrl, {
+            params: {
+              fields: "name,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,bid_amount,targeting,destination_type,promoted_object,start_time,end_time,pacing_type",
+              access_token: userAccessToken,
+            },
+          });
+          return { sourceId: adset.id, details: adsetDetailResponse.data };
+        } catch (err) {
+          console.error(`Failed to fetch ad set ${adset.id} details:`, err.message);
+          return { sourceId: adset.id, details: null };
+        }
+      });
+
+      const adsetDetailsResults = await Promise.all(adsetDetailsPromises);
+
+      // Create batch operations to CREATE new ad sets (not copy)
+      adsetOps = adsetDetailsResults
+        .filter((result) => result.details)
+        .map((result, index) => {
+          const adset = result.details;
+          const payload = {
+            campaign_id: newCampaignId,
+            name: adset.name,
+            optimization_goal: adset.optimization_goal,
+            billing_event: adset.billing_event,
+            status: status_option || "PAUSED",
+          };
+
+          // Add optional fields
+          if (adset.bid_strategy) payload.bid_strategy = adset.bid_strategy;
+          if (adset.daily_budget) payload.daily_budget = adset.daily_budget;
+          if (adset.lifetime_budget) payload.lifetime_budget = adset.lifetime_budget;
+          if (adset.bid_amount) payload.bid_amount = adset.bid_amount;
+          if (adset.targeting) payload.targeting = JSON.stringify(adset.targeting);
+          if (adset.destination_type) payload.destination_type = adset.destination_type;
+          if (adset.promoted_object) payload.promoted_object = JSON.stringify(adset.promoted_object);
+          if (adset.start_time) payload.start_time = adset.start_time;
+          if (adset.end_time) payload.end_time = adset.end_time;
+          if (adset.pacing_type) payload.pacing_type = JSON.stringify(adset.pacing_type);
+
+          return {
+            method: "POST",
+            name: `create-adset-${index}`,
+            relative_url: `act_${normalizedAccountId}/adsets`,
+            body: new URLSearchParams(payload).toString(),
+          };
+        });
+
+      console.log(`✅ Prepared ${adsetOps.length} ad set creation operations for cross-account duplication`);
+    } else {
+      // Same-account: Use /copies endpoint
+      adsetOps = adsetsData.map((adset) => ({
+        method: "POST",
+        relative_url: `${adset.id}/copies`,
+        body: `campaign_id=${newCampaignId}&deep_copy=false&status_option=${status_option || "PAUSED"}`,
+      }));
+    }
 
     const adsetChunks = [];
     for (let i = 0; i < adsetOps.length; i += 1) adsetChunks.push(adsetOps.slice(i, i + 1));
@@ -3501,19 +3634,95 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       formData.append("access_token", userAccessToken);
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
-      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
-      const data = resp.data;
 
-      // If Meta executed synchronously
-      if (Array.isArray(data) && data[0]?.body?.includes("copied_adset_id")) {
-        try {
-          const parsed = JSON.parse(data[0].body);
-          const copied = parsed.ad_object_ids?.[0];
-          if (copied) adsetMapping[copied.source_id] = copied.copied_id;
-        } catch (_) {}
+      try {
+        const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+        const data = resp.data;
+
+        // Enhanced logging to debug response structure
+        console.log(`[ADSET-BATCH ${i + 1}] Response type:`, typeof data, Array.isArray(data) ? "array" : "");
+        console.log(`[ADSET-BATCH ${i + 1}] Full response:`, JSON.stringify(data, null, 2));
+
+        // If Meta executed synchronously (returns array of results)
+        if (Array.isArray(data)) {
+          console.log(`[ADSET-BATCH ${i + 1}] Array response detected, processing results...`);
+
+          // Check for errors first
+          if (data[0]?.code >= 400) {
+            const errorBody = typeof data[0].body === "string" ? JSON.parse(data[0].body) : data[0].body;
+            const errorMsg = errorBody?.error?.error_user_msg || errorBody?.error?.message || "Unknown error";
+            console.error(`[ADSET-BATCH ${i + 1}] ❌ Error: ${errorMsg}`);
+            throw new Error(`Ad set batch ${i + 1} failed: ${errorMsg}`);
+          }
+
+          // Process successful synchronous response
+          if (data[0]?.body) {
+            try {
+              const bodyStr = typeof data[0].body === "string" ? data[0].body : JSON.stringify(data[0].body);
+              const parsed = JSON.parse(bodyStr);
+
+              if (isCrossAccount) {
+                // For cross-account creation, response has new ad set ID
+                const newAdsetId = parsed.id;
+                const sourceAdsetId = adsetsData[i]?.id;
+
+                if (newAdsetId && sourceAdsetId) {
+                  adsetMapping[sourceAdsetId] = newAdsetId;
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created new adset: ${sourceAdsetId} -> ${newAdsetId}`);
+                }
+              } else {
+                // For same-account copy, response has copied_adset_id mapping
+                const copied = parsed.ad_object_ids?.[0];
+                if (copied) {
+                  adsetMapping[copied.source_id] = copied.copied_id;
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Copied adset: ${copied.source_id} -> ${copied.copied_id}`);
+                }
+              }
+            } catch (parseErr) {
+              console.error(`[ADSET-BATCH ${i + 1}] Parse error:`, parseErr.message);
+            }
+          }
+
+          console.log(`[ADSET-BATCH ${i + 1}] ✅ Synchronous completion`);
+          adsetBatchIds.push("sync_" + Date.now() + "_" + i);
+          continue;
+        }
+
+        // Extract batch ID per Meta API docs (for async execution)
+        let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Fallback: Query pending batches if ID not in response
+        if (!batchId) {
+          console.warn(`[ADSET-BATCH ${i + 1}] No ID in response, fetching pending batches...`);
+          try {
+            const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+              params: {
+                fields: "id,name,is_completed",
+                access_token: userAccessToken,
+                limit: 10,
+              },
+            });
+            const recentBatch = pendingResponse.data?.data?.[0];
+            if (recentBatch?.id) {
+              batchId = recentBatch.id;
+              console.log(`[ADSET-BATCH ${i + 1}] ✅ Retrieved from pending: ${batchId}`);
+            }
+          } catch (fetchErr) {
+            console.error(`[ADSET-BATCH ${i + 1}] Failed to fetch pending:`, fetchErr.message);
+          }
+        }
+
+        if (batchId) {
+          console.log(`[ADSET-BATCH ${i + 1}] ✅ Batch ID: ${batchId}`);
+        } else {
+          console.warn(`[ADSET-BATCH ${i + 1}] ⚠️ No batch ID found, continuing...`);
+        }
+
+        adsetBatchIds.push(batchId);
+      } catch (error) {
+        console.error(`[ADSET-BATCH ${i + 1}] Request failed:`, error.message);
+        adsetBatchIds.push(null);
       }
-
-      adsetBatchIds.push(data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || null);
     }
 
     // console.log("✅ All adset async batches created:", adsetBatchIds);
