@@ -768,6 +768,12 @@ export const validateRequest = {
         "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
         "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
         "SHOP_AUTOMATIC",
+        "UNDEFINED",
+        "PHONE_CALL",
+        "LEAD_FROM_MESSENGER",
+        "LEAD_FROM_IG_DIRECT",
+        "ON_EVENT",
+        "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
       ];
 
       if (!validDestinationTypes.includes(req.body.destination_type)) {
@@ -934,6 +940,40 @@ export const validateRequest = {
       if (!validBidStrategies.includes(req.body.bid_strategy)) {
         return res.status(400).json({
           error: `Invalid bid_strategy. Must be one of: ${validBidStrategies.join(", ")}`,
+        });
+      }
+    }
+
+    // Validate destination_type if provided (optional)
+    if (req.body.destination_type) {
+      const validDestinationTypes = [
+        "WEBSITE",
+        "APP",
+        "MESSENGER",
+        "APPLINKS_AUTOMATIC",
+        "WHATSAPP",
+        "INSTAGRAM_DIRECT",
+        "FACEBOOK",
+        "ON_AD",
+        "ON_POST",
+        "ON_VIDEO",
+        "ON_PAGE",
+        "INSTAGRAM_PROFILE",
+        "MESSAGING_MESSENGER_WHATSAPP",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+        "SHOP_AUTOMATIC",
+        "UNDEFINED",
+        "PHONE_CALL",
+        "LEAD_FROM_MESSENGER",
+        "LEAD_FROM_IG_DIRECT",
+        "ON_EVENT",
+        "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+      ];
+
+      if (!validDestinationTypes.includes(req.body.destination_type)) {
+        return res.status(400).json({
+          error: `Invalid destination_type. Must be one of: ${validDestinationTypes.join(", ")}`,
         });
       }
     }

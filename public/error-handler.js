@@ -92,6 +92,22 @@ class ErrorHandler {
     return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
+  isMetaTransientError(errorData) {
+    // Check for Meta's transient OAuth error
+    if (errorData && errorData.details && errorData.details.error) {
+      const metaError = errorData.details.error;
+      return metaError.type === "OAuthException" && metaError.is_transient === true && metaError.code === 2;
+    }
+    // Also check if error is directly in the response
+    if (errorData && errorData.error) {
+      const error = errorData.error;
+      if (typeof error === "object") {
+        return error.type === "OAuthException" && error.is_transient === true && error.code === 2;
+      }
+    }
+    return false;
+  }
+
   interceptFetch() {
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
@@ -106,6 +122,13 @@ class ErrorHandler {
             const clonedResponse = response.clone();
             try {
               const error = await clonedResponse.json();
+
+              // Check for Meta's transient error first
+              if (this.isMetaTransientError(error)) {
+                this.showWarning("Meta API is temporarily unavailable. Please wait a few minutes and try again with a hard refresh (Ctrl+Shift+R or Cmd+Shift+R).", 8000);
+                return response;
+              }
+
               const message = error.error || error.message || `HTTP ${response.status} error`;
 
               // Show user-friendly error messages
