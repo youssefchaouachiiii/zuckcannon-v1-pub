@@ -106,6 +106,115 @@ function getObjectiveFriendlyName(objective) {
 }
 
 // ============================================
+// CAMPAIGN OBJECTIVE TO DESTINATION TYPE MAPPING
+// ============================================
+
+/**
+ * Map campaign objective to available destination types
+ * Based on Meta's Marketing API v17.0+ Outcome-Driven Ads Experiences
+ */
+const destinationTypesByObjective = {
+  OUTCOME_AWARENESS: [
+    "UNDEFINED",
+    "WEBSITE",
+    "MESSENGER",
+    "WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+    "MESSAGING_MESSENGER_WHATSAPP",
+    "INSTAGRAM_DIRECT",
+  ],
+  OUTCOME_TRAFFIC: ["UNDEFINED", "MESSENGER", "WHATSAPP", "PHONE_CALL"],
+  OUTCOME_ENGAGEMENT: [
+    "UNDEFINED",
+    "MESSENGER",
+    "WHATSAPP",
+    "PHONE_CALL",
+    "INSTAGRAM_DIRECT",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+    "MESSAGING_MESSENGER_WHATSAPP",
+    "ON_POST",
+    "ON_EVENT",
+    "ON_VIDEO",
+    "ON_VIDEO",
+    "ON_PAGE",
+  ],
+  OUTCOME_APP_PROMOTION: ["UNDEFINED"],
+  OUTCOME_LEADS: ["ON_AD", "LEAD_FROM_MESSENGER", "LEAD_FROM_IG_DIRECT", "PHONE_CALL", "UNDEFINED", "WEBSITE", "APP"],
+  OUTCOME_SALES: ["WEBSITE", "MESSENGER", "PHONE_CALL"],
+  // Legacy objectives (for backward compatibility)
+  BRAND_AWARENESS: ["UNDEFINED", "WEBSITE", "MESSENGER", "WHATSAPP"],
+  REACH: ["UNDEFINED", "WEBSITE", "MESSENGER", "WHATSAPP"],
+  LINK_CLICKS: ["UNDEFINED", "MESSENGER", "WHATSAPP", "PHONE_CALL"],
+  POST_ENGAGEMENT: ["UNDEFINED", "MESSENGER", "WHATSAPP", "ON_POST"],
+  VIDEO_VIEWS: ["UNDEFINED", "MESSENGER", "WHATSAPP", "ON_VIDEO"],
+  LEAD_GENERATION: ["ON_AD", "LEAD_FROM_MESSENGER", "WEBSITE"],
+  CONVERSIONS: ["WEBSITE", "MESSENGER", "PHONE_CALL"],
+  APP_INSTALLS: ["UNDEFINED"],
+  MOBILE_APP_ENGAGEMENT: ["UNDEFINED"],
+};
+
+/**
+ * Get friendly names for destination types
+ */
+function getDestinationTypeFriendlyName(destType) {
+  const names = {
+    UNDEFINED: "Undefined (Auto)",
+    WEBSITE: "Website",
+    APP: "App",
+    MESSENGER: "Messenger",
+    WHATSAPP: "WhatsApp",
+    INSTAGRAM_DIRECT: "Instagram Direct",
+    PHONE_CALL: "Phone Call",
+    ON_AD: "On Ad (Lead Form)",
+    ON_POST: "On Post",
+    ON_VIDEO: "On Video",
+    ON_PAGE: "On Page",
+    LEAD_FROM_MESSENGER: "Lead from Messenger",
+    LEAD_FROM_IG_DIRECT: "Lead from Instagram Direct",
+    MESSAGING_MESSENGER_WHATSAPP: "Messenger & WhatsApp",
+    MESSAGING_INSTAGRAM_DIRECT_MESSENGER: "Instagram & Messenger",
+    MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP: "Instagram, Messenger & WhatsApp",
+    MESSAGING_INSTAGRAM_DIRECT_WHATSAPP: "Instagram & WhatsApp",
+  };
+  return names[destType] || destType;
+}
+
+/**
+ * Update destination type dropdown based on campaign objective
+ */
+function updateDestinationTypeOptions(campaignObjective, dropdownSelector = ".dropdown-options.destination-type") {
+  const destTypeDropdown = document.querySelector(dropdownSelector);
+  if (!destTypeDropdown) {
+    console.warn("[updateDestinationTypeOptions] Destination type dropdown not found:", dropdownSelector);
+    return;
+  }
+
+  const availableDestTypes = destinationTypesByObjective[campaignObjective] || ["UNDEFINED", "WEBSITE"];
+  console.log(`[updateDestinationTypeOptions] Updating for objective: ${campaignObjective}`, availableDestTypes);
+
+  // Clear and rebuild dropdown
+  destTypeDropdown.innerHTML = "";
+  availableDestTypes.forEach((destType) => {
+    const li = document.createElement("li");
+    li.dataset.value = destType;
+    li.textContent = getDestinationTypeFriendlyName(destType);
+    destTypeDropdown.appendChild(li);
+  });
+
+  // Auto-select first option if nothing is selected
+  const dropdownDisplay = destTypeDropdown.closest(".custom-dropdown")?.querySelector(".dropdown-display");
+  if (dropdownDisplay && dropdownDisplay.classList.contains("placeholder")) {
+    dropdownDisplay.textContent = getDestinationTypeFriendlyName(availableDestTypes[0]);
+    dropdownDisplay.dataset.value = availableDestTypes[0];
+    dropdownDisplay.classList.remove("placeholder");
+  }
+}
+
+// ============================================
 // CAMPAIGN OBJECTIVE TO CTA MAPPING
 // ============================================
 
@@ -917,6 +1026,9 @@ class SingleSelectGroup {
                 // Update pixel/event type UI based on optimization goal
                 updateConversionFieldsVisibility(optimizationGoal);
               }
+
+              // Update destination type dropdown based on campaign objective
+              updateDestinationTypeOptions(campaignObjective, ".dropdown-options.destination-type");
             }
 
             this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget, appState.getState().campaignLifetimeBudget);
@@ -2278,9 +2390,13 @@ class UploadForm {
       }
     }
 
+    // Get destination type from dropdown
+    const destTypeDropdown = document.querySelector('.dropdown-selected[data-dropdown="destination-type"] .dropdown-display');
+    const destinationType = destTypeDropdown?.dataset.value;
+
     const payload = {
       account_id: document.querySelector(".account.selected").dataset.campaignId,
-      destination_type: document.querySelector(".config-destination-type").value,
+      ...(destinationType && !destTypeDropdown.classList.contains("placeholder") && { destination_type: destinationType }),
       optimization_goal: optimizationGoal,
       billing_event: document.querySelector(".config-billing-event").value,
       bid_strategy: bidStrategy,
@@ -12435,6 +12551,10 @@ function setupMultiCampaignAdSetModal() {
           return false;
         });
 
+      // Get the common campaign objective from selected campaigns
+      const commonObjective = selectedCampaigns.length > 0 ? selectedCampaigns[0].element?.dataset?.objective : null;
+      console.log("[Multi-Campaign AdSet] Common objective for selected campaigns:", commonObjective);
+
       // Initialize dropdowns for step 2
       setTimeout(() => {
         // Show special ad category compatibility warning if needed (SOFT WARNING - tidak blocking)
@@ -12451,6 +12571,11 @@ function setupMultiCampaignAdSetModal() {
 
         // First populate pages and pixels before initializing dropdowns
         initializePagePixelForModal();
+
+        // Update destination type dropdown based on common campaign objective
+        if (commonObjective) {
+          updateDestinationTypeOptions(commonObjective, ".dropdown-options.destination-type-multi");
+        }
 
         // Then initialize all custom dropdowns
         new CustomDropdown(".multi-campaign-adset-form .custom-dropdown");
@@ -12693,11 +12818,16 @@ function setupMultiCampaignAdSetModal() {
     const selectedAccount = document.querySelector(".account.selected");
     const accountId = selectedAccount?.dataset.campaignId || "";
 
+    // Get destination type from dropdown
+    const destTypeDropdown = form.querySelector('.dropdown-selected[data-dropdown="destination-type-multi"] .dropdown-display');
+    const destinationType = destTypeDropdown?.dataset.value;
+
     const payload = {
       account_id: accountId,
       campaign_ids: selectedCampaignIds,
       name: form.querySelector(".config-adset-name").value.trim(),
       status: statusDropdown?.dataset.value || "PAUSED",
+      ...(destinationType && !destTypeDropdown.classList.contains("placeholder") && { destination_type: destinationType }),
       start_time: form.querySelector(".config-start-datetime").value,
       targeting: {},
     };
