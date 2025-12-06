@@ -4194,24 +4194,28 @@ class FileUploadHandler {
       }
     }
 
-    // Apply CTA filtering based on campaign objective
-    const selectedCampaignId = appState.getState().selectedCampaign;
-    if (selectedCampaignId) {
-      const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
-      if (campaignElement) {
-        const campaignObjective = campaignElement.dataset.objective;
-        if (campaignObjective) {
-          console.log(`[showAdCopySection] Applying CTA filtering for objective: ${campaignObjective}`);
-          updateCTAOptions(campaignObjective);
-        } else {
-          console.warn("[showAdCopySection] Campaign objective not found on campaign element");
-        }
-      } else {
-        console.warn("[showAdCopySection] Campaign element not found for ID:", selectedCampaignId);
-      }
-    } else {
-      console.warn("[showAdCopySection] No campaign selected in appState");
-    }
+    // Apply CTA filtering based on campaign objective - DISABLED FOR NOW
+    // CTA curation temporarily disabled to let users choose freely
+    // const selectedCampaignId = appState.getState().selectedCampaign;
+    // if (selectedCampaignId) {
+    //   const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+    //   if (campaignElement) {
+    //     const campaignObjective = campaignElement.dataset.objective;
+    //     if (campaignObjective) {
+    //       console.log(`[showAdCopySection] Applying CTA filtering for objective: ${campaignObjective}`);
+    //       updateCTAOptions(campaignObjective);
+    //     } else {
+    //       console.warn("[showAdCopySection] Campaign objective not found on campaign element");
+    //     }
+    //   } else {
+    //     console.warn("[showAdCopySection] Campaign element not found for ID:", selectedCampaignId);
+    //   }
+    // } else {
+    //   console.warn("[showAdCopySection] No campaign selected in appState");
+    // }
+
+    // Initialize CTA search functionality
+    this.initializeCTASearch();
 
     adCopySection.scrollIntoView({
       behavior: "smooth",
@@ -4225,6 +4229,99 @@ class FileUploadHandler {
         this.showReviewSection();
       }
     };
+  }
+
+  initializeCTASearch() {
+    const ctaSearchInput = document.querySelector(".ad-copy-container .cta-search-input");
+    const ctaDropdownOptions = document.querySelector(".ad-copy-container .dropdown-options.cta");
+
+    if (!ctaSearchInput || !ctaDropdownOptions) {
+      console.warn("[initializeCTASearch] CTA search input or dropdown not found");
+      return;
+    }
+
+    // Get all CTA options (excluding the search container)
+    const allCtaOptions = Array.from(ctaDropdownOptions.querySelectorAll("li:not(.cta-search-container)"));
+
+    // Prevent search input from closing dropdown when clicked
+    ctaSearchInput.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
+    // Prevent search input from triggering dropdown selection
+    ctaSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+
+    // Search functionality
+    ctaSearchInput.addEventListener("input", (e) => {
+      const searchTerm = e.target.value.toLowerCase().trim();
+
+      if (searchTerm.length === 0) {
+        // Show all options when search is empty
+        allCtaOptions.forEach((option) => {
+          option.style.display = "block";
+        });
+        return;
+      }
+
+      // Filter options based on search term
+      let hasVisibleOptions = false;
+      allCtaOptions.forEach((option) => {
+        const optionText = option.textContent.toLowerCase();
+        const optionValue = option.dataset.value ? option.dataset.value.toLowerCase() : "";
+
+        if (optionText.includes(searchTerm) || optionValue.includes(searchTerm)) {
+          option.style.display = "block";
+          hasVisibleOptions = true;
+        } else {
+          option.style.display = "none";
+        }
+      });
+
+      // Show "no results" message if no options match
+      let noResultsMsg = ctaDropdownOptions.querySelector(".cta-no-results");
+      if (!hasVisibleOptions) {
+        if (!noResultsMsg) {
+          noResultsMsg = document.createElement("li");
+          noResultsMsg.className = "cta-no-results";
+          noResultsMsg.style.cssText = "padding: 8px 12px; color: #999; font-style: italic; pointer-events: none;";
+          noResultsMsg.textContent = "No CTA options found";
+          ctaDropdownOptions.appendChild(noResultsMsg);
+        }
+        noResultsMsg.style.display = "block";
+      } else if (noResultsMsg) {
+        noResultsMsg.style.display = "none";
+      }
+    });
+
+    // Clear search when dropdown closes
+    const ctaDropdown = ctaDropdownOptions.closest(".custom-dropdown");
+    if (ctaDropdown) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.attributeName === "class") {
+            const isOpen = ctaDropdownOptions.classList.contains("show");
+            if (!isOpen) {
+              // Clear search and show all options when dropdown closes
+              ctaSearchInput.value = "";
+              allCtaOptions.forEach((option) => {
+                option.style.display = "block";
+              });
+              const noResultsMsg = ctaDropdownOptions.querySelector(".cta-no-results");
+              if (noResultsMsg) {
+                noResultsMsg.style.display = "none";
+              }
+            }
+          }
+        });
+      });
+
+      observer.observe(ctaDropdownOptions, { attributes: true, attributeFilter: ["class"] });
+    }
   }
 
   validateAdCopyForm() {
