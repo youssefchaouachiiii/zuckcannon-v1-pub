@@ -1778,16 +1778,16 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       name,
       objective,
       status,
-      // Budget options - MOVED TO AD SET LEVEL
-      // daily_budget,
-      // lifetime_budget,
-      // spend_cap,
+      // Budget options (now supporting both modes)
+      daily_budget,
+      lifetime_budget,
+      spend_cap,
       // Special categories
       special_ad_categories,
       special_ad_category,
       special_ad_category_country,
-      // Bid strategy - MOVED TO AD SET LEVEL
-      // bid_strategy,
+      // Bid strategy (now supporting campaign-level)
+      bid_strategy,
       // Advanced options
       adlabels,
       adset_bid_amounts,
@@ -1803,9 +1803,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       promoted_object,
       // Smart promotion
       smart_promotion_type,
-      // Timing - MOVED TO AD SET LEVEL
-      // start_time,
-      // stop_time,
+      // Timing
+      start_time,
+      stop_time,
     } = req.body;
 
     const userAccessToken = req.user.facebook_access_token;
@@ -1839,24 +1839,39 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     formData.append("status", status || "PAUSED");
     formData.append("access_token", userAccessToken);
 
-    // Budget fields - MOVED TO AD SET LEVEL
-    // const hasCampaignBudget = !!(daily_budget || lifetime_budget);
-    const hasCampaignBudget = false; // Always false now since budgets moved to ad set level
+    // ===== BUDGET MODE LOGIC =====
+    // Determine if campaign-level budget is being used
+    const hasCampaignBudget = !!(daily_budget || lifetime_budget);
 
-    // if (daily_budget) {
-    //   const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
-    //   formData.append("daily_budget", budgetInCents.toString());
-    // }
+    if (hasCampaignBudget) {
+      // Campaign-level budget mode
+      if (daily_budget) {
+        const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+        formData.append("daily_budget", budgetInCents.toString());
+      }
 
-    // if (lifetime_budget) {
-    //   const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
-    //   formData.append("lifetime_budget", budgetInCents.toString());
-    // }
+      if (lifetime_budget) {
+        const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+        formData.append("lifetime_budget", budgetInCents.toString());
+      }
 
-    // if (spend_cap) {
-    //   const capInCents = Math.round(parseFloat(spend_cap) * 100);
-    //   formData.append("spend_cap", capInCents.toString());
-    // }
+      if (bid_strategy) {
+        formData.append("bid_strategy", bid_strategy);
+      }
+
+      if (adset_bid_amounts && ["LOWEST_COST_WITH_BID_CAP", "COST_CAP"].includes(bid_strategy)) {
+        formData.append("adset_bid_amounts", JSON.stringify(adset_bid_amounts));
+      }
+
+      if (bid_strategy === "LOWEST_COST_WITH_MIN_ROAS" && req.body.min_roas_target) {
+        formData.append("min_roas_target", req.body.min_roas_target.toString());
+      }
+    }
+
+    if (spend_cap) {
+      const capInCents = Math.round(parseFloat(spend_cap) * 100);
+      formData.append("spend_cap", capInCents.toString());
+    }
 
     // Special ad categories (Meta requires JSON array)
     if (special_ad_categories) {
@@ -1874,19 +1889,16 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("special_ad_category_country", JSON.stringify(special_ad_category_country));
     }
 
-    // Bid strategy - MOVED TO AD SET LEVEL
-    // if (bid_strategy) {
-    //   formData.append("bid_strategy", bid_strategy);
-    // }
+    // Note: bid_strategy is now handled in budget mode logic above
+    // It's only added when campaign-level budget is used
 
     // Advanced campaign options
     if (adlabels) {
       formData.append("adlabels", JSON.stringify(adlabels));
     }
 
-    if (adset_bid_amounts) {
-      formData.append("adset_bid_amounts", JSON.stringify(adset_bid_amounts));
-    }
+    // Note: adset_bid_amounts is now handled in budget mode logic above
+    // It's only added when campaign-level budget + bid cap strategy is used
 
     if (adset_budgets) {
       formData.append("adset_budgets", JSON.stringify(adset_budgets));
@@ -1936,14 +1948,27 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       formData.append("smart_promotion_type", smart_promotion_type);
     }
 
-    // Timing - MOVED TO AD SET LEVEL
-    // if (start_time) {
-    //   formData.append("start_time", start_time);
-    // }
+    // Set pacing_type only for campaign-level budgets
+    // Meta API rejects pacing_type when campaign has no budget (ad set-level budget)
+    let pacingType = null;
+    if (hasCampaignBudget) {
+      // Campaign budget: use user selection or default to day_parting for scheduling support
+      pacingType = req.body.pacing_type || ["day_parting"];
+      formData.append("pacing_type", JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]));
+      console.log("Campaign pacing_type set to:", pacingType);
+    } else {
+      // Ad set budget: cannot set pacing_type (Meta API restriction)
+      console.log("Ad set budget mode: pacing_type not set (campaign has no budget)");
+    }
 
-    // if (stop_time) {
-    //   formData.append("stop_time", stop_time);
-    // }
+    // Timing (now supported at campaign level)
+    if (start_time) {
+      formData.append("start_time", start_time);
+    }
+
+    if (stop_time) {
+      formData.append("stop_time", stop_time);
+    }
 
     console.log("Creating campaign:", {
       url: campaignUrl,
@@ -1951,7 +1976,16 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       objective,
       status: status || "PAUSED",
       account: formattedAccountId,
+      pacing_type: pacingType,
       hasCampaignBudget,
+      budgetMode: hasCampaignBudget ? "CAMPAIGN_LEVEL" : "ADSET_LEVEL",
+      ...(hasCampaignBudget && {
+        daily_budget,
+        lifetime_budget,
+        bid_strategy,
+        min_roas_target: req.body.min_roas_target,
+        hasAdsetBidAmounts: !!adset_bid_amounts,
+      }),
       budgetSharing: !hasCampaignBudget ? (is_adset_budget_sharing_enabled !== undefined ? is_adset_budget_sharing_enabled : false) : "N/A",
       hasAdvancedOptions: !!(adlabels || adset_bid_amounts || adset_budgets || campaign_optimization_type || promoted_object),
     });
@@ -1967,7 +2001,8 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${newCampaignId}`;
     const detailsResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,budget_rebalance_flag,smart_promotion_type,start_time,stop_time",
+        fields:
+          "id,account_id,name,objective,status,daily_budget,lifetime_budget,spend_cap,bid_strategy,created_time,special_ad_categories,special_ad_category_country,budget_rebalance_flag,smart_promotion_type,start_time,stop_time,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -1989,6 +2024,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       success: true,
       campaign_id: newCampaignId,
       campaign: newCampaign,
+      pacing_type: newCampaign.pacing_type || pacingType,
       message: `Campaign "${name}" created successfully`,
     });
   } catch (error) {
@@ -2017,13 +2053,16 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     });
   }
 
-  // Fetch campaign details to get special_ad_category_country
+  // Fetch campaign details to get special_ad_category_country and pacing_type for validation
   let campaignCountries = null;
+  let campaignPacingType = null;
+  const hasAdsetSchedule = req.body.adset_schedule && Array.isArray(req.body.adset_schedule) && req.body.adset_schedule.length > 0;
+
   try {
     const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${req.body.campaign_id}`;
     const campaignResponse = await axios.get(campaignDetailsUrl, {
       params: {
-        fields: "special_ad_category_country",
+        fields: "special_ad_category_country,pacing_type",
         access_token: userAccessToken,
       },
     });
@@ -2032,8 +2071,22 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
       campaignCountries = campaignResponse.data.special_ad_category_country;
       console.log(`Campaign ${req.body.campaign_id} has special ad category countries:`, campaignCountries);
     }
+
+    campaignPacingType = campaignResponse.data.pacing_type;
+    console.log(`Campaign ${req.body.campaign_id} pacing_type:`, campaignPacingType);
+
+    // Validate: if using adset_schedule, campaign must have day_parting pacing
+    if (hasAdsetSchedule && campaignPacingType && !campaignPacingType.includes("day_parting")) {
+      return res.status(400).json({
+        error: "Cannot create ad set with scheduling on this campaign",
+        error_user_msg: `This campaign has '${campaignPacingType.join(
+          ", "
+        )}' pacing type which is incompatible with ad set scheduling. Ad set scheduling requires campaigns with 'day_parting' pacing type. Please create a new campaign or use a campaign that supports day parting.`,
+        campaign_pacing_type: campaignPacingType,
+      });
+    }
   } catch (err) {
-    console.warn("Could not fetch campaign details for special_ad_category_country:", err.message);
+    console.warn("Could not fetch campaign details:", err.message);
     // Continue with ad set creation even if campaign fetch fails
   }
 
@@ -2074,11 +2127,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.destination_type = req.body.destination_type;
   }
 
-  // Add page_id if provided (for objectives that require a page)
-  if (req.body.page_id) {
-    payload.promoted_object = payload.promoted_object || {};
-    payload.promoted_object.page_id = req.body.page_id;
-  }
+  // Note: page_id is now handled in the optimization goal specific section below
+  // to ensure it's only added for goals that support it
 
   // Add budget - either daily_budget or lifetime_budget (moved from campaign level)
   if (req.body.daily_budget) {
@@ -2113,18 +2163,39 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   // Build promoted_object based on optimization goal requirements
   if (optimizationGoal === "OFFSITE_CONVERSIONS") {
-    // CONVERSIONS objective - pixel_id and event_type are optional, user decides if needed
-    if (req.body.pixel_id && req.body.pixel_id.trim() !== "" && req.body.event_type) {
-      // Validate that pixel_id doesn't start with "act_"
-      if (req.body.pixel_id.startsWith("act_")) {
-        console.log("⚠️ WARNING: Invalid pixel ID - appears to be an account ID.");
-      } else {
-        // Merge with existing promoted_object if it exists
-        payload.promoted_object = payload.promoted_object || {};
-        payload.promoted_object.pixel_id = req.body.pixel_id;
-        payload.promoted_object.custom_event_type = req.body.event_type;
-      }
+    // OFFSITE_CONVERSIONS - Requires pixel_id and custom_event_type
+    // NEVER include page_id for this optimization goal
+
+    if (!req.body.pixel_id || req.body.pixel_id.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a pixel_id. This ad set may fail to create.");
+      return res.status(400).json({
+        error: "Pixel ID is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Facebook Pixel for conversion tracking. OFFSITE_CONVERSIONS optimization goal requires a pixel.",
+      });
     }
+
+    if (!req.body.event_type || req.body.event_type.trim() === "") {
+      console.log("⚠️ WARNING: OFFSITE_CONVERSIONS requires a custom_event_type.");
+      return res.status(400).json({
+        error: "Custom Event Type is required for OFFSITE_CONVERSIONS optimization goal",
+        error_user_msg: "Please select a Custom Event Type (e.g., PURCHASE, LEAD). OFFSITE_CONVERSIONS optimization goal requires an event type.",
+      });
+    }
+
+    // Validate that pixel_id doesn't start with "act_"
+    if (req.body.pixel_id.startsWith("act_")) {
+      console.log("⚠️ ERROR: Invalid pixel ID - appears to be an account ID.");
+      return res.status(400).json({
+        error: "Invalid Pixel ID format",
+        error_user_msg: "The Pixel ID appears to be an account ID. Please provide a valid Facebook Pixel ID.",
+      });
+    }
+
+    // Set promoted_object with only pixel_id and custom_event_type
+    payload.promoted_object = {
+      pixel_id: req.body.pixel_id,
+      custom_event_type: req.body.event_type,
+    };
   } else if (optimizationGoal === "LEAD_GENERATION") {
     // LEAD_GENERATION - requires page_id, optionally pixel_id
     // custom_event_type should be a separate field, not in promoted_object
@@ -2173,8 +2244,8 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
     payload.promoted_object = payload.promoted_object || {};
     payload.promoted_object.application_id = req.body.application_id;
     payload.promoted_object.object_store_url = req.body.object_store_url;
-  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS") {
-    // PAGE_LIKES or OFFER_CLAIMS - page_id is recommended
+  } else if (optimizationGoal === "PAGE_LIKES" || optimizationGoal === "OFFER_CLAIMS" || optimizationGoal === "POST_ENGAGEMENT" || optimizationGoal === "EVENT_RESPONSES") {
+    // PAGE_LIKES, OFFER_CLAIMS, POST_ENGAGEMENT, EVENT_RESPONSES - page_id is recommended
     if (!req.body.page_id) {
       console.log(`⚠️ WARNING: Page ID is recommended for ${optimizationGoal} optimization goal.`);
     } else {
@@ -2212,23 +2283,26 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
   if (bidAmountRequired) {
     if (!req.body.bid_amount || req.body.bid_amount <= 0) {
-      // return res.status(400).json({
-      //   error: `Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.`,
-      //   details: "Bid amount required for bid strategy provided",
-      //   missing_fields: { bid_amount: true },
-      // });
-      console.log("Bid amount required: you must provide a bid cap or target cost in bid_amount field. For ${bidStrategy}, you must provide the bid_amount field.");
+      console.log(`[WARNING] Bid amount required but not provided for ${bidStrategy}`);
+    } else {
+      payload.bid_amount = parseInt(req.body.bid_amount);
     }
-    payload.bid_amount = parseInt(req.body.bid_amount);
   } else if (req.body.bid_amount) {
     // Optional bid_amount for other strategies
     payload.bid_amount = parseInt(req.body.bid_amount);
   }
 
-  // Add adset_schedule if provided
+  // Add adset_schedule and pacing_type if provided
+  // pacing_type can be set at ad set level to override campaign-level pacing
   if (req.body.adset_schedule && Array.isArray(req.body.adset_schedule)) {
     payload.adset_schedule = req.body.adset_schedule;
-    payload.pacing_type = ["day_parting"]; // Only set pacing for scheduled ads
+    // Automatically set day_parting pacing when ad set has scheduling
+    payload.pacing_type = ["day_parting"];
+    console.log("Ad set has scheduling, setting ad set-level pacing_type to day_parting");
+  } else if (req.body.pacing_type) {
+    // Use user-specified pacing_type if no scheduling
+    payload.pacing_type = Array.isArray(req.body.pacing_type) ? req.body.pacing_type : [req.body.pacing_type];
+    console.log("Ad set pacing_type set to:", payload.pacing_type);
   }
 
   const normalizedAccountId = normalizeAdAccountId(req.body.account_id);
@@ -2335,10 +2409,12 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       adSetPayload.promoted_object = JSON.stringify(adSetPayload.promoted_object);
     }
 
-    // Handle ad scheduling - must set pacing_type if adset_schedule is provided
+    // Handle ad scheduling
+    // Note: pacing_type is a CAMPAIGN-LEVEL setting, not ad set level
+    // Ad sets can have adset_schedule regardless of pacing_type
     if (adSetPayload.adset_schedule && Array.isArray(adSetPayload.adset_schedule)) {
       adSetPayload.adset_schedule = JSON.stringify(adSetPayload.adset_schedule);
-      adSetPayload.pacing_type = JSON.stringify(["day_parting"]);
+      console.log("Ad set has scheduling (adset_schedule configured)");
     }
 
     const createResponse = await axios.post(adSetUrl, new URLSearchParams(adSetPayload));
@@ -2431,7 +2507,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 // Create Campaign in Multiple Ad Accounts
 app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
   const userAccessToken = req.user.facebook_access_token;
-  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, budget_type, budget_amount } = req.body;
+  const { ad_account_ids, campaign_name, objective, status, special_ad_categories, special_ad_category_country, daily_budget, lifetime_budget, bid_strategy, bid_amount } = req.body;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2462,14 +2538,51 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         // Always include special_ad_categories, defaulting to an empty array.
         // The value must be a JSON string as per Meta API requirements.
         special_ad_categories: JSON.stringify(special_ad_categories || []),
-        // Since we are not using a campaign-level budget, this field is required.
-        // Defaulting to 'false' is the safest option.
-        is_adset_budget_sharing_enabled: false,
       };
 
-      // Budget (daily_budget, lifetime_budget) is set at the Ad Set level,
-      // not at the Campaign level in this application's architecture.
-      // It is intentionally omitted here to maintain consistency.
+      // Add special ad category country if provided
+      if (special_ad_category_country && special_ad_category_country.length > 0) {
+        campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
+      }
+
+      // ===== BUDGET MODE LOGIC =====
+      // Determine if campaign-level budget is being used
+      const hasCampaignBudget = !!(daily_budget || lifetime_budget);
+
+      // Set pacing_type only for campaign-level budgets
+      if (hasCampaignBudget) {
+        // Campaign budget: use user selection or default to day_parting
+        const pacingType = req.body.pacing_type || ["day_parting"];
+        campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
+      }
+      // Ad set budget: do not set pacing_type (Meta API restriction)
+
+      if (hasCampaignBudget) {
+        // Campaign-level budget mode (Advantage+ campaign budget)
+        if (daily_budget) {
+          const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+          campaignPayload.daily_budget = budgetInCents.toString();
+        }
+
+        if (lifetime_budget) {
+          const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+          campaignPayload.lifetime_budget = budgetInCents.toString();
+        }
+
+        if (bid_strategy) {
+          campaignPayload.bid_strategy = bid_strategy;
+
+          // Add bid amount for bid cap strategies
+          if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
+            const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
+            campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+          }
+        }
+      } else {
+        // Ad set-level budget mode
+        // When not using campaign budget, we must explicitly disable budget sharing
+        campaignPayload.is_adset_budget_sharing_enabled = false;
+      }
 
       return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
     });
@@ -2759,8 +2872,11 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
-      if (sourceAdSet.pacing_type) createAdSetPayload.pacing_type = sourceAdSet.pacing_type;
-      if (sourceAdSet.adset_schedule) createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+      // Note: pacing_type is a CAMPAIGN-LEVEL setting only. Do not copy to ad set level.
+      if (sourceAdSet.adset_schedule) {
+        createAdSetPayload.adset_schedule = sourceAdSet.adset_schedule;
+        console.log("Ad set has scheduling (adset_schedule configured)");
+      }
 
       // Create ad set in target account
       const createAdSetUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adsets`;
@@ -2854,7 +2970,6 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
             batchOperations.push(createAdCreativeOp);
             batchOperations.push(createAdOp);
-
           } catch (err) {
             console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
           }
@@ -2881,20 +2996,15 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           formData.append("batch", JSON.stringify(chunk));
 
           try {
-            const batchResponse = await axios.post(
-              `https://graph.facebook.com/${api_version}/`,
-              formData,
-              { headers: formData.getHeaders(), timeout: 30000 }
-            );
+            const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
             const batchResults = batchResponse.data;
             if (Array.isArray(batchResults)) {
-              console.log(`Batch results: ${batchResults.filter(r => r.code === 200).length}/${batchResults.length} successful`);
+              console.log(`Batch results: ${batchResults.filter((r) => r.code === 200).length}/${batchResults.length} successful`);
             }
-
           } catch (err) {
             console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
           }
@@ -3005,55 +3115,73 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               timeout: 30000, // 30 second timeout
             });
 
-            // DETAILED RESPONSE LOGGING
-            // console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
-            //   status: batchResponse.status,
-            //   statusText: batchResponse.statusText,
-            //   data_type: typeof batchResponse.data,
-            //   data_keys: typeof batchResponse.data === 'object' ? Object.keys(batchResponse.data) : 'N/A',
-            //   raw_data: JSON.stringify(batchResponse.data, null, 2),
-            // });
+            // Per Meta API docs: async_batch_requests endpoint returns { id, owner_id, name, is_completed, ... }
+            console.log(`[AD-BATCH ${index + 1}] Facebook API Response:`, {
+              status: batchResponse.status,
+              data_type: typeof batchResponse.data,
+              data_keys: Object.keys(batchResponse.data || {}),
+            });
 
-            // Extract batch request ID from potentially varied response formats
-            let batchRequestId = batchResponse.data.id;
-            if (typeof batchResponse.data === "string") {
-              batchRequestId = batchResponse.data;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from string response`);
-            } else if (batchResponse.data?.id) {
+            // Extract batch request ID following Meta API documentation
+            // The response should have an 'id' field (shown by default per Meta docs)
+            let batchRequestId = null;
+
+            // Priority: Try the documented response format first
+            if (batchResponse.data?.id) {
               batchRequestId = batchResponse.data.id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.id`);
+              console.log(`[AD-BATCH ${index + 1}] ✅ ID extracted from data.id: ${batchRequestId}`);
+            }
+            // Fallback for alternate formats
+            else if (typeof batchResponse.data === "string") {
+              batchRequestId = batchResponse.data;
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from string response: ${batchRequestId}`);
             } else if (batchResponse.data?.async_batch_request_id) {
               batchRequestId = batchResponse.data.async_batch_request_id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.async_batch_request_id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from async_batch_request_id: ${batchRequestId}`);
             } else if (batchResponse.data?.handle) {
               batchRequestId = batchResponse.data.handle;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.handle`);
-            } else if (batchResponse.data?.batch_id) {
-              batchRequestId = batchResponse.data.batch_id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from data.batch_id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from handle: ${batchRequestId}`);
             } else if (Array.isArray(batchResponse.data) && batchResponse.data[0]?.id) {
               batchRequestId = batchResponse.data[0].id;
-              // console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id`);
+              console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id: ${batchRequestId}`);
             }
 
+            // If still no ID, attempt fallback: fetch pending batches from account
             if (!batchRequestId) {
-              // console.error(`[AD-BATCH ${index + 1}] ❌ No batch request ID found in response`);
-              // console.error(`[AD-BATCH ${index + 1}] Full response:`, JSON.stringify(batchResponse.data, null, 2));
-              // console.error(`[AD-BATCH ${index + 1}] Response analysis:`, {
-              //   hasError: !!batchResponse.data?.error,
-              //   error: batchResponse.data?.error,
-              //   allKeys: Object.keys(batchResponse.data || {}),
-              // });
-              // ✅ Retry logic if no ID returned
-              // if (retryCount < 2) {
-              //   console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
-              //   await new Promise(resolve => setTimeout(resolve, 1000));
-              //   return sendBatchWithRetry(retryCount + 1);
-              // }
-              // throw new Error(`Async batch request for chunk ${index + 1} created but no ID returned after ${retryCount + 1} attempts`);
+              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID in response, attempting to fetch from pending requests...`);
+              console.warn(`[AD-BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
+
+              try {
+                // Per Meta docs: GET /act_{account_id}/async_requests lists all pending batch requests
+                const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+                  params: {
+                    fields: "id,name,is_completed,total_count,success_count,error_count,in_progress_count,initial_count",
+                    access_token: userAccessToken,
+                    limit: 10,
+                  },
+                });
+
+                // Get the most recent pending batch (likely ours - created just now)
+                const recentBatch = pendingResponse.data?.data?.[0];
+                if (recentBatch?.id) {
+                  batchRequestId = recentBatch.id;
+                  console.log(`[AD-BATCH ${index + 1}] ✅ Retrieved batch ID from pending requests: ${batchRequestId}`);
+                } else {
+                  console.error(`[AD-BATCH ${index + 1}] ❌ No pending batches found`);
+                }
+              } catch (fetchErr) {
+                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, fetchErr.message);
+              }
             }
 
-            // console.log(`[AD-BATCH ${index + 1}] ✅ Success - Batch ID: ${batchRequestId}`);
+            // If STILL no ID after all attempts, throw descriptive error
+            if (!batchRequestId) {
+              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response structure: ${Object.keys(batchResponse.data || {}).join(", ")}`;
+              console.error(`[AD-BATCH ${index + 1}] ❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+
+            console.log(`[AD-BATCH ${index + 1}] ✅ Batch request ID: ${batchRequestId}`);
             return batchRequestId;
           } catch (axiosError) {
             console.error(`[AD-BATCH ${index + 1}] ❌ Request failed:`, {
@@ -3062,14 +3190,14 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               response_data: axiosError.response?.data,
             });
 
-            // ✅ Retry on network errors
-            // if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
-            //   console.warn(`[AD-BATCH ${index + 1}] Network/server error, retrying... (Attempt ${retryCount + 1}/2)`);
-            //   await new Promise(resolve => setTimeout(resolve, 1000));
-            //   return sendBatchWithRetry(retryCount + 1);
-            // }
+            // Retry on network errors (5xx or network timeout)
+            if (retryCount < 2 && (!axiosError.response || axiosError.response.status >= 500)) {
+              console.warn(`[AD-BATCH ${index + 1}] Retrying after 1 second... (Attempt ${retryCount + 1}/2)`);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              return sendBatchWithRetry(retryCount + 1);
+            }
 
-            // throw axiosError;
+            throw axiosError;
           }
         };
 
@@ -3357,26 +3485,141 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
     const FormData = (await import("form-data")).default;
 
-    // Send async batch
-    const sendAsyncBatch = async (ops, label) => {
+    // Send async batch with improved ID extraction per Meta API docs
+    const sendAsyncBatch = async (ops, label, retryCount = 0) => {
       const formData = new FormData();
       formData.append("access_token", userAccessToken);
       formData.append("name", label);
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
 
-      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+      try {
+        const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
-      const data = resp.data;
-      return data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || (typeof data === "string" ? data : null);
+        const data = resp.data;
+        console.log(`[CAMPAIGN-BATCH] ${label} - Response type:`, typeof data, Array.isArray(data) ? "array" : "");
+        console.log(`[CAMPAIGN-BATCH] ${label} - Full response:`, JSON.stringify(data, null, 2));
+
+        // Check if Meta executed synchronously (returns array of results)
+        if (Array.isArray(data)) {
+          console.log(`[CAMPAIGN-BATCH] ${label} - Array response (synchronous execution)`);
+          // For synchronous execution, there's no batch ID - operation completed immediately
+          return "sync_" + Date.now();
+        }
+
+        // Extract batch ID per Meta API docs: response should have 'id' field (shown by default)
+        let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Fallback: Query pending batches if ID not in response
+        if (!batchId) {
+          console.warn(`[CAMPAIGN-BATCH] ${label} - No ID in response, fetching pending batches...`);
+          try {
+            const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+              params: {
+                fields: "id,name,is_completed,total_count,success_count,error_count",
+                access_token: userAccessToken,
+                limit: 10,
+              },
+            });
+            const recentBatch = pendingResponse.data?.data?.[0];
+            if (recentBatch?.id) {
+              batchId = recentBatch.id;
+              console.log(`[CAMPAIGN-BATCH] ${label} - Retrieved from pending: ${batchId}`);
+            }
+          } catch (fetchErr) {
+            console.error(`[CAMPAIGN-BATCH] ${label} - Failed to fetch pending:`, fetchErr.message);
+          }
+        }
+
+        if (!batchId) {
+          const errorMsg = `Failed to get batch ID. Response structure: ${Object.keys(data || {}).join(", ")}`;
+          console.error(`[CAMPAIGN-BATCH] ${label} - ${errorMsg}`);
+          console.error(`[CAMPAIGN-BATCH] ${label} - Full data:`, JSON.stringify(data, null, 2));
+          throw new Error(errorMsg);
+        }
+
+        console.log(`[CAMPAIGN-BATCH] ${label} - Batch ID: ${batchId}`);
+        return batchId;
+      } catch (error) {
+        // Retry on network/server errors
+        if (retryCount < 2 && (!error.response || error.response.status >= 500)) {
+          console.warn(`[CAMPAIGN-BATCH] ${label} - Retrying (${retryCount + 1}/2)...`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return sendAsyncBatch(ops, label, retryCount + 1);
+        }
+        throw error;
+      }
     };
 
     // STEP 3 First async batch: duplicate adsets
-    const adsetOps = adsetsData.map((adset) => ({
-      method: "POST",
-      relative_url: `${adset.id}/copies`,
-      body: `campaign_id=${newCampaignId}&deep_copy=false&status_option=${status_option || "PAUSED"}`,
-    }));
+    // For cross-account duplication, we need to fetch full ad set details and create new ones
+    // because /copies endpoint doesn't work across accounts
+    let adsetOps = [];
+
+    if (isCrossAccount) {
+      console.log("🔄 Cross-account detected: Fetching full ad set details for recreation...");
+
+      // Fetch full details for each ad set
+      const adsetDetailsPromises = adsetsData.map(async (adset) => {
+        try {
+          const adsetDetailUrl = `https://graph.facebook.com/${api_version}/${adset.id}`;
+          const adsetDetailResponse = await axios.get(adsetDetailUrl, {
+            params: {
+              fields: "name,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,bid_amount,targeting,destination_type,promoted_object,start_time,end_time,pacing_type",
+              access_token: userAccessToken,
+            },
+          });
+          return { sourceId: adset.id, details: adsetDetailResponse.data };
+        } catch (err) {
+          console.error(`Failed to fetch ad set ${adset.id} details:`, err.message);
+          return { sourceId: adset.id, details: null };
+        }
+      });
+
+      const adsetDetailsResults = await Promise.all(adsetDetailsPromises);
+
+      // Create batch operations to CREATE new ad sets (not copy)
+      adsetOps = adsetDetailsResults
+        .filter((result) => result.details)
+        .map((result, index) => {
+          const adset = result.details;
+          const payload = {
+            campaign_id: newCampaignId,
+            name: adset.name,
+            optimization_goal: adset.optimization_goal,
+            billing_event: adset.billing_event,
+            status: status_option || "PAUSED",
+          };
+
+          // Add optional fields
+          if (adset.bid_strategy) payload.bid_strategy = adset.bid_strategy;
+          if (adset.daily_budget) payload.daily_budget = adset.daily_budget;
+          if (adset.lifetime_budget) payload.lifetime_budget = adset.lifetime_budget;
+          if (adset.bid_amount) payload.bid_amount = adset.bid_amount;
+          if (adset.targeting) payload.targeting = JSON.stringify(adset.targeting);
+          if (adset.destination_type) payload.destination_type = adset.destination_type;
+          if (adset.promoted_object) payload.promoted_object = JSON.stringify(adset.promoted_object);
+          if (adset.start_time) payload.start_time = adset.start_time;
+          if (adset.end_time) payload.end_time = adset.end_time;
+          if (adset.pacing_type) payload.pacing_type = JSON.stringify(adset.pacing_type);
+
+          return {
+            method: "POST",
+            name: `create-adset-${index}`,
+            relative_url: `act_${normalizedAccountId}/adsets`,
+            body: new URLSearchParams(payload).toString(),
+          };
+        });
+
+      console.log(`✅ Prepared ${adsetOps.length} ad set creation operations for cross-account duplication`);
+    } else {
+      // Same-account: Use /copies endpoint
+      adsetOps = adsetsData.map((adset) => ({
+        method: "POST",
+        relative_url: `${adset.id}/copies`,
+        body: `campaign_id=${newCampaignId}&deep_copy=false&status_option=${status_option || "PAUSED"}`,
+      }));
+    }
 
     const adsetChunks = [];
     for (let i = 0; i < adsetOps.length; i += 1) adsetChunks.push(adsetOps.slice(i, i + 1));
@@ -3391,19 +3634,95 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       formData.append("access_token", userAccessToken);
       formData.append("batch", JSON.stringify(ops));
       formData.append("is_parallel", "true");
-      const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
-      const data = resp.data;
 
-      // If Meta executed synchronously
-      if (Array.isArray(data) && data[0]?.body?.includes("copied_adset_id")) {
-        try {
-          const parsed = JSON.parse(data[0].body);
-          const copied = parsed.ad_object_ids?.[0];
-          if (copied) adsetMapping[copied.source_id] = copied.copied_id;
-        } catch (_) {}
+      try {
+        const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
+        const data = resp.data;
+
+        // Enhanced logging to debug response structure
+        console.log(`[ADSET-BATCH ${i + 1}] Response type:`, typeof data, Array.isArray(data) ? "array" : "");
+        console.log(`[ADSET-BATCH ${i + 1}] Full response:`, JSON.stringify(data, null, 2));
+
+        // If Meta executed synchronously (returns array of results)
+        if (Array.isArray(data)) {
+          console.log(`[ADSET-BATCH ${i + 1}] Array response detected, processing results...`);
+
+          // Check for errors first
+          if (data[0]?.code >= 400) {
+            const errorBody = typeof data[0].body === "string" ? JSON.parse(data[0].body) : data[0].body;
+            const errorMsg = errorBody?.error?.error_user_msg || errorBody?.error?.message || "Unknown error";
+            console.error(`[ADSET-BATCH ${i + 1}] ❌ Error: ${errorMsg}`);
+            throw new Error(`Ad set batch ${i + 1} failed: ${errorMsg}`);
+          }
+
+          // Process successful synchronous response
+          if (data[0]?.body) {
+            try {
+              const bodyStr = typeof data[0].body === "string" ? data[0].body : JSON.stringify(data[0].body);
+              const parsed = JSON.parse(bodyStr);
+
+              if (isCrossAccount) {
+                // For cross-account creation, response has new ad set ID
+                const newAdsetId = parsed.id;
+                const sourceAdsetId = adsetsData[i]?.id;
+
+                if (newAdsetId && sourceAdsetId) {
+                  adsetMapping[sourceAdsetId] = newAdsetId;
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created new adset: ${sourceAdsetId} -> ${newAdsetId}`);
+                }
+              } else {
+                // For same-account copy, response has copied_adset_id mapping
+                const copied = parsed.ad_object_ids?.[0];
+                if (copied) {
+                  adsetMapping[copied.source_id] = copied.copied_id;
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Copied adset: ${copied.source_id} -> ${copied.copied_id}`);
+                }
+              }
+            } catch (parseErr) {
+              console.error(`[ADSET-BATCH ${i + 1}] Parse error:`, parseErr.message);
+            }
+          }
+
+          console.log(`[ADSET-BATCH ${i + 1}] ✅ Synchronous completion`);
+          adsetBatchIds.push("sync_" + Date.now() + "_" + i);
+          continue;
+        }
+
+        // Extract batch ID per Meta API docs (for async execution)
+        let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Fallback: Query pending batches if ID not in response
+        if (!batchId) {
+          console.warn(`[ADSET-BATCH ${i + 1}] No ID in response, fetching pending batches...`);
+          try {
+            const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
+              params: {
+                fields: "id,name,is_completed",
+                access_token: userAccessToken,
+                limit: 10,
+              },
+            });
+            const recentBatch = pendingResponse.data?.data?.[0];
+            if (recentBatch?.id) {
+              batchId = recentBatch.id;
+              console.log(`[ADSET-BATCH ${i + 1}] ✅ Retrieved from pending: ${batchId}`);
+            }
+          } catch (fetchErr) {
+            console.error(`[ADSET-BATCH ${i + 1}] Failed to fetch pending:`, fetchErr.message);
+          }
+        }
+
+        if (batchId) {
+          console.log(`[ADSET-BATCH ${i + 1}] ✅ Batch ID: ${batchId}`);
+        } else {
+          console.warn(`[ADSET-BATCH ${i + 1}] ⚠️ No batch ID found, continuing...`);
+        }
+
+        adsetBatchIds.push(batchId);
+      } catch (error) {
+        console.error(`[ADSET-BATCH ${i + 1}] Request failed:`, error.message);
+        adsetBatchIds.push(null);
       }
-
-      adsetBatchIds.push(data?.id || data?.async_batch_request_id || data?.handle || (Array.isArray(data) && data[0]?.id) || null);
     }
 
     // console.log("✅ All adset async batches created:", adsetBatchIds);
@@ -3605,7 +3924,7 @@ async function addCampaignToDatabase(campaignId, campaignName, accountId) {
   }
 }
 
-app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   try {
     const files = req.files;
     const adAccountId = req.body.account_id;
@@ -3644,38 +3963,36 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
       });
     }
 
-    async function videoUploadPromise() {
-      const results = await Promise.allSettled(
-        files.map((file, index) => {
-          return handleVideoUpload(file, index, userAccessToken)
-            .then((response) => ({
-              type: "video",
-              file: file.originalname,
-              data: response,
-              status: "success",
-            }))
-            .then((data) => {
-              return data;
-            })
-            .catch((error) => ({
-              file: file.originalname,
-              status: "failed",
-              error: error.message,
-            }));
-        })
-      );
+    // Process all video uploads and AWAIT completion before sending response
+    const results = await Promise.allSettled(
+      files.map((file, index) => {
+        return handleVideoUpload(file, index, userAccessToken)
+          .then((response) => ({
+            type: "video",
+            file: file.originalname,
+            data: response,
+            status: "success",
+          }))
+          .then((data) => {
+            return data;
+          })
+          .catch((error) => ({
+            file: file.originalname,
+            status: "failed",
+            error: error.message,
+          }));
+      })
+    );
 
-      // Send session complete event
-      broadcastToSession(sessionId, "session-complete", {
-        totalFiles: files.length,
-        processedFiles: session.processedFiles,
-        results: results,
-      });
+    // Send session complete event
+    broadcastToSession(sessionId, "session-complete", {
+      totalFiles: files.length,
+      processedFiles: session.processedFiles,
+      results: results,
+    });
 
-      res.status(200).json({ results, sessionId });
-    }
-
-    videoUploadPromise();
+    // Now send response AFTER all processing is complete
+    res.status(200).json({ results, sessionId });
 
     async function handleVideoUpload(file, index, userAccessToken) {
       console.log("File: ", file);
@@ -3838,7 +4155,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
     }
   } catch (err) {
     console.log("There was an error in uploading videos to facebook.", err);
-    res.status(500).send("Could not upload videos to facebook.", err);
+    res.status(500).send("Could not upload videos to facebook.");
   }
 
   // function to get thumbnail from video
@@ -4031,7 +4348,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
   }
 });
 
-app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, (req, res) => {
+app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   const files = req.files;
   const accountId = req.body.account_id;
   const userAccessToken = req.user?.facebook_access_token;
@@ -4045,7 +4362,8 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
     });
   }
 
-  async function imageUploadPromise() {
+  try {
+    // Process all image uploads and AWAIT completion before sending response
     const results = await Promise.allSettled(
       files.map(async (file) => {
         try {
@@ -4101,10 +4419,12 @@ app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadF
       })
     );
 
+    // Now send response AFTER all processing is complete
     res.status(200).json(results);
+  } catch (err) {
+    console.log("There was an error in uploading images to facebook.", err);
+    res.status(500).send("Could not upload images to facebook.");
   }
-
-  imageUploadPromise();
 
   async function uploadImages(filePath, originalName) {
     const file_path = fs.createReadStream(filePath);
@@ -4215,9 +4535,7 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
               };
 
               // Get or create thumbnail
-              let thumbnailPath = creativeResult.creative.thumbnail_path
-                ? getThumbnailFilePath(creativeResult.creative)
-                : null;
+              let thumbnailPath = creativeResult.creative.thumbnail_path ? getThumbnailFilePath(creativeResult.creative) : null;
               if (!thumbnailPath) {
                 const thumbnail = await getThumbnailFromVideo(fileObj);
                 thumbnailPath = thumbnail.path;
@@ -4376,7 +4694,6 @@ app.post("/api/create-ad-creative", (req, res) => {
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             video_data: {
               message,
               title: headline,
@@ -4392,12 +4709,16 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       } else {
         // payload for image upload
         creativeData = {
           name: adName,
           object_story_spec: {
-            page_id,
             link_data: {
               message,
               link,
@@ -4413,6 +4734,11 @@ app.post("/api/create-ad-creative", (req, res) => {
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          creativeData.object_story_spec.page_id = page_id;
+        }
       }
 
       const normalizedAccountId = normalizeAdAccountId(account_id);
@@ -4456,6 +4782,13 @@ app.post("/api/create-ad-creative", (req, res) => {
             }
           } else {
             errorMessage = err.message;
+          }
+
+          // Provide helpful context for page_id errors
+          if (errorMessage.includes("Facebook Page is missing") || errorMessage.includes("page") || errorMessage.includes("Page")) {
+            throw new Error(
+              `Ad "${adName}": ${errorMessage}\n\nNote: While page_id is optional in our system, Meta's API may require it for certain ad objectives (like LEAD_GENERATION, PAGE_LIKES, etc.). Please select a Facebook Page in the ad copy section.`
+            );
           }
 
           throw new Error(`Ad "${adName}": ${errorMessage}`);
@@ -4512,7 +4845,7 @@ app.post("/api/create-ad-creative", (req, res) => {
  * {
  *   "account_id": "123456789",
  *   "adset_id": "120123456789",
- *   "page_id": "987654321",
+ *   "page_id": "987654321", // Optional: Facebook Page ID for the ads
  *   "ads": [
  *     {
  *       "name": "Ad 1",
@@ -4541,9 +4874,9 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       });
     }
 
-    if (!account_id || !adset_id || !page_id) {
+    if (!account_id || !adset_id) {
       return res.status(400).json({
-        error: "account_id, adset_id, and page_id are required",
+        error: "account_id and adset_id are required",
       });
     }
 
@@ -4569,7 +4902,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       if (ad.video_id) {
         // Video ad
         object_story_spec = {
-          page_id,
           video_data: {
             message: ad.message || "",
             title: ad.headline || "",
@@ -4584,6 +4916,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
           },
         };
 
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
+
         // Add thumbnail if provided
         if (ad.thumbnailHash) {
           object_story_spec.video_data.image_hash = ad.thumbnailHash;
@@ -4591,7 +4928,6 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       } else if (ad.imageHash) {
         // Image ad
         object_story_spec = {
-          page_id,
           link_data: {
             message: ad.message || "",
             link: ad.link || "",
@@ -4606,6 +4942,11 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
             },
           },
         };
+
+        // Add page_id if provided
+        if (page_id) {
+          object_story_spec.page_id = page_id;
+        }
       } else {
         throw new Error(`Ad "${ad.name}" must have either imageHash or video_id`);
       }

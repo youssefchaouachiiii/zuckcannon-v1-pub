@@ -544,39 +544,59 @@ h2 {
   background-color: #e5e5e5;
   color: #999;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: not-allowed;
   transition: all 0.2s ease;
   margin-top: 10px;
+  width: 100%;
 }
 
 .campaign-create-btn.active {
-  background-color: #103dee;
+  background-color: #1877f2;
   color: white;
   cursor: pointer;
 }
 
 .campaign-create-btn.active:hover {
-  background-color: #0d32c4;
+  background-color: #166fe5;
+}
+
+.campaign-preview-btn {
+  padding: 14px 20px;
+  background-color: #42b72a;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.campaign-preview-btn:hover {
+  background-color: #36a420;
 }
 
 .campaign-cancel-btn {
   padding: 12px 20px;
   background-color: transparent;
   color: #666;
-  border: 1px solid #e5e5e5;
-  border-radius: 4px;
+  border: 1px solid #dddfe2;
+  border-radius: 6px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .campaign-cancel-btn:hover {
-  background-color: #f5f5f5;
-  border-color: #999;
+  background-color: #f0f2f5;
 }
 
 /* Ad Set List Container */
@@ -831,6 +851,76 @@ h2 {
   color: #103dee;
 }
 
+/* Multi-select checkbox styling */
+.multi-select-checkbox {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 16px;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.dropdown-options[data-multiple="true"] li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropdown-options[data-multiple="true"] li.selected .multi-select-checkbox {
+  color: #103dee;
+  font-weight: bold;
+}
+
+/* None option in multi-select acts as clear button */
+.dropdown-options[data-multiple="true"] li.none-option {
+  color: #dc3545;
+  font-style: italic;
+  border-top: 1px solid #e5e5e5;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.dropdown-options[data-multiple="true"] li.none-option:hover {
+  background-color: #fff5f5;
+  color: #c82333;
+}
+
+/* Multi-select clear button */
+.multi-select-clear-btn {
+  display: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #e8f2ff;
+  color: #103dee;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 4px;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.multi-select-clear-btn:hover {
+  background: #103dee;
+  color: white;
+}
+
+.dropdown-selected:not(.placeholder) .multi-select-clear-btn {
+  display: inline-flex;
+}
+
+.dropdown-selected {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 /* Pixel status indicators */
 .pixel-option .pixel-status-icon {
   margin-right: 6px;
@@ -850,8 +940,33 @@ h2 {
   font-weight: 500;
 }
 
+/* Dropdown search input */
+.dropdown-search {
+  position: sticky;
+  top: 0;
+  background: white;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e5e5;
+  z-index: 1001;
+}
+
+.dropdown-search input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+}
+
+.dropdown-search input:focus {
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
 /* Special Ad Category Country dropdown - limit height and make scrollable */
-.dropdown-options.campaign-special-country {
+.dropdown-options.campaign-special-country,
+.dropdown-options.multi-campaign-special-country {
   max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1727,6 +1842,100 @@ h2 {
   border-radius: 4px;
   border-left: 3px solid #ff9800;
   line-height: 1.5;
+}
+
+/* App Promotion Fields */
+.app-promotion-container {
+  display: none;
+  margin-top: 4px;
+}
+
+.app-promotion-container > small:first-child {
+  display: block;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.app-promotion-container input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.app-promotion-container input:focus {
+  border-color: #103dee;
+  box-shadow: 0 0 0 1px #103dee;
+}
+
+.app-promotion-container small {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  color: #999;
+  font-size: 11px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+/* App Promotion Fields for Multi-Campaign Modal */
+.app-promotion-container-multi {
+  display: none;
+  margin-top: 4px;
+}
+
+.app-promotion-container-multi > small:first-child {
+  display: block;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+  border-radius: 4px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.app-promotion-container-multi input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.app-promotion-container-multi input:focus {
+  border-color: #103dee;
+  box-shadow: 0 0 0 1px #103dee;
+}
+
+.app-promotion-container-multi small {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  color: #999;
+  font-size: 11px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 /* Event Type Container for Multi-Campaign Modal */
@@ -4830,6 +5039,7 @@ input.bulk-adset-name {
 .multi-account-campaign-modal .btn-cancel,
 .multi-account-campaign-modal .btn-back,
 .multi-account-campaign-modal .btn-next,
+.multi-account-campaign-modal .btn-preview,
 .multi-account-campaign-modal .btn-create {
   padding: 10px 20px;
   border: none;
@@ -4860,6 +5070,15 @@ input.bulk-adset-name {
 
 .multi-account-campaign-modal .btn-back:hover {
   background-color: #f8f9fa;
+}
+
+.multi-account-campaign-modal .btn-preview {
+  background-color: #42b72a;
+  color: white;
+}
+
+.multi-account-campaign-modal .btn-preview:hover {
+  background-color: #36a420;
 }
 
 .multi-account-campaign-modal .btn-next,
@@ -5205,4 +5424,137 @@ input.bulk-adset-name {
   font-weight: 500;
   color: #555;
   margin-bottom: 6px;
+}
+
+/* Campaign Preview Modal */
+.campaign-preview-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  overflow-y: auto;
+  padding: 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.campaign-preview-modal .preview-modal-content {
+  max-width: 600px;
+  width: 100%;
+  margin: 40px auto;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.campaign-preview-modal .preview-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e4e6eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.campaign-preview-modal .preview-modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #050505;
+}
+
+.campaign-preview-modal .close-preview-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #65676b;
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.campaign-preview-modal .close-preview-btn:hover {
+  background: #f0f2f5;
+}
+
+.campaign-preview-modal .preview-modal-body {
+  padding: 24px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.campaign-preview-modal .preview-modal-body > div {
+  margin-bottom: 24px;
+}
+
+.campaign-preview-modal .preview-modal-body > div:last-child {
+  margin-bottom: 0;
+}
+
+.campaign-preview-modal .preview-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e4e6eb;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  background: #f7f8fa;
+  border-radius: 0 0 8px 8px;
+}
+
+.campaign-preview-modal .preview-edit-btn {
+  padding: 10px 24px;
+  background: white;
+  color: #050505;
+  border: 1px solid #ccd0d5;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  transition: all 0.2s ease;
+}
+
+.campaign-preview-modal .preview-edit-btn:hover {
+  background: #f0f2f5;
+  border-color: #bec3c9;
+}
+
+.campaign-preview-modal .preview-confirm-create-btn {
+  padding: 10px 24px;
+  background: #1877f2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  transition: all 0.2s ease;
+}
+
+.campaign-preview-modal .preview-confirm-create-btn:hover {
+  background: #166fe5;
+}
+
+.campaign-preview-modal .preview-confirm-create-btn:active {
+  transform: scale(0.98);
 }

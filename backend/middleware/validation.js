@@ -502,15 +502,6 @@ export const validateRequest = {
       }
     }
 
-    // Validate adset_bid_amounts if provided
-    if (req.body.adset_bid_amounts) {
-      if (typeof req.body.adset_bid_amounts !== "object" || Array.isArray(req.body.adset_bid_amounts)) {
-        return res.status(400).json({
-          error: "adset_bid_amounts must be a JSON object mapping adset IDs to bid amounts",
-        });
-      }
-    }
-
     // Validate boolean flags
     const booleanFields = ["budget_rebalance_flag", "is_adset_budget_sharing_enabled", "is_skadnetwork_attribution", "is_using_l3_schedule"];
     for (const field of booleanFields) {
@@ -777,6 +768,12 @@ export const validateRequest = {
         "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
         "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
         "SHOP_AUTOMATIC",
+        "UNDEFINED",
+        "PHONE_CALL",
+        "LEAD_FROM_MESSENGER",
+        "LEAD_FROM_IG_DIRECT",
+        "ON_EVENT",
+        "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
       ];
 
       if (!validDestinationTypes.includes(req.body.destination_type)) {
@@ -947,6 +944,40 @@ export const validateRequest = {
       }
     }
 
+    // Validate destination_type if provided (optional)
+    if (req.body.destination_type) {
+      const validDestinationTypes = [
+        "WEBSITE",
+        "APP",
+        "MESSENGER",
+        "APPLINKS_AUTOMATIC",
+        "WHATSAPP",
+        "INSTAGRAM_DIRECT",
+        "FACEBOOK",
+        "ON_AD",
+        "ON_POST",
+        "ON_VIDEO",
+        "ON_PAGE",
+        "INSTAGRAM_PROFILE",
+        "MESSAGING_MESSENGER_WHATSAPP",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+        "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+        "SHOP_AUTOMATIC",
+        "UNDEFINED",
+        "PHONE_CALL",
+        "LEAD_FROM_MESSENGER",
+        "LEAD_FROM_IG_DIRECT",
+        "ON_EVENT",
+        "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+      ];
+
+      if (!validDestinationTypes.includes(req.body.destination_type)) {
+        return res.status(400).json({
+          error: `Invalid destination_type. Must be one of: ${validDestinationTypes.join(", ")}`,
+        });
+      }
+    }
+
     // Validate start_time and end_time if provided
     if (req.body.start_time && isNaN(Date.parse(req.body.start_time))) {
       return res.status(400).json({ error: "start_time must be a valid ISO 8601 datetime" });
@@ -1100,9 +1131,10 @@ export const validateRequest = {
       return res.status(400).json({ error: "adset_id is required" });
     }
 
-    if (!page_id) {
-      return res.status(400).json({ error: "page_id is required" });
-    }
+    // page_id is now optional
+    // if (!page_id) {
+    //   return res.status(400).json({ error: "page_id is required" });
+    // }
 
     if (!ads || !Array.isArray(ads) || ads.length === 0) {
       return res.status(400).json({
