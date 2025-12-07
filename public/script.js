@@ -106,6 +106,115 @@ function getObjectiveFriendlyName(objective) {
 }
 
 // ============================================
+// CAMPAIGN OBJECTIVE TO DESTINATION TYPE MAPPING
+// ============================================
+
+/**
+ * Map campaign objective to available destination types
+ * Based on Meta's Marketing API v17.0+ Outcome-Driven Ads Experiences
+ */
+const destinationTypesByObjective = {
+  OUTCOME_AWARENESS: [
+    "UNDEFINED",
+    "WEBSITE",
+    "MESSENGER",
+    "WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+    "MESSAGING_MESSENGER_WHATSAPP",
+    "INSTAGRAM_DIRECT",
+  ],
+  OUTCOME_TRAFFIC: ["UNDEFINED", "MESSENGER", "WHATSAPP", "PHONE_CALL"],
+  OUTCOME_ENGAGEMENT: [
+    "UNDEFINED",
+    "MESSENGER",
+    "WHATSAPP",
+    "PHONE_CALL",
+    "INSTAGRAM_DIRECT",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER",
+    "MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP",
+    "MESSAGING_INSTAGRAM_DIRECT_WHATSAPP",
+    "MESSAGING_MESSENGER_WHATSAPP",
+    "ON_POST",
+    "ON_EVENT",
+    "ON_VIDEO",
+    "ON_VIDEO",
+    "ON_PAGE",
+  ],
+  OUTCOME_APP_PROMOTION: ["UNDEFINED"],
+  OUTCOME_LEADS: ["ON_AD", "LEAD_FROM_MESSENGER", "LEAD_FROM_IG_DIRECT", "PHONE_CALL", "UNDEFINED", "WEBSITE", "APP"],
+  OUTCOME_SALES: ["WEBSITE", "MESSENGER", "PHONE_CALL"],
+  // Legacy objectives (for backward compatibility)
+  BRAND_AWARENESS: ["UNDEFINED", "WEBSITE", "MESSENGER", "WHATSAPP"],
+  REACH: ["UNDEFINED", "WEBSITE", "MESSENGER", "WHATSAPP"],
+  LINK_CLICKS: ["UNDEFINED", "MESSENGER", "WHATSAPP", "PHONE_CALL"],
+  POST_ENGAGEMENT: ["UNDEFINED", "MESSENGER", "WHATSAPP", "ON_POST"],
+  VIDEO_VIEWS: ["UNDEFINED", "MESSENGER", "WHATSAPP", "ON_VIDEO"],
+  LEAD_GENERATION: ["ON_AD", "LEAD_FROM_MESSENGER", "WEBSITE"],
+  CONVERSIONS: ["WEBSITE", "MESSENGER", "PHONE_CALL"],
+  APP_INSTALLS: ["UNDEFINED"],
+  MOBILE_APP_ENGAGEMENT: ["UNDEFINED"],
+};
+
+/**
+ * Get friendly names for destination types
+ */
+function getDestinationTypeFriendlyName(destType) {
+  const names = {
+    UNDEFINED: "Undefined (Auto)",
+    WEBSITE: "Website",
+    APP: "App",
+    MESSENGER: "Messenger",
+    WHATSAPP: "WhatsApp",
+    INSTAGRAM_DIRECT: "Instagram Direct",
+    PHONE_CALL: "Phone Call",
+    ON_AD: "On Ad (Lead Form)",
+    ON_POST: "On Post",
+    ON_VIDEO: "On Video",
+    ON_PAGE: "On Page",
+    LEAD_FROM_MESSENGER: "Lead from Messenger",
+    LEAD_FROM_IG_DIRECT: "Lead from Instagram Direct",
+    MESSAGING_MESSENGER_WHATSAPP: "Messenger & WhatsApp",
+    MESSAGING_INSTAGRAM_DIRECT_MESSENGER: "Instagram & Messenger",
+    MESSAGING_INSTAGRAM_DIRECT_MESSENGER_WHATSAPP: "Instagram, Messenger & WhatsApp",
+    MESSAGING_INSTAGRAM_DIRECT_WHATSAPP: "Instagram & WhatsApp",
+  };
+  return names[destType] || destType;
+}
+
+/**
+ * Update destination type dropdown based on campaign objective
+ */
+function updateDestinationTypeOptions(campaignObjective, dropdownSelector = ".dropdown-options.destination-type") {
+  const destTypeDropdown = document.querySelector(dropdownSelector);
+  if (!destTypeDropdown) {
+    console.warn("[updateDestinationTypeOptions] Destination type dropdown not found:", dropdownSelector);
+    return;
+  }
+
+  const availableDestTypes = destinationTypesByObjective[campaignObjective] || ["UNDEFINED", "WEBSITE"];
+  console.log(`[updateDestinationTypeOptions] Updating for objective: ${campaignObjective}`, availableDestTypes);
+
+  // Clear and rebuild dropdown
+  destTypeDropdown.innerHTML = "";
+  availableDestTypes.forEach((destType) => {
+    const li = document.createElement("li");
+    li.dataset.value = destType;
+    li.textContent = getDestinationTypeFriendlyName(destType);
+    destTypeDropdown.appendChild(li);
+  });
+
+  // Auto-select first option if nothing is selected
+  const dropdownDisplay = destTypeDropdown.closest(".custom-dropdown")?.querySelector(".dropdown-display");
+  if (dropdownDisplay && dropdownDisplay.classList.contains("placeholder")) {
+    dropdownDisplay.textContent = getDestinationTypeFriendlyName(availableDestTypes[0]);
+    dropdownDisplay.dataset.value = availableDestTypes[0];
+    dropdownDisplay.classList.remove("placeholder");
+  }
+}
+
+// ============================================
 // CAMPAIGN OBJECTIVE TO CTA MAPPING
 // ============================================
 
@@ -917,6 +1026,9 @@ class SingleSelectGroup {
                 // Update pixel/event type UI based on optimization goal
                 updateConversionFieldsVisibility(optimizationGoal);
               }
+
+              // Update destination type dropdown based on campaign objective
+              updateDestinationTypeOptions(campaignObjective, ".dropdown-options.destination-type");
             }
 
             this.adjustConfigSettings(appState.getState().campaignBidStrategy, appState.getState().campaignDailyBudget, appState.getState().campaignLifetimeBudget);
@@ -2278,9 +2390,13 @@ class UploadForm {
       }
     }
 
+    // Get destination type from dropdown
+    const destTypeDropdown = document.querySelector('.dropdown-selected[data-dropdown="destination-type"] .dropdown-display');
+    const destinationType = destTypeDropdown?.dataset.value;
+
     const payload = {
       account_id: document.querySelector(".account.selected").dataset.campaignId,
-      destination_type: document.querySelector(".config-destination-type").value,
+      ...(destinationType && !destTypeDropdown.classList.contains("placeholder") && { destination_type: destinationType }),
       optimization_goal: optimizationGoal,
       billing_event: document.querySelector(".config-billing-event").value,
       bid_strategy: bidStrategy,
@@ -4078,24 +4194,28 @@ class FileUploadHandler {
       }
     }
 
-    // Apply CTA filtering based on campaign objective
-    const selectedCampaignId = appState.getState().selectedCampaign;
-    if (selectedCampaignId) {
-      const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
-      if (campaignElement) {
-        const campaignObjective = campaignElement.dataset.objective;
-        if (campaignObjective) {
-          console.log(`[showAdCopySection] Applying CTA filtering for objective: ${campaignObjective}`);
-          updateCTAOptions(campaignObjective);
-        } else {
-          console.warn("[showAdCopySection] Campaign objective not found on campaign element");
-        }
-      } else {
-        console.warn("[showAdCopySection] Campaign element not found for ID:", selectedCampaignId);
-      }
-    } else {
-      console.warn("[showAdCopySection] No campaign selected in appState");
-    }
+    // Apply CTA filtering based on campaign objective - DISABLED FOR NOW
+    // CTA curation temporarily disabled to let users choose freely
+    // const selectedCampaignId = appState.getState().selectedCampaign;
+    // if (selectedCampaignId) {
+    //   const campaignElement = document.querySelector(`.campaign[data-campaign-id="${selectedCampaignId}"]`);
+    //   if (campaignElement) {
+    //     const campaignObjective = campaignElement.dataset.objective;
+    //     if (campaignObjective) {
+    //       console.log(`[showAdCopySection] Applying CTA filtering for objective: ${campaignObjective}`);
+    //       updateCTAOptions(campaignObjective);
+    //     } else {
+    //       console.warn("[showAdCopySection] Campaign objective not found on campaign element");
+    //     }
+    //   } else {
+    //     console.warn("[showAdCopySection] Campaign element not found for ID:", selectedCampaignId);
+    //   }
+    // } else {
+    //   console.warn("[showAdCopySection] No campaign selected in appState");
+    // }
+
+    // Initialize CTA search functionality
+    this.initializeCTASearch();
 
     adCopySection.scrollIntoView({
       behavior: "smooth",
@@ -4109,6 +4229,99 @@ class FileUploadHandler {
         this.showReviewSection();
       }
     };
+  }
+
+  initializeCTASearch() {
+    const ctaSearchInput = document.querySelector(".ad-copy-container .cta-search-input");
+    const ctaDropdownOptions = document.querySelector(".ad-copy-container .dropdown-options.cta");
+
+    if (!ctaSearchInput || !ctaDropdownOptions) {
+      console.warn("[initializeCTASearch] CTA search input or dropdown not found");
+      return;
+    }
+
+    // Get all CTA options (excluding the search container)
+    const allCtaOptions = Array.from(ctaDropdownOptions.querySelectorAll("li:not(.cta-search-container)"));
+
+    // Prevent search input from closing dropdown when clicked
+    ctaSearchInput.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
+    // Prevent search input from triggering dropdown selection
+    ctaSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+
+    // Search functionality
+    ctaSearchInput.addEventListener("input", (e) => {
+      const searchTerm = e.target.value.toLowerCase().trim();
+
+      if (searchTerm.length === 0) {
+        // Show all options when search is empty
+        allCtaOptions.forEach((option) => {
+          option.style.display = "block";
+        });
+        return;
+      }
+
+      // Filter options based on search term
+      let hasVisibleOptions = false;
+      allCtaOptions.forEach((option) => {
+        const optionText = option.textContent.toLowerCase();
+        const optionValue = option.dataset.value ? option.dataset.value.toLowerCase() : "";
+
+        if (optionText.includes(searchTerm) || optionValue.includes(searchTerm)) {
+          option.style.display = "block";
+          hasVisibleOptions = true;
+        } else {
+          option.style.display = "none";
+        }
+      });
+
+      // Show "no results" message if no options match
+      let noResultsMsg = ctaDropdownOptions.querySelector(".cta-no-results");
+      if (!hasVisibleOptions) {
+        if (!noResultsMsg) {
+          noResultsMsg = document.createElement("li");
+          noResultsMsg.className = "cta-no-results";
+          noResultsMsg.style.cssText = "padding: 8px 12px; color: #999; font-style: italic; pointer-events: none;";
+          noResultsMsg.textContent = "No CTA options found";
+          ctaDropdownOptions.appendChild(noResultsMsg);
+        }
+        noResultsMsg.style.display = "block";
+      } else if (noResultsMsg) {
+        noResultsMsg.style.display = "none";
+      }
+    });
+
+    // Clear search when dropdown closes
+    const ctaDropdown = ctaDropdownOptions.closest(".custom-dropdown");
+    if (ctaDropdown) {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.attributeName === "class") {
+            const isOpen = ctaDropdownOptions.classList.contains("show");
+            if (!isOpen) {
+              // Clear search and show all options when dropdown closes
+              ctaSearchInput.value = "";
+              allCtaOptions.forEach((option) => {
+                option.style.display = "block";
+              });
+              const noResultsMsg = ctaDropdownOptions.querySelector(".cta-no-results");
+              if (noResultsMsg) {
+                noResultsMsg.style.display = "none";
+              }
+            }
+          }
+        });
+      });
+
+      observer.observe(ctaDropdownOptions, { attributes: true, attributeFilter: ["class"] });
+    }
   }
 
   validateAdCopyForm() {
@@ -7033,6 +7246,8 @@ function setupCampaignBudgetMode() {
   const budgetSuffix = column.querySelector(".campaign-budget-suffix");
   const endDateContainer = column.querySelector(".campaign-end-date-container");
   const pacingTypeDisplay = column.querySelector('[data-dropdown="campaign-pacing-type"] .dropdown-display');
+  const pacingTypeOptions = column.querySelector(".dropdown-options.campaign-pacing-type");
+  const pacingRecommendation = column.querySelector(".pacing-recommendation");
   const scheduleContainer = column.querySelector(".campaign-schedule-container");
   const addScheduleBtn = column.querySelector(".add-campaign-schedule-btn");
   const scheduleList = column.querySelector(".campaign-schedule-list");
@@ -7041,6 +7256,41 @@ function setupCampaignBudgetMode() {
   const minRoasContainer = column.querySelector(".campaign-min-roas-container");
 
   let campaignScheduleCounter = 0;
+
+  // Helper function to update pacing recommendation
+  function updatePacingRecommendation(budgetMode) {
+    if (!pacingRecommendation) return;
+
+    if (budgetMode === "CAMPAIGN_LEVEL") {
+      pacingRecommendation.innerHTML = "Use <strong>Scheduled Delivery</strong> if you want to run ads on specific days/times. Otherwise, choose <strong>Standard Delivery</strong> for balanced spending.";
+
+      // Auto-select day_parting for campaign budget
+      if (pacingTypeDisplay && pacingTypeOptions) {
+        const dayPartingOption = pacingTypeOptions.querySelector('li[data-value="day_parting"]');
+        if (dayPartingOption) {
+          pacingTypeDisplay.textContent = dayPartingOption.textContent;
+          pacingTypeDisplay.classList.remove("placeholder");
+          pacingTypeDisplay.dataset.value = "day_parting";
+          pacingTypeOptions.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+          dayPartingOption.classList.add("selected");
+        }
+      }
+    } else {
+      pacingRecommendation.innerHTML = "Use <strong>Standard Delivery</strong> to spread your budget evenly throughout the day (recommended for most campaigns).";
+
+      // Auto-select standard for ad set budget
+      if (pacingTypeDisplay && pacingTypeOptions) {
+        const standardOption = pacingTypeOptions.querySelector('li[data-value="standard"]');
+        if (standardOption) {
+          pacingTypeDisplay.textContent = standardOption.textContent;
+          pacingTypeDisplay.classList.remove("placeholder");
+          pacingTypeDisplay.dataset.value = "standard";
+          pacingTypeOptions.querySelectorAll("li").forEach((opt) => opt.classList.remove("selected"));
+          standardOption.classList.add("selected");
+        }
+      }
+    }
+  }
 
   // Toggle budget fields based on mode selection
   budgetModeRadios.forEach((radio) => {
@@ -7062,8 +7312,17 @@ function setupCampaignBudgetMode() {
         allLabels[0].style.borderColor = "#ddd";
         allLabels[0].style.background = "white";
       }
+
+      // Update pacing recommendation based on budget mode
+      updatePacingRecommendation(e.target.value);
     });
   });
+
+  // Set initial pacing recommendation
+  const initialBudgetMode = column.querySelector('input[name="campaign-budget-mode"]:checked')?.value;
+  if (initialBudgetMode) {
+    updatePacingRecommendation(initialBudgetMode);
+  }
 
   // Budget type change handler (Daily vs Lifetime) - Simplified since pacing/schedule are hidden
   const budgetTypeOptions = column.querySelectorAll(".dropdown-options.campaign-budget-type li");
@@ -7509,6 +7768,13 @@ async function handleCampaignCreation() {
 
       if (bidStrategy) {
         requestBody.bid_strategy = bidStrategy;
+      }
+
+      // Get pacing type (only for campaign-level budget)
+      const pacingTypeDisplay = column.querySelector('[data-dropdown="campaign-pacing-type"] .dropdown-display');
+      const pacingType = pacingTypeDisplay?.dataset.value;
+      if (pacingType) {
+        requestBody.pacing_type = [pacingType];
       }
 
       // Note: Bid amount and ROAS constraints are managed at ad set level
@@ -12382,6 +12648,10 @@ function setupMultiCampaignAdSetModal() {
           return false;
         });
 
+      // Get the common campaign objective from selected campaigns
+      const commonObjective = selectedCampaigns.length > 0 ? selectedCampaigns[0].element?.dataset?.objective : null;
+      console.log("[Multi-Campaign AdSet] Common objective for selected campaigns:", commonObjective);
+
       // Initialize dropdowns for step 2
       setTimeout(() => {
         // Show special ad category compatibility warning if needed (SOFT WARNING - tidak blocking)
@@ -12398,6 +12668,11 @@ function setupMultiCampaignAdSetModal() {
 
         // First populate pages and pixels before initializing dropdowns
         initializePagePixelForModal();
+
+        // Update destination type dropdown based on common campaign objective
+        if (commonObjective) {
+          updateDestinationTypeOptions(commonObjective, ".dropdown-options.destination-type-multi");
+        }
 
         // Then initialize all custom dropdowns
         new CustomDropdown(".multi-campaign-adset-form .custom-dropdown");
@@ -12640,11 +12915,16 @@ function setupMultiCampaignAdSetModal() {
     const selectedAccount = document.querySelector(".account.selected");
     const accountId = selectedAccount?.dataset.campaignId || "";
 
+    // Get destination type from dropdown
+    const destTypeDropdown = form.querySelector('.dropdown-selected[data-dropdown="destination-type-multi"] .dropdown-display');
+    const destinationType = destTypeDropdown?.dataset.value;
+
     const payload = {
       account_id: accountId,
       campaign_ids: selectedCampaignIds,
       name: form.querySelector(".config-adset-name").value.trim(),
       status: statusDropdown?.dataset.value || "PAUSED",
+      ...(destinationType && !destTypeDropdown.classList.contains("placeholder") && { destination_type: destinationType }),
       start_time: form.querySelector(".config-start-datetime").value,
       targeting: {},
     };
