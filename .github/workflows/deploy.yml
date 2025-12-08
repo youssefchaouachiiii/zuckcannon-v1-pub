@@ -1,0 +1,209 @@
+name: Deploy App
+
+on:
+  push:
+    branches:
+      - staging
+      - production
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test --if-present
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/zuckcannon
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & Push Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            
+            BRANCH="${{ github.ref_name }}"
+            IMAGE="${{ secrets.DOCKER_USERNAME }}/zuckcannon:${BRANCH}"
+            CONTAINER_NAME="zuckcannon"
+            
+            echo "========================================="
+            echo "Deploying to ${BRANCH} environment"
+            echo "Image: ${IMAGE}"
+            echo "========================================="
+            
+            # Pull the latest image
+            echo "Pulling latest image..."
+            docker pull "${IMAGE}" || { echo "Failed to pull image"; exit 1; }
+            
+            # Stop and remove old container
+            echo "Stopping old container..."
+            docker stop ${CONTAINER_NAME} || true
+            docker rm ${CONTAINER_NAME} || true
+            
+            # Start new container with environment variables
+            echo "Starting new container..."
+            docker run -d \
+              --name ${CONTAINER_NAME} \
+              --restart unless-stopped \
+              --env-file /root/zuck/.env \
+              -p 3000:3000 \
+              --health-cmd='wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1' \
+              --health-interval=30s \
+              --health-timeout=10s \
+              --health-retries=3 \
+              --health-start-period=40s \
+              "${IMAGE}"
+            
+            # Wait for container to be healthy
+            echo "Waiting for container to be healthy..."
+            for i in {1..30}; do
+              if docker ps --filter "name=${CONTAINER_NAME}" --filter "health=healthy" | grep -q "${CONTAINER_NAME}"; then
+                echo "✓ Container is healthy"
+                break
+              fi
+              echo "  Attempt $i/30..."
+              sleep 2
+            done
+            
+            # Cleanup
+            echo "Cleaning up unused images..."
+            docker image prune -af --filter "until=24h"
+            
+            echo "========================================="
+            echo "✓ Deployment completed successfully"
+            echo "========================================="
+
+      - name: Notify deployment status
+        if: always()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            STATUS="${{ job.status }}"
+            if [ "$STATUS" = "success" ]; then
+              echo "✓ Deployment successful for ${{ github.ref_name }}"
+            else
+              echo "✗ Deployment failed for ${{ github.ref_name }}"
+              exit 1
+            fi
+
+  promote-to-production:
+    needs: deploy
+    if: github.ref == 'refs/heads/staging' && success()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions[bot]@github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Promote staging to production
+        run: |
+          echo "========================================="
+          echo "Promoting staging to production branch"
+          echo "========================================="
+          
+          # Get staging branch commit hash
+          STAGING_COMMIT=$(git rev-parse origin/staging)
+          echo "Staging commit: ${STAGING_COMMIT:0:7}"
+          
+          # Switch to production branch
+          git checkout production
+          
+          # Merge staging into production
+          git merge --ff-only origin/staging || {
+            echo "✗ Fast-forward merge failed. Using merge commit instead..."
+            git merge -m "Merge staging into production (${STAGING_COMMIT:0:7})" origin/staging
+          }
+          
+          # Push to production
+          git push origin production
+          
+          echo "========================================="
+          echo "✓ Successfully promoted staging → production"
+          echo "========================================="
+
+      - name: Create release tag
+        if: success()
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TAG="production-${TIMESTAMP}"
+          echo "Creating tag: ${TAG}"
+          
+          git tag -a "${TAG}" -m "Production release from staging"
+          git push origin "${TAG}"
+          
+          echo "✓ Release tag created: ${TAG}"
