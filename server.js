@@ -3439,12 +3439,29 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               data_keys: Object.keys(batchResponse.data || {}),
             });
 
+            // Log full response for debugging if it has unexpected format
+            if (batchResponse.data && Object.keys(batchResponse.data).some(k => /^\d+$/.test(k))) {
+              console.warn(`[AD-BATCH ${index + 1}] ⚠️ Response has numeric keys (unusual):`, JSON.stringify(batchResponse.data, null, 2));
+            }
+
             // Extract batch request ID following Meta API documentation
             // The response should have an 'id' field (shown by default per Meta docs)
             let batchRequestId = null;
 
+            // Check if response has numeric keys - this indicates synchronous execution (batch results returned inline)
+            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some(k => /^\d+$/.test(k));
+            if (hasNumericKeys) {
+              console.log(`[AD-BATCH ${index + 1}] ℹ️ Synchronous batch execution detected (numeric keys in response)`);
+              // When Meta executes synchronously, results are returned inline with numeric keys
+              // In this case, we'll create a synthetic batch ID for tracking purposes
+              batchRequestId = `sync_${Date.now()}_${index}`;
+              console.log(`[AD-BATCH ${index + 1}] ✅ Created synthetic batch ID for synchronous execution: ${batchRequestId}`);
+              
+              // Log the actual results for debugging
+              console.log(`[AD-BATCH ${index + 1}] Synchronous results:`, JSON.stringify(batchResponse.data, null, 2));
+            }
             // Priority: Try the documented response format first
-            if (batchResponse.data?.id) {
+            else if (batchResponse.data?.id) {
               batchRequestId = batchResponse.data.id;
               console.log(`[AD-BATCH ${index + 1}] ✅ ID extracted from data.id: ${batchRequestId}`);
             }
@@ -3478,6 +3495,11 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                   },
                 });
 
+                console.log(`[AD-BATCH ${index + 1}] Pending batches response:`, {
+                  total_items: pendingResponse.data?.data?.length || 0,
+                  first_batch: pendingResponse.data?.data?.[0]?.id
+                });
+
                 // Get the most recent pending batch (likely ours - created just now)
                 const recentBatch = pendingResponse.data?.data?.[0];
                 if (recentBatch?.id) {
@@ -3487,14 +3509,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                   console.error(`[AD-BATCH ${index + 1}] ❌ No pending batches found`);
                 }
               } catch (fetchErr) {
-                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, fetchErr.message);
+                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, {
+                  error: fetchErr.message,
+                  status: fetchErr.response?.status,
+                  data: fetchErr.response?.data
+                });
               }
             }
 
             // If STILL no ID after all attempts, throw descriptive error
             if (!batchRequestId) {
-              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response structure: ${Object.keys(batchResponse.data || {}).join(", ")}`;
+              const dataInfo = batchResponse.data ? Object.keys(batchResponse.data).join(", ") : "no data";
+              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response keys: ${dataInfo}`;
               console.error(`[AD-BATCH ${index + 1}] ❌ ${errorMsg}`);
+              console.error(`[AD-BATCH ${index + 1}] Full response for debugging:`, JSON.stringify(batchResponse.data, null, 2));
               throw new Error(errorMsg);
             }
 
@@ -3828,6 +3856,13 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           return "sync_" + Date.now();
         }
 
+        // Check if response has numeric keys - this indicates synchronous execution (inline results)
+        const hasNumericKeys = data && Object.keys(data).some(k => /^\d+$/.test(k));
+        if (hasNumericKeys) {
+          console.log(`[CAMPAIGN-BATCH] ${label} - Response with numeric keys detected (synchronous execution)`);
+          return "sync_" + Date.now();
+        }
+
         // Extract batch ID per Meta API docs: response should have 'id' field (shown by default)
         let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
 
@@ -4011,6 +4046,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         // Extract batch ID per Meta API docs (for async execution)
         let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Check if response has numeric keys - this also indicates synchronous execution
+        if (!batchId && data && Object.keys(data).some(k => /^\d+$/.test(k))) {
+          console.warn(`[ADSET-BATCH ${i + 1}] Response with numeric keys detected (synchronous execution)`);
+          batchId = "sync_" + Date.now() + "_" + i;
+        }
 
         // Fallback: Query pending batches if ID not in response
         if (!batchId) {
@@ -4543,6 +4584,21 @@ app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (re
   }
 
   try {
+    // Check if this is a synthetic sync batch ID (from synchronous execution)
+    if (batch_id.startsWith("sync_")) {
+      console.log(`[BATCH-STATUS] Synthetic sync batch ID detected: ${batch_id}`);
+      return res.json({
+        status: "completed",
+        batch_id,
+        is_completed: true,
+        success_count: 1,
+        error_count: 0,
+        in_progress_count: 0,
+        total_count: 1,
+        message: "Batch executed synchronously and completed immediately",
+      });
+    }
+
     const statusUrl = `https://graph.facebook.com/${api_version}/${batch_id}`;
     const response = await axios.get(statusUrl, {
       params: {
