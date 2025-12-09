@@ -1047,6 +1047,19 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
   const token = userAccessToken || access_token;
 
   try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Image file not found: ${filePath}`);
+    }
+
+    // Check file size - minimum 1KB for valid image
+    const stats = fs.statSync(filePath);
+    if (stats.size < 1024) {
+      throw new Error(`Image file too small (${stats.size} bytes - less than 1KB). The file may be corrupted or incomplete. Please try uploading again.`);
+    }
+
+    console.log(`Uploading image to Meta: ${filePath} (${stats.size} bytes)`);
+
     const fd = new FormData();
     fd.append("source", fs.createReadStream(filePath));
     fd.append("access_token", token);
@@ -5382,7 +5395,14 @@ app.post("/api/create-ad-creative", (req, res) => {
     async function createAdCreative(asset) {
       let creativeData;
 
-      const adName = asset.adName || name;
+      // Generate ad name: use asset.adName if provided, otherwise use request name, otherwise use filename
+      let adName = asset.adName || name;
+      
+      // If still no name, use the creative filename
+      if (!adName || adName === 'creative') {
+        adName = asset.value.creativeId || 'ad';
+      }
+
       const assetType = asset.value.type;
 
       // IZAK - i believe to update the display link it is "caption" https://developers.facebook.com/docs/marketing-api/reference/ad-creative-link-data/
@@ -5414,6 +5434,51 @@ app.post("/api/create-ad-creative", (req, res) => {
         }
       } else {
         // payload for image upload
+        let imageHash = asset.value.imageHash || 
+                        asset.value.facebookIds?.facebook_image_hash ||
+                        asset.value.data?.imageHash;
+        
+        // If image is from library, fetch the hash from database
+        if (asset.value.isFromLibrary && !imageHash && asset.value.creativeId) {
+          console.log(`[createAdCreative] Fetching imageHash from library for: ${asset.value.creativeId}`);
+          try {
+            // Search for creative by filename
+            const creatives = await CreativeDB.search(asset.value.creativeId);
+            
+            if (creatives && creatives.length > 0) {
+              const creative = creatives[0];
+              // Get the Facebook IDs for this account
+              const fbIds = await CreativeAccountDB.getFacebookIds(creative.id, account_id);
+              imageHash = fbIds?.facebook_image_hash;
+              console.log(`[createAdCreative] Found imageHash from database: ${imageHash}`);
+            } else {
+              console.warn(`[createAdCreative] Creative not found in library: ${asset.value.creativeId}`);
+            }
+          } catch (dbError) {
+            console.error(`[createAdCreative] Error fetching from database:`, dbError.message);
+          }
+        }
+        
+        // Log for debugging
+        console.log(`[createAdCreative] Processing image asset:`, {
+          adName,
+          assetType,
+          imageHash,
+          isFromLibrary: asset.value.isFromLibrary,
+          creativeId: asset.value.creativeId,
+          assetValueKeys: Object.keys(asset.value)
+        });
+        
+        // Validate imageHash exists and is not empty
+        if (!imageHash || typeof imageHash !== 'string' || imageHash.trim() === '') {
+          console.error(`[createAdCreative] Invalid imageHash for ad "${adName}":`, {
+            imageHash,
+            assetValue: asset.value,
+            asset: asset
+          });
+          throw new Error(`Invalid image hash for ad "${adName}". Image from library could not be found. Please try uploading the image again.`);
+        }
+        
         creativeData = {
           name: adName,
           object_story_spec: {
@@ -5421,7 +5486,7 @@ app.post("/api/create-ad-creative", (req, res) => {
               message,
               link,
               name: headline, // Headline text - shown as the main title
-              image_hash: asset.value.imageHash,
+              image_hash: imageHash,
               description,
               call_to_action: {
                 type,
