@@ -27,6 +27,7 @@ import { validateRequest, loginRateLimiter, apiRateLimiter } from "./backend/mid
 import { getPaths } from "./backend/utils/paths.js";
 import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
+import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -208,6 +209,24 @@ const oauth2Client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.
 oauth2Client.setCredentials({
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
 });
+
+// Setup axios interceptor to track Facebook API rate limits
+axios.interceptors.response.use(
+  (response) => {
+    // Track rate limits from Facebook Graph API responses
+    if (response.config.url && response.config.url.includes("graph.facebook.com")) {
+      trackRateLimitFromResponse(response);
+    }
+    return response;
+  },
+  (error) => {
+    // Track rate limits even from error responses
+    if (error.response && error.config.url && error.config.url.includes("graph.facebook.com")) {
+      trackRateLimitFromResponse(error.response);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // SSE Upload Progress Management
 const uploadSessions = new Map();
@@ -608,6 +627,31 @@ app.delete("/api/meta-cache", async (req, res) => {
   }
 });
 
+// Rate limit statistics endpoint
+app.get("/api/rate-limit-stats", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const allUsage = rateLimitTracker.getAllUsage();
+    const summary = rateLimitTracker.getSummary();
+
+    res.json({
+      success: true,
+      accounts: allUsage.map((usage) => ({
+        accountId: usage.accountId,
+        callCount: usage.callCount,
+        tier: usage.tier,
+        totalTime: usage.totalTime,
+        estimatedTimeToRegainAccess: usage.estimatedTimeToRegainAccess,
+        status: rateLimitTracker.isCritical(usage) ? "CRITICAL" : rateLimitTracker.isApproachingLimit(usage) ? "WARNING" : "OK",
+        timestamp: new Date(usage.timestamp).toISOString(),
+      })),
+      summary,
+    });
+  } catch (error) {
+    console.error("Error fetching rate limit stats:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create upload session endpoint
 app.post("/api/create-upload-session", (req, res) => {
   const sessionId = createUploadSession();
@@ -880,6 +924,10 @@ async function fetchUserAdAccounts(userAccessToken) {
         fields: "name,id,account_id,business{id,name}",
       },
     });
+
+    // Track rate limit from response
+    trackRateLimitFromResponse(adAccResponse);
+
     return { adAccounts: adAccResponse.data.data };
   } catch (err) {
     console.error("❌ Error fetching user ad accounts:", err.message);
@@ -961,8 +1009,12 @@ async function fetchAssignedPages() {
 async function fetchCampaigns(account_id, userAccessToken = null) {
   const campaignUrl = `https://graph.facebook.com/${api_version}/${account_id}/campaigns`;
   const token = userAccessToken || access_token;
+  const normalizedAccountId = normalizeAdAccountId(account_id);
 
   try {
+    // Enforce rate limiting before making request
+    await enforceRateLimit(normalizedAccountId);
+
     const campaignResponse = await axios.get(campaignUrl, {
       params: {
         fields: "account_id,id,name,objective,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,lifetime_budget,created_time",
@@ -1047,6 +1099,9 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
   const token = userAccessToken || access_token;
 
   try {
+    // Enforce rate limiting before making request
+    await enforceRateLimit(normalizedAccountId);
+
     // Check if file exists
     if (!fs.existsSync(filePath)) {
       throw new Error(`Image file not found: ${filePath}`);
@@ -1072,6 +1127,7 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
       maxBodyLength: Infinity,
     });
 
+    // Response is automatically tracked by axios interceptor
     console.log("Successfully uploaded image to Meta!");
     const images = response.data.images;
     const dynamicKey = Object.keys(images)[0];
@@ -3440,7 +3496,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             });
 
             // Log full response for debugging if it has unexpected format
-            if (batchResponse.data && Object.keys(batchResponse.data).some(k => /^\d+$/.test(k))) {
+            if (batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k))) {
               console.warn(`[AD-BATCH ${index + 1}] ⚠️ Response has numeric keys (unusual):`, JSON.stringify(batchResponse.data, null, 2));
             }
 
@@ -3449,14 +3505,14 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             let batchRequestId = null;
 
             // Check if response has numeric keys - this indicates synchronous execution (batch results returned inline)
-            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some(k => /^\d+$/.test(k));
+            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k));
             if (hasNumericKeys) {
               console.log(`[AD-BATCH ${index + 1}] ℹ️ Synchronous batch execution detected (numeric keys in response)`);
               // When Meta executes synchronously, results are returned inline with numeric keys
               // In this case, we'll create a synthetic batch ID for tracking purposes
               batchRequestId = `sync_${Date.now()}_${index}`;
               console.log(`[AD-BATCH ${index + 1}] ✅ Created synthetic batch ID for synchronous execution: ${batchRequestId}`);
-              
+
               // Log the actual results for debugging
               console.log(`[AD-BATCH ${index + 1}] Synchronous results:`, JSON.stringify(batchResponse.data, null, 2));
             }
@@ -3497,7 +3553,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
                 console.log(`[AD-BATCH ${index + 1}] Pending batches response:`, {
                   total_items: pendingResponse.data?.data?.length || 0,
-                  first_batch: pendingResponse.data?.data?.[0]?.id
+                  first_batch: pendingResponse.data?.data?.[0]?.id,
                 });
 
                 // Get the most recent pending batch (likely ours - created just now)
@@ -3512,7 +3568,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                 console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, {
                   error: fetchErr.message,
                   status: fetchErr.response?.status,
-                  data: fetchErr.response?.data
+                  data: fetchErr.response?.data,
                 });
               }
             }
@@ -3857,7 +3913,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         }
 
         // Check if response has numeric keys - this indicates synchronous execution (inline results)
-        const hasNumericKeys = data && Object.keys(data).some(k => /^\d+$/.test(k));
+        const hasNumericKeys = data && Object.keys(data).some((k) => /^\d+$/.test(k));
         if (hasNumericKeys) {
           console.log(`[CAMPAIGN-BATCH] ${label} - Response with numeric keys detected (synchronous execution)`);
           return "sync_" + Date.now();
@@ -4048,7 +4104,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
 
         // Check if response has numeric keys - this also indicates synchronous execution
-        if (!batchId && data && Object.keys(data).some(k => /^\d+$/.test(k))) {
+        if (!batchId && data && Object.keys(data).some((k) => /^\d+$/.test(k))) {
           console.warn(`[ADSET-BATCH ${i + 1}] Response with numeric keys detected (synchronous execution)`);
           batchId = "sync_" + Date.now() + "_" + i;
         }
@@ -5453,10 +5509,10 @@ app.post("/api/create-ad-creative", (req, res) => {
 
       // Generate ad name: use asset.adName if provided, otherwise use request name, otherwise use filename
       let adName = asset.adName || name;
-      
+
       // If still no name, use the creative filename
-      if (!adName || adName === 'creative') {
-        adName = asset.value.creativeId || 'ad';
+      if (!adName || adName === "creative") {
+        adName = asset.value.creativeId || "ad";
       }
 
       const assetType = asset.value.type;
@@ -5490,17 +5546,15 @@ app.post("/api/create-ad-creative", (req, res) => {
         }
       } else {
         // payload for image upload
-        let imageHash = asset.value.imageHash || 
-                        asset.value.facebookIds?.facebook_image_hash ||
-                        asset.value.data?.imageHash;
-        
+        let imageHash = asset.value.imageHash || asset.value.facebookIds?.facebook_image_hash || asset.value.data?.imageHash;
+
         // If image is from library, fetch the hash from database
         if (asset.value.isFromLibrary && !imageHash && asset.value.creativeId) {
           console.log(`[createAdCreative] Fetching imageHash from library for: ${asset.value.creativeId}`);
           try {
             // Search for creative by filename
             const creatives = await CreativeDB.search(asset.value.creativeId);
-            
+
             if (creatives && creatives.length > 0) {
               const creative = creatives[0];
               // Get the Facebook IDs for this account
@@ -5514,7 +5568,7 @@ app.post("/api/create-ad-creative", (req, res) => {
             console.error(`[createAdCreative] Error fetching from database:`, dbError.message);
           }
         }
-        
+
         // Log for debugging
         console.log(`[createAdCreative] Processing image asset:`, {
           adName,
@@ -5522,19 +5576,19 @@ app.post("/api/create-ad-creative", (req, res) => {
           imageHash,
           isFromLibrary: asset.value.isFromLibrary,
           creativeId: asset.value.creativeId,
-          assetValueKeys: Object.keys(asset.value)
+          assetValueKeys: Object.keys(asset.value),
         });
-        
+
         // Validate imageHash exists and is not empty
-        if (!imageHash || typeof imageHash !== 'string' || imageHash.trim() === '') {
+        if (!imageHash || typeof imageHash !== "string" || imageHash.trim() === "") {
           console.error(`[createAdCreative] Invalid imageHash for ad "${adName}":`, {
             imageHash,
             assetValue: asset.value,
-            asset: asset
+            asset: asset,
           });
           throw new Error(`Invalid image hash for ad "${adName}". Image from library could not be found. Please try uploading the image again.`);
         }
-        
+
         creativeData = {
           name: adName,
           object_story_spec: {
