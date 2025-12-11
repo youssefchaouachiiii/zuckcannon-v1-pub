@@ -8,6 +8,11 @@ export class RateLimitTracker {
     this.usageHistory = new Map(); // accountId -> usage data
     this.warningThreshold = 25; // Warn at 25 calls (Development tier ~100 calls/hour)
     this.criticalThreshold = 80; // Critical at 80% of limit
+    
+    // Debouncing untuk warning agar tidak berulang-ulang
+    this.lastWarningTime = new Map(); // accountId -> timestamp
+    this.warningDebounceMs = 5000; // 5 second debounce untuk WARNING tier
+    this.criticalDebounceMs = 10000; // 10 second debounce untuk CRITICAL tier
   }
 
   /**
@@ -45,23 +50,42 @@ export class RateLimitTracker {
   }
 
   /**
-   * Update usage history for an account
+   * Update usage history for an account with debounced warnings
    * @param {object} usageData - Parsed usage data from parseBusinessUsageHeader
    */
   updateUsage(usageData) {
     if (!usageData || !usageData.accountId) return;
 
-    this.usageHistory.set(usageData.accountId, usageData);
+    const accountId = usageData.accountId;
+    this.usageHistory.set(accountId, usageData);
 
-    // Log if approaching limits
-    if (this.isApproachingLimit(usageData)) {
-      console.warn(`[RateLimitTracker] ⚠️ Ad Account ${usageData.accountId} approaching rate limit:\n` + `  Calls: ${usageData.callCount} | Tier: ${usageData.tier}\n` + `  Time to regain access: ${usageData.estimatedTimeToRegainAccess}s`);
-    }
+    // Get current debounce status
+    const lastWarning = this.lastWarningTime.get(accountId) || 0;
+    const now = Date.now();
+    const timeSinceLastWarning = now - lastWarning;
 
+    // Check if CRITICAL (high priority warning - less debounce)
     if (this.isCritical(usageData)) {
-      console.error(
-        `[RateLimitTracker] 🚨 Ad Account ${usageData.accountId} CRITICAL rate limit:\n` + `  Calls: ${usageData.callCount} | Time to regain: ${usageData.estimatedTimeToRegainAccess}s\n` + `  RECOMMEND: Pause operations for this account!`
-      );
+      if (timeSinceLastWarning >= this.criticalDebounceMs) {
+        console.error(
+          `[RateLimitTracker] 🚨 Ad Account ${accountId} CRITICAL rate limit:\n` +
+          `  Calls: ${usageData.callCount} | Tier: ${usageData.tier}\n` +
+          `  Time to regain: ${usageData.estimatedTimeToRegainAccess}s\n` +
+          `  RECOMMEND: Pause operations for this account!`
+        );
+        this.lastWarningTime.set(accountId, now);
+      }
+    }
+    // Check if APPROACHING (warning priority - more debounce)
+    else if (this.isApproachingLimit(usageData)) {
+      if (timeSinceLastWarning >= this.warningDebounceMs) {
+        console.warn(
+          `[RateLimitTracker] ⚠️ Ad Account ${accountId} approaching rate limit:\n` +
+          `  Calls: ${usageData.callCount} | Tier: ${usageData.tier}\n` +
+          `  Time to regain access: ${usageData.estimatedTimeToRegainAccess}s`
+        );
+        this.lastWarningTime.set(accountId, now);
+      }
     }
   }
 
@@ -153,6 +177,64 @@ export class RateLimitTracker {
    */
   clearUsage(accountId) {
     this.usageHistory.delete(accountId);
+  }
+
+  /**
+   * Get current TIER based on call_count for an account
+   * Sesuai dengan TIER system di AdaptiveSerialQueue
+   * @param {string} accountId - Ad account ID
+   * @returns {object} { tier, callCount, estimatedTimeToRegainAccess, recommendation }
+   */
+  getCurrentTier(accountId) {
+    const usage = this.getUsage(accountId);
+    if (!usage) {
+      return {
+        tier: "UNKNOWN",
+        callCount: 0,
+        estimatedTimeToRegainAccess: 0,
+        recommendation: "No usage data",
+      };
+    }
+
+    const { callCount, estimatedTimeToRegainAccess } = usage;
+
+    // TIER 1 - BLOCKED
+    if (estimatedTimeToRegainAccess > 0) {
+      return {
+        tier: "BLOCKED",
+        callCount,
+        estimatedTimeToRegainAccess,
+        recommendation: `🛑 BLOCKED: Wait ${estimatedTimeToRegainAccess}s for access to regain`,
+      };
+    }
+
+    // TIER 2 - CRITICAL
+    if (callCount > 85) {
+      return {
+        tier: "CRITICAL",
+        callCount,
+        estimatedTimeToRegainAccess: 0,
+        recommendation: "⚠️ CRITICAL: Apply 300s delay, approaching hard limit",
+      };
+    }
+
+    // TIER 3 - WARNING
+    if (callCount >= 50 && callCount <= 85) {
+      return {
+        tier: "WARNING",
+        callCount,
+        estimatedTimeToRegainAccess: 0,
+        recommendation: "⚡ WARNING: Apply 15-20s random delay, getting close to limit",
+      };
+    }
+
+    // TIER 4 - SAFE
+    return {
+      tier: "SAFE",
+      callCount,
+      estimatedTimeToRegainAccess: 0,
+      recommendation: "✅ SAFE: Apply 5s delay, normal operations",
+    };
   }
 
   /**
