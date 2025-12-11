@@ -181,14 +181,10 @@ export class AdaptiveSerialQueue {
         // Check if it's a rate limit error
         const isRateLimitError = error.response?.status === 429 || error.response?.data?.error?.code === 80004 || error.response?.data?.error?.error_subcode === 2446079;
 
-        const errorDetails = this.extractErrorDetails(error);
-
         if (isRateLimitError && attempt < this.maxRetries) {
           // Exponential backoff for rate limit errors
           const backoffDelay = this.calculateBackoffDelay(attempt);
-          console.warn(`[AdaptiveSerialQueue] ⏱️  Rate limit hit for operation ${operation.id} (${operation.type})`);
-          console.warn(`   Status: ${errorDetails.statusCode}, Facebook Error: ${errorDetails.fbErrorMessage || errorDetails.message}`);
-          console.warn(`   Retry ${attempt}/${this.maxRetries} after ${backoffDelay}ms`);
+          console.warn(`[AdaptiveSerialQueue] Rate limit hit for operation ${operation.id}. ` + `Retry ${attempt}/${this.maxRetries} after ${backoffDelay}ms`);
 
           await new Promise((resolve) => setTimeout(resolve, backoffDelay));
 
@@ -197,9 +193,7 @@ export class AdaptiveSerialQueue {
         } else if (!isRateLimitError && attempt < this.maxRetries) {
           // Regular retry with shorter delay
           const retryDelay = 1000 * attempt;
-          console.warn(`[AdaptiveSerialQueue] ⚠️  Operation ${operation.id} (${operation.type}) failed on attempt ${attempt}`);
-          console.warn(`   Status: ${errorDetails.statusCode || 'N/A'}, Error: ${errorDetails.fbErrorMessage || errorDetails.message}`);
-          console.warn(`   Retry ${attempt}/${this.maxRetries} after ${retryDelay}ms`);
+          console.warn(`[AdaptiveSerialQueue] Operation ${operation.id} failed. ` + `Retry ${attempt}/${this.maxRetries} after ${retryDelay}ms`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           // Max retries reached or non-retryable error
