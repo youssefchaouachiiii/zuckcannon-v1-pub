@@ -123,7 +123,17 @@ export class AdaptiveSerialQueue {
           });
         }
 
-        console.error(`[AdaptiveSerialQueue] ❌ Operation ${operation.id} failed: ${error.message}`);
+        // Enhanced error logging with specific details
+        const errorDetails = this.extractErrorDetails(error);
+        console.error(`[AdaptiveSerialQueue] ❌ Operation ${operation.id} failed`);
+        console.error(`   Type: ${operation.type}`);
+        console.error(`   Status Code: ${errorDetails.statusCode || 'N/A'}`);
+        console.error(`   Error Message: ${errorDetails.message}`);
+        console.error(`   Error Code: ${errorDetails.code || 'N/A'}`);
+        if (errorDetails.fbErrorMessage) {
+          console.error(`   Facebook Error: ${errorDetails.fbErrorMessage}`);
+        }
+        console.error(`   Retries: ${operation.retryCount}/${this.maxRetries}`);
       }
 
       this.currentOperation = null;
@@ -171,10 +181,14 @@ export class AdaptiveSerialQueue {
         // Check if it's a rate limit error
         const isRateLimitError = error.response?.status === 429 || error.response?.data?.error?.code === 80004 || error.response?.data?.error?.error_subcode === 2446079;
 
+        const errorDetails = this.extractErrorDetails(error);
+
         if (isRateLimitError && attempt < this.maxRetries) {
           // Exponential backoff for rate limit errors
           const backoffDelay = this.calculateBackoffDelay(attempt);
-          console.warn(`[AdaptiveSerialQueue] Rate limit hit for operation ${operation.id}. ` + `Retry ${attempt}/${this.maxRetries} after ${backoffDelay}ms`);
+          console.warn(`[AdaptiveSerialQueue] ⏱️  Rate limit hit for operation ${operation.id} (${operation.type})`);
+          console.warn(`   Status: ${errorDetails.statusCode}, Facebook Error: ${errorDetails.fbErrorMessage || errorDetails.message}`);
+          console.warn(`   Retry ${attempt}/${this.maxRetries} after ${backoffDelay}ms`);
 
           await new Promise((resolve) => setTimeout(resolve, backoffDelay));
 
@@ -183,7 +197,9 @@ export class AdaptiveSerialQueue {
         } else if (!isRateLimitError && attempt < this.maxRetries) {
           // Regular retry with shorter delay
           const retryDelay = 1000 * attempt;
-          console.warn(`[AdaptiveSerialQueue] Operation ${operation.id} failed. ` + `Retry ${attempt}/${this.maxRetries} after ${retryDelay}ms`);
+          console.warn(`[AdaptiveSerialQueue] ⚠️  Operation ${operation.id} (${operation.type}) failed on attempt ${attempt}`);
+          console.warn(`   Status: ${errorDetails.statusCode || 'N/A'}, Error: ${errorDetails.fbErrorMessage || errorDetails.message}`);
+          console.warn(`   Retry ${attempt}/${this.maxRetries} after ${retryDelay}ms`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           // Max retries reached or non-retryable error
@@ -248,6 +264,55 @@ export class AdaptiveSerialQueue {
     const maxDelay = 5 * 60 * 1000; // 5 minutes
     const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
     return delay;
+  }
+
+  /**
+   * Extract specific error details from axios error or generic error
+   * @param {Error} error - Error object
+   * @returns {object} Extracted error details
+   */
+  extractErrorDetails(error) {
+    const details = {
+      message: error.message || 'Unknown error',
+      statusCode: null,
+      code: null,
+      fbErrorMessage: null,
+    };
+
+    // Handle axios error with response
+    if (error.response) {
+      details.statusCode = error.response.status;
+      
+      // Try to extract Facebook-specific error message
+      if (error.response.data) {
+        const data = error.response.data;
+        
+        if (data.error) {
+          if (typeof data.error === 'object') {
+            details.fbErrorMessage = data.error.message || JSON.stringify(data.error);
+            details.code = data.error.code || data.error.error_subcode;
+          } else {
+            details.fbErrorMessage = data.error;
+          }
+        }
+        
+        // Extract the actual error message if different
+        if (data.message && data.message !== details.message) {
+          details.message = data.message;
+        }
+      }
+    }
+
+    // Handle rate limit errors specifically
+    if (error.response?.status === 429) {
+      details.message = `Rate limit exceeded (429) - API throttled`;
+    } else if (error.response?.data?.error?.code === 80004) {
+      details.message = `Rate limit error (code 80004) - API throttled`;
+    } else if (error.response?.data?.error?.error_subcode === 2446079) {
+      details.message = `Application request limit reached (2446079)`;
+    }
+
+    return details;
   }
 
   /**
