@@ -6,8 +6,9 @@
 export class RateLimitTracker {
   constructor() {
     this.usageHistory = new Map(); // accountId -> usage data
-    this.warningThreshold = 25; // Warn at 25 calls (Development tier ~100 calls/hour)
-    this.criticalThreshold = 80; // Critical at 80% of limit
+    this.operationTypeHistory = new Map(); // accountId -> { operationType -> count }
+    this.warningThreshold = 42; // Warn at 70% (42/60 for development tier)
+    this.criticalThreshold = 51; // Critical at 85% (51/60 for development tier)
   }
 
   /**
@@ -83,10 +84,11 @@ export class RateLimitTracker {
   isCritical(usageData) {
     if (!usageData) return false;
 
-    // Development tier: ~100 calls/hour, so 80+ is critical
-    // Standard tier: ~200 calls/hour, so 160+ is critical
+    // Use configured threshold (85% of limit)
+    // Development tier: 51/60 calls
+    // Standard tier: 170/200 calls
     const isDevelopmentTier = usageData.tier === "development_access";
-    const criticalCount = isDevelopmentTier ? 80 : 160;
+    const criticalCount = isDevelopmentTier ? this.criticalThreshold : 170;
 
     return usageData.callCount >= criticalCount || usageData.estimatedTimeToRegainAccess > 0;
   }
@@ -105,29 +107,154 @@ export class RateLimitTracker {
 
   /**
    * Get recommended delay in milliseconds before next request
+   * 4-Tier Delay System aligned with Meta's Rolling Window principle:
+   * - Tier 1 (Banned): Wait as instructed by Meta
+   * - Tier 2 (Critical Zone >85%): 5 minutes to reset score
+   * - Tier 3 (Warning Zone 50-85%): 15-20s to smooth traffic (NEW!)
+   * - Tier 4 (Safe Zone <50%): 5s standard delay
+   *
    * @param {string} accountId - Ad account ID
+   * @param {string} operationType - Optional operation type for type-specific delays
    * @returns {number} Delay in milliseconds
    */
-  getRecommendedDelay(accountId) {
+  getRecommendedDelay(accountId, operationType = null) {
     const usage = this.getUsage(accountId);
     if (!usage) return 0;
 
+    // Calculate load percentage
+    const isDevelopmentTier = usage.tier === "development_access";
+    const maxCalls = isDevelopmentTier ? 60 : 200;
+    const loadPercentage = (usage.callCount / maxCalls) * 100;
+
+    // Base delay from rate limit status
+    let baseDelay = 0;
+
+    // ✅ TIER 1: BANNED - Wait as Meta instructs
     if (usage.estimatedTimeToRegainAccess > 0) {
-      // If Meta says we need to wait, wait that long + buffer
-      return (usage.estimatedTimeToRegainAccess + 10) * 1000;
+      baseDelay = (usage.estimatedTimeToRegainAccess + 10) * 1000;
+      console.log(`[RateLimitTracker] 🚫 TIER 1 BANNED - Meta requested ${usage.estimatedTimeToRegainAccess}s wait, adding 10s buffer`);
+    }
+    // ✅ TIER 2: CRITICAL ZONE (>85%) - 5 minute break to reset score
+    else if (this.isCritical(usage)) {
+      baseDelay = 5 * 60 * 1000;
+      console.log(`[RateLimitTracker] 🚨 TIER 2 CRITICAL ZONE (${loadPercentage.toFixed(1)}%) - enforcing 5-minute break`);
+    }
+    // ✅ TIER 3: WARNING ZONE (50-85%) - Slow down mode (NEW!)
+    else if (this.isApproachingLimit(usage)) {
+      // Use 15-20 second delay to smooth traffic and prevent spikes
+      baseDelay = 15000 + Math.random() * 5000; // 15-20s randomized
+      console.log(`[RateLimitTracker] ⚠️ TIER 3 WARNING ZONE (${loadPercentage.toFixed(1)}%) - slowing down with ${(baseDelay / 1000).toFixed(1)}s delay`);
+    }
+    // ✅ TIER 4: SAFE ZONE (<50%) - Standard operation
+    else {
+      // Standard 5-second delay for normal traffic
+      baseDelay = 5000;
+      console.log(`[RateLimitTracker] ✅ TIER 4 SAFE ZONE (${loadPercentage.toFixed(1)}%) - standard 5s delay`);
     }
 
+    // Add operation-specific delay only in Safe Zone (if no base delay already applied)
+    if (operationType && loadPercentage < 50) {
+      const operationDelay = this.getOperationSpecificDelay(operationType);
+      return Math.max(baseDelay, operationDelay);
+    }
+
+    return baseDelay;
+  }
+
+  /**
+   * Get operation-specific delay based on operation type
+   * Different operations have different "weights" in Meta's rate limiting
+   * @param {string} operationType - Type of operation
+   * @returns {number} Delay in milliseconds
+   */
+  getOperationSpecificDelay(operationType) {
+    const delayMap = {
+      image_upload: 500, // Image uploads are heavier
+      video_upload: 1000, // Video uploads are heaviest
+      creative_create: 300, // Creative creation is medium
+      ad_create: 200, // Ad creation is lighter
+      fetch_details: 100, // Fetching is lightest
+      batch_request: 400, // Batch requests
+      default: 200,
+    };
+
+    return delayMap[operationType] || delayMap.default;
+  }
+
+  /**
+   * Track operation type for an account
+   * @param {string} accountId - Ad account ID
+   * @param {string} operationType - Type of operation
+   */
+  trackOperationType(accountId, operationType) {
+    if (!this.operationTypeHistory.has(accountId)) {
+      this.operationTypeHistory.set(accountId, new Map());
+    }
+
+    const accountOps = this.operationTypeHistory.get(accountId);
+    const currentCount = accountOps.get(operationType) || 0;
+    accountOps.set(operationType, currentCount + 1);
+  }
+
+  /**
+   * Get operation type statistics for an account
+   * @param {string} accountId - Ad account ID
+   * @returns {object} Operation type statistics
+   */
+  getOperationTypeStats(accountId) {
+    const accountOps = this.operationTypeHistory.get(accountId);
+    if (!accountOps) return {};
+
+    const stats = {};
+    accountOps.forEach((count, type) => {
+      stats[type] = count;
+    });
+    return stats;
+  }
+
+  /**
+   * Calculate safe batch size based on remaining API quota
+   * @param {string} accountId - Ad account ID
+   * @param {number} maxBatchSize - Maximum batch size allowed
+   * @param {number} estimatedCallsPerItem - Estimated API calls per item in batch (default: 5)
+   * @returns {number} Safe batch size
+   */
+  getSafeBatchSize(accountId, maxBatchSize = 50, estimatedCallsPerItem = 5) {
+    const usage = this.getUsage(accountId);
+
+    if (!usage) {
+      console.log(`[RateLimitTracker] No usage data for ${accountId}, using max batch size: ${maxBatchSize}`);
+      return maxBatchSize;
+    }
+
+    // Development tier has 60 calls per 5 minutes
+    const isDevelopmentTier = usage.tier === "development_access";
+    const maxCalls = isDevelopmentTier ? 60 : 200;
+
+    const remainingCalls = maxCalls - usage.callCount;
+
+    console.log(`[RateLimitTracker] Account ${accountId}: ` + `${usage.callCount}/${maxCalls} calls used, ` + `${remainingCalls} remaining`);
+
+    // If critical, only allow 1 item at a time
     if (this.isCritical(usage)) {
-      // Critical but no explicit wait time: use 5 minutes
-      return 5 * 60 * 1000;
+      console.log(`[RateLimitTracker] 🚨 Critical state - batch size limited to 1`);
+      return 1;
     }
 
+    // If approaching limit, be conservative
     if (this.isApproachingLimit(usage)) {
-      // Approaching limit: add 2-5 second delays between requests
-      return 2000 + Math.random() * 3000;
+      const conservativeBatch = Math.min(3, Math.floor(remainingCalls / estimatedCallsPerItem));
+      console.log(`[RateLimitTracker] ⚠️ Approaching limit - batch size limited to ${conservativeBatch}`);
+      return Math.max(1, conservativeBatch);
     }
 
-    return 0;
+    // Calculate safe batch size: use 50% of remaining quota
+    const safeBatchSize = Math.floor((remainingCalls * 0.5) / estimatedCallsPerItem);
+    const finalBatchSize = Math.max(1, Math.min(maxBatchSize, safeBatchSize));
+
+    console.log(`[RateLimitTracker] Calculated batch size: ${finalBatchSize} ` + `(max: ${maxBatchSize}, safe: ${safeBatchSize})`);
+
+    return finalBatchSize;
   }
 
   /**
@@ -207,13 +334,18 @@ export function trackRateLimitFromResponse(response) {
 /**
  * Helper to add delay if rate limit is approaching
  * @param {string} accountId - Ad account ID
+ * @param {string} operationType - Optional operation type
  * @returns {Promise<void>}
  */
-export async function enforceRateLimit(accountId) {
-  const delay = rateLimitTracker.getRecommendedDelay(accountId);
+export async function enforceRateLimit(accountId, operationType = null) {
+  const delay = rateLimitTracker.getRecommendedDelay(accountId, operationType);
+
+  if (operationType) {
+    rateLimitTracker.trackOperationType(accountId, operationType);
+  }
 
   if (delay > 0) {
-    console.log(`[RateLimitTracker] Throttling request for account ${accountId}, waiting ${delay}ms...`);
+    console.log(`[RateLimitTracker] Throttling ${operationType || "request"} for account ${accountId}, waiting ${delay}ms...`);
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
 }
