@@ -1,0 +1,46 @@
+name: Promote Staging to Production
+
+on:
+  push:
+    branches: [ "staging" ]
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Merge staging to production
+        run: |
+          git fetch origin
+          git checkout production
+          git merge origin/staging --no-ff -m "Promotion: Merge staging to production [skip ci]"
+          git push origin production
+        continue-on-error: true
+
+      - name: Notify Telegram - Success
+        if: success()
+        run: |
+          MESSAGE="*✅ Auto-Promotion Success*\nBranch: staging → production\nRepo: ${{ github.repository }}\nActor: ${{ github.actor }}\nCommit: ${{ github.sha }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            --data-urlencode text="$MESSAGE" \
+            -d parse_mode="Markdown"
+
+      - name: Notify Telegram - Failed
+        if: failure()
+        run: |
+          MESSAGE="*❌ Auto-Promotion Failed*\nBranch: staging → production\nRepo: ${{ github.repository }}\n⚠️ Manual merge required"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            --data-urlencode text="$MESSAGE" \
+            -d parse_mode="Markdown"

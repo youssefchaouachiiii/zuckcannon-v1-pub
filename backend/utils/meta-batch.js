@@ -385,6 +385,182 @@ export async function retryFailedOperations(batchResponse, originalOperations, a
   }));
 }
 
+/**
+ * Fetch DSA (Dynamic Search Ads) configuration for an ad account
+ * Includes promote_pages and dsa_recommendations
+ * @param {string} accountId - Ad account ID (without 'act_' prefix)
+ * @param {string} accessToken - User's access token
+ * @returns {Promise<Object>} DSA configuration with promote_pages and recommendations
+ */
+export async function fetchDSAConfiguration(accountId, accessToken) {
+  try {
+    const normalizedId = accountId.replace(/^act_/, "");
+    const url = `https://graph.facebook.com/${API_VERSION}/act_${normalizedId}`;
+
+    const response = await axios.get(url, {
+      params: {
+        fields: "default_dsa_beneficiary,promote_pages{id,name},dsa_recommendations{id,name}",
+        access_token: accessToken,
+      },
+    });
+
+    const data = response.data;
+    const promotePages = data.promote_pages?.data || [];
+    const dsaRecommendations = data.dsa_recommendations?.data || [];
+    
+    console.log(`📊 DSA Config for act_${normalizedId}:`, {
+      beneficiary: data.default_dsa_beneficiary,
+      promote_pages: promotePages.length,
+      promote_pages_list: promotePages.map(p => `${p.name} (${p.id})`),
+      recommendations: dsaRecommendations.length,
+      recommendations_list: dsaRecommendations.map(r => `${r.name} (${r.id})`),
+    });
+
+    return {
+      accountId: normalizedId,
+      defaultBeneficiary: data.default_dsa_beneficiary,
+      promotePages: promotePages,
+      dsaRecommendations: dsaRecommendations,
+    };
+  } catch (err) {
+    console.error(`Failed to fetch DSA config for ${accountId}:`, err.message);
+    return {
+      accountId: accountId.replace(/^act_/, ""),
+      defaultBeneficiary: null,
+      promotePages: [],
+      dsaRecommendations: [],
+    };
+  }
+}
+
+/**
+ * Find matching page in target account based on source page
+ * Strategy: 
+ * 1. Try DSA recommendations first
+ * 2. Try exact ID match
+ * 3. Try name match
+ * 4. Try to find ANY common page between source and target promote_pages
+ * @param {Object} sourcePage - Source page object {id, name}
+ * @param {Array} targetPages - Array of target pages to search
+ * @param {Array} targetDSARecommendations - Array of DSA recommendations from target account
+ * @param {Array} sourcePromotePages - Array of all source promote pages (for fallback)
+ * @returns {Object|null} Matching page or null
+ */
+export function findMatchingPage(sourcePage, targetPages, targetDSARecommendations = [], sourcePromotePages = []) {
+  if (!sourcePage || !targetPages || targetPages.length === 0) {
+    return null;
+  }
+
+  // Strategy 1: Check if source page ID is in target's DSA recommendations
+  if (sourcePage.id && targetDSARecommendations && targetDSARecommendations.length > 0) {
+    const recommendedMatch = targetDSARecommendations.find((rec) => rec.id === sourcePage.id);
+    if (recommendedMatch) {
+      // Verify it's in target's promote_pages
+      const pageInPromotePages = targetPages.find((p) => p.id === recommendedMatch.id);
+      if (pageInPromotePages) {
+        console.log(`✅ Found DSA recommended page match: ${recommendedMatch.id} (${recommendedMatch.name})`);
+        return pageInPromotePages;
+      }
+    }
+  }
+
+  // Strategy 2: Try exact ID match in promote_pages
+  const exactMatch = targetPages.find((p) => p.id === sourcePage.id);
+  if (exactMatch) {
+    console.log(`✅ Found exact ID match: ${sourcePage.id}`);
+    return exactMatch;
+  }
+
+  // Strategy 3: Try name match if no ID match
+  if (sourcePage.name) {
+    const nameMatch = targetPages.find(
+      (p) => p.name && p.name.toLowerCase() === sourcePage.name.toLowerCase()
+    );
+    if (nameMatch) {
+      console.log(`✅ Found name match: "${sourcePage.name}" → ${nameMatch.id}`);
+      return nameMatch;
+    }
+  }
+
+  // Strategy 4: Find ANY common page between source and target promote_pages by ID
+  // This is a fallback when beneficiary doesn't match but pages are available
+  if (sourcePromotePages && sourcePromotePages.length > 0) {
+    const commonPage = sourcePromotePages.find((sourcePg) => {
+      const match = targetPages.find((targetPg) => targetPg.id === sourcePg.id);
+      return match !== undefined;
+    });
+    
+    if (commonPage) {
+      const matchedTargetPage = targetPages.find((p) => p.id === commonPage.id);
+      if (matchedTargetPage) {
+        console.log(`✅ Found common promote page: "${commonPage.name}" (${commonPage.id}) exists in both accounts`);
+        return matchedTargetPage;
+      }
+    }
+  }
+
+  console.warn(`⚠️ No matching page found for: ${sourcePage.name} (${sourcePage.id})`);
+  return null;
+}
+
+/**
+ * Detect DSA mismatch between source and target accounts
+ * @param {Object} sourceDSA - Source account DSA config
+ * @param {Object} targetDSA - Target account DSA config
+ * @returns {Object} Detection result with matched page info
+ */
+export function detectDSAMismatch(sourceDSA, targetDSA) {
+  const result = {
+    hasMismatch: false,
+    sourcePageId: sourceDSA.defaultBeneficiary,
+    targetPageId: targetDSA.defaultBeneficiary,
+    matchedPageId: null,
+    matchedPage: null,
+    availablePages: targetDSA.promotePages,
+    error: null,
+  };
+
+  // If source has no DSA, no mismatch
+  if (!sourceDSA.defaultBeneficiary) {
+    console.log("✅ Source account has no DSA beneficiary");
+    return result;
+  }
+
+  // If same account (IDs match), no mismatch
+  if (sourceDSA.defaultBeneficiary === targetDSA.defaultBeneficiary) {
+    console.log("✅ Source and target have same DSA beneficiary");
+    return result;
+  }
+
+  // Mismatch detected
+  result.hasMismatch = true;
+  console.warn(`⚠️ DSA Mismatch detected:`);
+  console.warn(`   Source beneficiary: ${sourceDSA.defaultBeneficiary}`);
+  console.warn(`   Target beneficiary: ${targetDSA.defaultBeneficiary}`);
+
+  // Try to find matching page
+  const sourcePage = {
+    id: sourceDSA.defaultBeneficiary,
+    name: sourceDSA.promotePages?.find((p) => p.id === sourceDSA.defaultBeneficiary)?.name,
+  };
+
+  // Pass target's DSA recommendations and source's promote pages for intelligent matching
+  const matchedPage = findMatchingPage(sourcePage, targetDSA.promotePages, targetDSA.dsaRecommendations, sourceDSA.promotePages);
+
+  if (matchedPage) {
+    result.matchedPageId = matchedPage.id;
+    result.matchedPage = matchedPage;
+    console.log(`✅ Auto-matched to target page: ${matchedPage.name} (${matchedPage.id})`);
+  } else {
+    result.error = `No matching DSA beneficiary page found in target account. Available pages: ${targetDSA.promotePages
+      .map((p) => `${p.name} (${p.id})`)
+      .join(", ") || "None"}`;
+    console.error(result.error);
+  }
+
+  return result;
+}
+
 export default {
   createBatchOperation,
   executeBatchRequest,
@@ -396,5 +572,8 @@ export default {
   batchUploadImages,
   batchFetchAccountData,
   retryFailedOperations,
+  fetchDSAConfiguration,
+  findMatchingPage,
+  detectDSAMismatch,
   BATCH_SIZE_LIMIT,
 };
