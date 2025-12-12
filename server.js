@@ -2795,6 +2795,37 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   console.log(`  - Requested Account: ${normalizedAccountId}`);
   console.log(`  - Cross-Account: ${isCrossAccount}`);
 
+  // EARLY DSA DETECTION for cross-account ad set duplication
+  let dsaMismatchInfo = null;
+  if (isCrossAccount) {
+    console.log("🔍 Checking DSA beneficiary match for cross-account ad set duplication...");
+    try {
+      const sourceDSA = await MetaBatch.fetchDSAConfiguration(sourceAdSetAccountId, userAccessToken);
+      const targetDSA = await MetaBatch.fetchDSAConfiguration(targetCampaignAccountId, userAccessToken);
+
+      dsaMismatchInfo = MetaBatch.detectDSAMismatch(sourceDSA, targetDSA);
+
+      if (dsaMismatchInfo.hasMismatch && !dsaMismatchInfo.matchedPageId) {
+        console.error("❌ DSA beneficiary mismatch with no matching page found");
+        return res.status(400).json({
+          success: false,
+          error: "DSA beneficiary page mismatch",
+          details: "Source and target accounts have different DSA beneficiary pages, and no matching page was found in target account.",
+          availablePages: dsaMismatchInfo.availablePages.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
+          sourcePageId: dsaMismatchInfo.sourcePageId,
+          targetPageId: dsaMismatchInfo.targetPageId,
+          requiresUserSelection: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to check DSA configuration:", err.message);
+      // Don't fail the duplication, just log and continue
+    }
+  }
+
   // Validation: Check if campaign belongs to the specified account
   if (targetCampaignAccountId && normalizedAccountId !== targetCampaignAccountId) {
     console.error(`❌ MISMATCH: Campaign ${campaign_id} belongs to account ${targetCampaignAccountId}, but request specifies account ${normalizedAccountId}`);
@@ -2949,7 +2980,17 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         createAdSetPayload.targeting = targetingCopy;
       }
       if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
-      if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
+      
+      // Handle DSA beneficiary page matching for cross-account duplication
+      let promotedObject = sourceAdSet.promoted_object ? JSON.parse(JSON.stringify(sourceAdSet.promoted_object)) : {};
+      if (dsaMismatchInfo?.matchedPageId && promotedObject) {
+        promotedObject.page_id = dsaMismatchInfo.matchedPageId;
+        console.log(`📍 Updated promoted_object page_id to matched DSA page: ${dsaMismatchInfo.matchedPageId}`);
+      }
+      if (promotedObject && Object.keys(promotedObject).length > 0) {
+        createAdSetPayload.promoted_object = promotedObject;
+      }
+      
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
       // Note: pacing_type is a CAMPAIGN-LEVEL setting only. Do not copy to ad set level.
@@ -3752,6 +3793,37 @@ app.post("/api/duplicate-campaign", async (req, res) => {
   const isCrossAccount = sourceCampaignAccountId && sourceCampaignAccountId !== normalizedAccountId;
   console.log(`Campaign ${campaign_id}: source=${sourceCampaignAccountId}, target=${normalizedAccountId}, cross-account=${isCrossAccount}`);
 
+  // EARLY DSA DETECTION (before full campaign fetch to save API quota)
+  let dsaMismatchInfo = null;
+  if (isCrossAccount && deep_copy) {
+    console.log("🔍 Checking DSA beneficiary match for cross-account duplication...");
+    try {
+      const sourceDSA = await MetaBatch.fetchDSAConfiguration(sourceCampaignAccountId, userAccessToken);
+      const targetDSA = await MetaBatch.fetchDSAConfiguration(normalizedAccountId, userAccessToken);
+
+      dsaMismatchInfo = MetaBatch.detectDSAMismatch(sourceDSA, targetDSA);
+
+      if (dsaMismatchInfo.hasMismatch && !dsaMismatchInfo.matchedPageId) {
+        console.error("❌ DSA beneficiary mismatch with no matching page found");
+        return res.status(400).json({
+          success: false,
+          error: "DSA beneficiary page mismatch",
+          details: "Source and target accounts have different DSA beneficiary pages, and no matching page was found in target account.",
+          availablePages: dsaMismatchInfo.availablePages.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
+          sourcePageId: dsaMismatchInfo.sourcePageId,
+          targetPageId: dsaMismatchInfo.targetPageId,
+          requiresUserSelection: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to check DSA configuration:", err.message);
+      // Don't fail the duplication, just log and continue
+    }
+  }
+
   // STEP 1 Fetch campaign structure (adsets + ads)
   if (deep_copy) {
     try {
@@ -4030,7 +4102,17 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           }
           
           if (adset.destination_type) payload.destination_type = adset.destination_type;
-          if (adset.promoted_object) payload.promoted_object = JSON.stringify(adset.promoted_object);
+          
+          // Handle DSA beneficiary page matching
+          let promotedObject = adset.promoted_object ? JSON.parse(JSON.stringify(adset.promoted_object)) : {};
+          if (dsaMismatchInfo?.matchedPageId && promotedObject) {
+            promotedObject.page_id = dsaMismatchInfo.matchedPageId;
+            console.log(`📍 Updated promoted_object page_id to matched DSA page: ${dsaMismatchInfo.matchedPageId}`);
+          }
+          if (Object.keys(promotedObject).length > 0) {
+            payload.promoted_object = JSON.stringify(promotedObject);
+          }
+          
           if (adset.start_time) payload.start_time = adset.start_time;
           if (adset.end_time) payload.end_time = adset.end_time;
           if (adset.pacing_type) payload.pacing_type = JSON.stringify(adset.pacing_type);
