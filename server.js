@@ -3548,26 +3548,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               data_keys: Object.keys(batchResponse.data || {}),
             });
 
-            // Log full response for debugging if it has unexpected format
-            if (batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k))) {
-              console.warn(`[AD-BATCH ${index + 1}] ⚠️ Response has numeric keys (unusual):`, JSON.stringify(batchResponse.data, null, 2));
+            // Check if synchronous execution (numeric keys indicate inline results)
+            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k));
+            if (hasNumericKeys) {
+              console.log(`[AD-BATCH ${index + 1}] ℹ️ Synchronous results detected`);
             }
 
             // Extract batch request ID following Meta API documentation
-            // The response should have an 'id' field (shown by default per Meta docs)
             let batchRequestId = null;
 
-            // Check if response has numeric keys - this indicates synchronous execution (batch results returned inline)
-            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k));
+            // Check if response has numeric keys - this indicates synchronous execution
             if (hasNumericKeys) {
-              console.log(`[AD-BATCH ${index + 1}] ℹ️ Synchronous batch execution detected (numeric keys in response)`);
-              // When Meta executes synchronously, results are returned inline with numeric keys
-              // In this case, we'll create a synthetic batch ID for tracking purposes
+              // Create synthetic ID for tracking synchronous results
               batchRequestId = `sync_${Date.now()}_${index}`;
-              console.log(`[AD-BATCH ${index + 1}] ✅ Created synthetic batch ID for synchronous execution: ${batchRequestId}`);
-
-              // Log the actual results for debugging
-              console.log(`[AD-BATCH ${index + 1}] Synchronous results:`, JSON.stringify(batchResponse.data, null, 2));
+              console.log(`[AD-BATCH ${index + 1}] ✅ Sync batch: ${batchRequestId}`);
             }
             // Priority: Try the documented response format first
             else if (batchResponse.data?.id) {
@@ -3589,10 +3583,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id: ${batchRequestId}`);
             }
 
-            // If still no ID, attempt fallback: fetch pending batches from account
+            // If still no ID, fetch pending batches from account
             if (!batchRequestId) {
-              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID in response, attempting to fetch from pending requests...`);
-              console.warn(`[AD-BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
+              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID found, checking pending batches...`);
 
               try {
                 // Per Meta docs: GET /act_{account_id}/async_requests lists all pending batch requests
@@ -3830,7 +3823,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
       const campaignResponse = await axios.get(campaignDetailsUrl, {
         params: {
-          fields: "name,adsets{id,name,ads{id,name,adset_id}}",
+          fields: "name,adsets{id,name,ads.limit(500){id,name,adset_id}}",
           access_token: userAccessToken,
         },
       });
@@ -3846,12 +3839,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       });
 
       totalChildObjects = adsetCount + totalAdsCount;
-      // console.log(`Campaign ${campaign_id} structure:`, {
-      //   name: campaignData.name,
-      //   adsets: adsetCount,
-      //   ads: totalAdsCount,
-      //   totalChildObjects,
-      // });
+      console.log(`📋 Campaign ${campaign_id} structure:`, {
+        name: campaignData.name,
+        adsets: adsetCount,
+        ads: totalAdsCount,
+        totalChildObjects,
+      });
     } catch (err) {
       console.error("Failed to fetch campaign structure:", err.response?.data || err.message);
       return res.status(500).json({
@@ -3975,7 +3968,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     const FormData = (await import("form-data")).default;
 
     // Send async batch with improved ID extraction per Meta API docs
-    const sendAsyncBatch = async (ops, label, retryCount = 0) => {
+    const sendAsyncBatch = async (ops, label, sourceAds = [], retryCount = 0) => {
       const formData = new FormData();
       formData.append("access_token", userAccessToken);
       formData.append("name", label);
@@ -3986,20 +3979,54 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
         const data = resp.data;
-        console.log(`[CAMPAIGN-BATCH] ${label} - Response type:`, typeof data, Array.isArray(data) ? "array" : "");
-        console.log(`[CAMPAIGN-BATCH] ${label} - Full response:`, JSON.stringify(data, null, 2));
 
         // Check if Meta executed synchronously (returns array of results)
         if (Array.isArray(data)) {
-          console.log(`[CAMPAIGN-BATCH] ${label} - Array response (synchronous execution)`);
-          // For synchronous execution, there's no batch ID - operation completed immediately
+          console.log(`[${label}] Synchronous execution: ${data.length} operation(s) completed`);
+          
+          // Per-ad logging
+          let successCount = 0;
+          let failCount = 0;
+          for (let i = 0; i < data.length && i < sourceAds.length; i++) {
+            const result = data[i];
+            const ad = sourceAds[i];
+            if (result.code >= 200 && result.code < 300) {
+              successCount++;
+              const adId = result.body?.id || result.body;
+              console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
+            } else {
+              failCount++;
+              const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+              console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
+            }
+          }
+          
+          if (failCount === 0) {
+            console.log(`\n✅ Batch result: All ${successCount} ads created successfully\n`);
+          } else {
+            console.log(`\n⚠️ Batch result: ${successCount} created, ${failCount} failed\n`);
+          }
           return "sync_" + Date.now();
         }
 
         // Check if response has numeric keys - this indicates synchronous execution (inline results)
         const hasNumericKeys = data && Object.keys(data).some((k) => /^\d+$/.test(k));
         if (hasNumericKeys) {
-          console.log(`[CAMPAIGN-BATCH] ${label} - Response with numeric keys detected (synchronous execution)`);
+          console.log(`[${label}] Synchronous execution with numeric keys: ${Object.keys(data).length} operation(s)`);
+          // Log per-ad from numeric keys
+          for (const [idx, result] of Object.entries(data)) {
+            if (!isNaN(idx) && parseInt(idx) < sourceAds.length) {
+              const ad = sourceAds[parseInt(idx)];
+              const code = result.code || result.status;
+              if (code >= 200 && code < 300) {
+                const adId = result.body?.id || result.body;
+                console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
+              } else {
+                const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+                console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
+              }
+            }
+          }
           return "sync_" + Date.now();
         }
 
@@ -4008,7 +4035,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         // Fallback: Query pending batches if ID not in response
         if (!batchId) {
-          console.warn(`[CAMPAIGN-BATCH] ${label} - No ID in response, fetching pending batches...`);
+          console.warn(`[${label}] No batch ID in response, fetching pending batches...`);
           try {
             const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
               params: {
@@ -4020,26 +4047,25 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             const recentBatch = pendingResponse.data?.data?.[0];
             if (recentBatch?.id) {
               batchId = recentBatch.id;
-              console.log(`[CAMPAIGN-BATCH] ${label} - Retrieved from pending: ${batchId}`);
+              console.log(`[${label}] Retrieved batch ID: ${batchId}`);
             }
           } catch (fetchErr) {
-            console.error(`[CAMPAIGN-BATCH] ${label} - Failed to fetch pending:`, fetchErr.message);
+            console.error(`[${label}] Failed to fetch pending:`, fetchErr.message);
           }
         }
 
         if (!batchId) {
-          const errorMsg = `Failed to get batch ID. Response structure: ${Object.keys(data || {}).join(", ")}`;
-          console.error(`[CAMPAIGN-BATCH] ${label} - ${errorMsg}`);
-          console.error(`[CAMPAIGN-BATCH] ${label} - Full data:`, JSON.stringify(data, null, 2));
+          const errorMsg = `Failed to get batch ID. Response keys: ${Object.keys(data || {}).join(", ")}`;
+          console.error(`[${label}] ${errorMsg}`);
           throw new Error(errorMsg);
         }
 
-        console.log(`[CAMPAIGN-BATCH] ${label} - Batch ID: ${batchId}`);
+        console.log(`[${label}] Queued: ${batchId}`);
         return batchId;
       } catch (error) {
         // Retry on network/server errors
         if (retryCount < 2 && (!error.response || error.response.status >= 500)) {
-          console.warn(`[CAMPAIGN-BATCH] ${label} - Retrying (${retryCount + 1}/2)...`);
+          console.warn(`[${label}] Retrying (${retryCount + 1}/2) due to ${error.response?.status || "network error"}...`);
           await new Promise((resolve) => setTimeout(resolve, 1000));
           return sendAsyncBatch(ops, label, retryCount + 1);
         }
@@ -4156,13 +4182,11 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
         const data = resp.data;
 
-        // Enhanced logging to debug response structure
-        console.log(`[ADSET-BATCH ${i + 1}] Response type:`, typeof data, Array.isArray(data) ? "array" : "");
-        console.log(`[ADSET-BATCH ${i + 1}] Full response:`, JSON.stringify(data, null, 2));
-
-        // If Meta executed synchronously (returns array of results)
+        // Simplified logging - only show summary, not full response
         if (Array.isArray(data)) {
-          console.log(`[ADSET-BATCH ${i + 1}] Array response detected, processing results...`);
+          const successCount = data.filter(r => r.code >= 200 && r.code < 300).length;
+          const failCount = data.length - successCount;
+          console.log(`[ADSET-BATCH ${i + 1}] Synchronous: ${successCount} success, ${failCount} failed`);
 
           // Check for errors first
           if (data[0]?.code >= 400) {
@@ -4172,7 +4196,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             adsetFailureCount++;
             adsetErrors.push(errorMsg);
             adsetBatchIds.push(null);
-            continue; // Don't throw, continue processing other batches
+            continue;
           }
 
           // Process successful synchronous response
@@ -4189,7 +4213,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
                 if (newAdsetId && sourceAdsetId) {
                   adsetMapping[sourceAdsetId] = newAdsetId;
                   adsetSuccessCount++;
-                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created new adset: ${sourceAdsetId} -> ${newAdsetId}`);
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created: ${newAdsetId}`);
                 }
               } else {
                 // For same-account copy, response has copied_adset_id mapping
@@ -4686,21 +4710,155 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       });
     }
 
-    const adChunks = [];
-    for (let i = 0; i < adOps.length; i += 50) adChunks.push(adOps.slice(i, i + 50));
+    // STEP 4.5 Check existing ad counts in target ad sets to avoid 50-ad limit
+    console.log(`\n📊 Checking existing ad counts in ${Object.keys(adsetMapping).length} target ad sets...`);
+    const adsetAdCounts = {};
+    let totalExistingAds = 0;
+    
+    for (const [sourceAdsetId, targetAdsetId] of Object.entries(adsetMapping)) {
+      try {
+        const adCountUrl = `https://graph.facebook.com/${api_version}/${targetAdsetId}`;
+        const adCountResponse = await axios.get(adCountUrl, {
+          params: {
+            fields: "ads.limit(1).summary(true)",
+            access_token: userAccessToken,
+          },
+        });
+        
+        const existingAdCount = adCountResponse.data.ads?.summary?.total_count || 0;
+        adsetAdCounts[targetAdsetId] = existingAdCount;
+        totalExistingAds += existingAdCount;
+        
+        if (existingAdCount > 0) {
+          console.log(`  - Ad set ${targetAdsetId}: ${existingAdCount} existing ads`);
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch ad count for ${targetAdsetId}:`, err.message);
+        adsetAdCounts[targetAdsetId] = 0;
+      }
+    }
+    
+    console.log(`📋 Total existing ads in target ad sets: ${totalExistingAds}`);
 
-    const adBatchIds = [];
-    for (let i = 0; i < adChunks.length; i++) {
-      const label = `Duplicate Campaign ${campaign_id} - Ads (Batch ${i + 1})`;
-      const id = await sendAsyncBatch(adChunks[i], label);
-      adBatchIds.push(id);
+    // Filter adOps to respect 50-ad limit per ad set
+    let adsSkipped = 0;
+    const filteredAdOps = [];
+    
+    for (const adOp of adOps) {
+      // Extract adset_id from body
+      const bodyParams = new URLSearchParams(adOp.body);
+      const adsetId = bodyParams.get('adset_id');
+      
+      if (adsetId && adsetAdCounts[adsetId] !== undefined) {
+        const currentCount = adsetAdCounts[adsetId];
+        
+        if (currentCount >= 50) {
+          console.warn(`⚠️ Skipping ad for ad set ${adsetId}: already at 50-ad limit`);
+          adsSkipped++;
+          continue;
+        }
+        
+        // Add the ad and increment counter
+        filteredAdOps.push(adOp);
+        adsetAdCounts[adsetId]++;
+      } else {
+        // If we can't determine adset_id, include it anyway
+        filteredAdOps.push(adOp);
+      }
+    }
+    
+    console.log(`\n📋 Ad Duplication Summary:`);
+    console.log(`   Total source ads: ${adsData.length}`);
+    console.log(`   Ads to duplicate: ${filteredAdOps.length}`);
+    console.log(`   Ads skipped (50-ad limit): ${adsSkipped}`);
+    console.log(`   Existing ads in target: ${totalExistingAds}`);
+
+    // Create mapping of filtered ad ops to source ads for logging
+    const filteredAds = [];
+    for (let i = 0; i < filteredAdOps.length; i++) {
+      const adOp = filteredAdOps[i];
+      // Find matching source ad
+      const bodyParams = new URLSearchParams(adOp.body);
+      const adName = bodyParams.get('name') || `Ad ${i}`;
+      filteredAds.push({ name: adName, op: adOp });
     }
 
-    // console.log("✅ All ad async batch requests created:", adBatchIds);
+    // Split ads into smaller batches (25 ads per batch) to avoid timeout errors
+    const adChunks = [];
+    const adDataChunks = [];
+    const ADS_PER_BATCH = 25;
+    for (let i = 0; i < filteredAdOps.length; i += ADS_PER_BATCH) {
+      adChunks.push(filteredAdOps.slice(i, i + ADS_PER_BATCH));
+      adDataChunks.push(filteredAds.slice(i, i + ADS_PER_BATCH));
+    }
+
+    console.log(`📦 Splitting ${filteredAdOps.length} ads into ${adChunks.length} batches of ${ADS_PER_BATCH} ads each`);
+
+    const adBatchIds = [];
+    const adBatchResults = [];
+    let adSuccessCount = 0;
+    let adFailureCount = 0;
+    const adErrors = [];
+
+    for (let i = 0; i < adChunks.length; i++) {
+      // Add 5-second delay between batches to avoid timeout/rate limit errors
+      if (i > 0) {
+        console.log(`⏱️ Waiting 5 seconds before batch ${i + 1} of ${adChunks.length}...`);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+
+      const label = `Duplicate Campaign ${campaign_id} - Ads (Batch ${i + 1}/${adChunks.length})`;
+      const adsInBatch = adChunks[i];
+      const adsDataInBatch = adDataChunks[i];
+      console.log(`📤 Sending ${adsInBatch.length} ads in batch ${i + 1}/${adChunks.length}`);
+      
+      try {
+        const id = await sendAsyncBatch(adsInBatch, label, adsDataInBatch);
+        adBatchIds.push(id);
+        
+        // Track batch result
+        adBatchResults.push({
+          batchNum: i + 1,
+          batchId: id,
+          adsInBatch: adChunks[i].length,
+          status: "queued",
+        });
+        
+        console.log(`✅ Batch ${i + 1} queued successfully (ID: ${id})`);
+      } catch (err) {
+        console.error(`❌ Batch ${i + 1} failed:`, err.message);
+        adFailureCount++;
+        
+        adBatchResults.push({
+          batchNum: i + 1,
+          batchId: null,
+          adsInBatch: adChunks[i].length,
+          status: "failed",
+          error: err.message,
+        });
+        
+        let errorMsg = err.message;
+        if (err.response?.data?.error?.error_user_msg) {
+          errorMsg = err.response.data.error.error_user_msg;
+        }
+        adErrors.push(`Batch ${i + 1}: ${errorMsg}`);
+      }
+    }
+
+    console.log(`\n📊 Ad Batch Summary:`);
+    console.log(`   Total batches: ${adChunks.length}`);
+    console.log(`   Successful batches: ${adChunks.length - adFailureCount}`);
+    console.log(`   Failed batches: ${adFailureCount}`);
+    console.log(`   Total ads queued: ${filteredAdOps.length}`);
+    
+    if (adFailureCount > 0) {
+      console.error(`❌ ${adFailureCount} batch(es) failed:`);
+      adErrors.forEach((err) => console.error(`   - ${err}`));
+    }
 
     // STEP 5 Return combined result
     return res.json({
-      success: true,
+      success: adFailureCount === 0,
       mode: "async_double_batch",
       newCampaignId,
       originalCampaignId: campaign_id,
@@ -4720,7 +4878,21 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         failed: adsetFailureCount,
         errors: adsetErrors,
       },
-      message: "Campaign duplicated with two-phase async batch (adsets first, ads second). Check Meta Ads Manager after 1–5 minutes.",
+      adStats: {
+        sourceAds: adsData.length,
+        adsToDuplicate: filteredAdOps.length,
+        adsSkipped,
+        existingAdsInTarget: totalExistingAds,
+      },
+      adBatchStats: {
+        totalBatches: adChunks.length,
+        successfulBatches: adChunks.length - adFailureCount,
+        failedBatches: adFailureCount,
+        batchDetails: adBatchResults,
+      },
+      message: adFailureCount === 0 
+        ? `Campaign duplicated successfully! Duplicating ${filteredAdOps.length} ads in ${adChunks.length} batches (${adsSkipped} skipped due to 50-ad limit). Check Meta Ads Manager after 1–5 minutes.`
+        : `Campaign partially duplicated with errors. ${adChunks.length - adFailureCount}/${adChunks.length} ad batches queued, ${adFailureCount} failed. Check logs for details.`,
     });
   } catch (err) {
     console.error("❌ Error duplicating campaign:", err.response?.data || err.message);
