@@ -4038,6 +4038,9 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
     const adsetBatchIds = [];
     const adsetMapping = {};
+    let adsetSuccessCount = 0;
+    let adsetFailureCount = 0;
+    const adsetErrors = [];
 
     for (let i = 0; i < adsetChunks.length; i++) {
       const label = `Duplicate Campaign ${campaign_id} - AdSets (Part ${i + 1})`;
@@ -4064,7 +4067,10 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             const errorBody = typeof data[0].body === "string" ? JSON.parse(data[0].body) : data[0].body;
             const errorMsg = errorBody?.error?.error_user_msg || errorBody?.error?.message || "Unknown error";
             console.error(`[ADSET-BATCH ${i + 1}] ❌ Error: ${errorMsg}`);
-            throw new Error(`Ad set batch ${i + 1} failed: ${errorMsg}`);
+            adsetFailureCount++;
+            adsetErrors.push(errorMsg);
+            adsetBatchIds.push(null);
+            continue; // Don't throw, continue processing other batches
           }
 
           // Process successful synchronous response
@@ -4080,6 +4086,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
                 if (newAdsetId && sourceAdsetId) {
                   adsetMapping[sourceAdsetId] = newAdsetId;
+                  adsetSuccessCount++;
                   console.log(`[ADSET-BATCH ${i + 1}] ✅ Created new adset: ${sourceAdsetId} -> ${newAdsetId}`);
                 }
               } else {
@@ -4087,6 +4094,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
                 const copied = parsed.ad_object_ids?.[0];
                 if (copied) {
                   adsetMapping[copied.source_id] = copied.copied_id;
+                  adsetSuccessCount++;
                   console.log(`[ADSET-BATCH ${i + 1}] ✅ Copied adset: ${copied.source_id} -> ${copied.copied_id}`);
                 }
               }
@@ -4139,9 +4147,38 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         adsetBatchIds.push(batchId);
       } catch (error) {
         console.error(`[ADSET-BATCH ${i + 1}] Request failed:`, error.message);
+        adsetFailureCount++;
+        // Try to extract user-friendly error message from Facebook API response
+        let errorMsg = error.message;
+        if (error.response?.data?.error?.error_user_msg) {
+          errorMsg = error.response.data.error.error_user_msg;
+        } else if (error.response?.data?.error?.message) {
+          errorMsg = error.response.data.error.message;
+        }
+        adsetErrors.push(errorMsg);
         adsetBatchIds.push(null);
       }
     }
+
+    // Check if all ad sets failed
+    if (adsetOps.length > 0 && adsetSuccessCount === 0 && adsetFailureCount > 0) {
+      console.error(`❌ All ad set batches failed (${adsetFailureCount}/${adsetOps.length})`);
+      const errorSummary = adsetErrors.slice(0, 3).join("; ");
+      return res.status(400).json({
+        success: false,
+        error: "Failed to create any ad sets",
+        details: errorSummary,
+        adsetErrors,
+        stats: {
+          attempted: adsetOps.length,
+          succeeded: adsetSuccessCount,
+          failed: adsetFailureCount,
+        },
+      });
+    }
+
+    // Log summary
+    console.log(`📊 Ad set creation summary: ${adsetSuccessCount} succeeded, ${adsetFailureCount} failed out of ${adsetOps.length} total`);
 
     // console.log("✅ All adset async batches created:", adsetBatchIds);
     // console.log("🗺️ Adset mapping:", adsetMapping);
@@ -4574,6 +4611,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         adsets: adsetCount,
         ads: totalAdsCount,
         totalChildObjects,
+      },
+      adsetStats: {
+        attempted: adsetOps.length,
+        succeeded: adsetSuccessCount,
+        failed: adsetFailureCount,
+        errors: adsetErrors,
       },
       message: "Campaign duplicated with two-phase async batch (adsets first, ads second). Check Meta Ads Manager after 1–5 minutes.",
     });
