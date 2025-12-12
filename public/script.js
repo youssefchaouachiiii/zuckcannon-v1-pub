@@ -10726,19 +10726,51 @@ async function processBulkCampaignDuplication(account) {
       }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || errorData.details || `Failed with status ${response.status}`);
-    }
-
     const data = await response.json();
 
-    statusSpan.textContent = "Success";
-    statusSpan.className = "account-progress-status success";
+    // Check for errors even in 200 OK responses
+    if (!response.ok || data.success === false) {
+      // Prioritize showing actual error details over generic error message
+      let errorMsg = data.error || `Failed with status ${response.status}`;
+
+      // If we have adsetErrors with actual error messages, use those instead
+      if (data.adsetErrors && data.adsetErrors.length > 0) {
+        errorMsg = data.adsetErrors[0];
+      } else if (data.details) {
+        errorMsg = data.details;
+      }
+
+      throw new Error(errorMsg);
+    }
+
+    // Check if ad sets failed to create
+    if (data.adsetStats && data.adsetStats.attempted > 0 && data.adsetStats.succeeded === 0) {
+      const firstError = data.adsetStats.errors?.[0] || "Unknown error";
+      throw new Error(firstError);
+    }
+
+    // Check for partial success (some ad sets failed)
+    const hasPartialFailure = data.adsetStats && data.adsetStats.failed > 0 && data.adsetStats.succeeded > 0;
+
+    if (hasPartialFailure) {
+      statusSpan.textContent = "Partial Success";
+      statusSpan.className = "account-progress-status partial";
+    } else {
+      statusSpan.textContent = "Success";
+      statusSpan.className = "account-progress-status success";
+    }
 
     let detailMessage = `✓ Campaign created: ${data.newCampaignId || data.id}`;
     if (data.mode === "async_double_batch") {
-      detailMessage += `\n${data.structure?.adsets || 0} adsets and ${data.structure?.ads || 0} ads will be duplicated asynchronously.`;
+      if (hasPartialFailure) {
+        detailMessage += `\n⚠️ ${data.adsetStats.succeeded}/${data.adsetStats.attempted} ad sets created (${data.adsetStats.failed} failed)`;
+        if (data.adsetStats.errors && data.adsetStats.errors.length > 0) {
+          detailMessage += `\nError: ${data.adsetStats.errors[0]}`;
+        }
+        detailMessage += `\n${data.structure?.ads || 0} ads will be duplicated asynchronously.`;
+      } else {
+        detailMessage += `\n${data.structure?.adsets || 0} adsets and ${data.structure?.ads || 0} ads will be duplicated asynchronously.`;
+      }
     }
     detailsDiv.textContent = detailMessage;
     detailsDiv.style.whiteSpace = "pre-line";
@@ -10755,7 +10787,7 @@ async function processBulkCampaignDuplication(account) {
 
     statusSpan.textContent = "Failed";
     statusSpan.className = "account-progress-status failed";
-    detailsDiv.textContent = `✗ ${error.message}`;
+    detailsDiv.innerHTML = `<div style="color: #721c24;"><strong>Error:</strong><br/>${error.message}</div>`;
 
     return {
       account,

@@ -24,14 +24,6 @@ export class AdaptiveSerialQueue {
     // Operation tracking
     this.currentOperation = null;
     this.startTime = null;
-
-    // TIER-based rate limiting settings
-    this.tierSystem = {
-      BLOCKED: { name: "BLOCKED", baseDelay: 0 }, // Will wait for ETA
-      CRITICAL: { name: "CRITICAL", delay: 300000 }, // 300 seconds
-      WARNING: { name: "WARNING", delayMin: 15000, delayMax: 20000 }, // 15-20 seconds
-      SAFE: { name: "SAFE", delay: 5000 }, // 5 seconds
-    };
   }
 
   /**
@@ -223,9 +215,6 @@ export class AdaptiveSerialQueue {
 
     if (usage) {
       console.log(`[AdaptiveSerialQueue] Rate limit status for ${this.accountId}: ` + `Calls: ${usage.callCount}, CPU Time: ${usage.totalCpuTime}, ` + `Total Time: ${usage.totalTime}`);
-
-      // Apply TIER-based delay
-      await this.applyTierRateLimit(usage.callCount, usage.estimatedTimeToRegainAccess);
     }
 
     // Enforce rate limit with adaptive delay
@@ -236,25 +225,6 @@ export class AdaptiveSerialQueue {
     if (operationDelay > 0) {
       console.log(`[AdaptiveSerialQueue] Operation-specific delay for ${operation.type}: ${operationDelay}ms`);
       await new Promise((resolve) => setTimeout(resolve, operationDelay));
-    }
-  }
-
-  /**
-   * Apply TIER-based rate limiting with intelligent delays
-   * Checks call_count and estimated_time_to_regain_access to determine tier
-   * 
-   * @param {number} callCount - Current API call count
-   * @param {number} estimatedTimeToRegainAccess - Seconds until access regained
-   * @returns {Promise<void>}
-   */
-  async applyTierRateLimit(callCount, estimatedTimeToRegainAccess) {
-    const tierInfo = this.getTierDelay(callCount, estimatedTimeToRegainAccess);
-    
-    console.log(`[AdaptiveSerialQueue] ${tierInfo.message}`);
-
-    if (tierInfo.delay > 0) {
-      console.log(`[AdaptiveSerialQueue] 💤 Applying TIER ${tierInfo.tier} delay: ${tierInfo.delay}ms (${(tierInfo.delay / 1000).toFixed(2)}s)`);
-      await new Promise((resolve) => setTimeout(resolve, tierInfo.delay));
     }
   }
 
@@ -275,57 +245,6 @@ export class AdaptiveSerialQueue {
     };
 
     return delayMap[operationType] || delayMap.default;
-  }
-
-  /**
-   * TIER-BASED RATE LIMIT SYSTEM
-   * Determines delay based on current call_count and estimated_time_to_regain_access
-   * 
-   * TIER 1 — BLOCKED: If ETA > 0, wait until regain access
-   * TIER 2 — CRITICAL: If call_count > 85, delay 300s
-   * TIER 3 — WARNING: If call_count >= 50 && call_count <= 85, delay 15-20s (random)
-   * TIER 4 — SAFE: If call_count < 50, delay 5s
-   * 
-   * @param {number} callCount - Current API call count
-   * @param {number} estimatedTimeToRegainAccess - ETA in seconds
-   * @returns {object} { tier, delay, message }
-   */
-  getTierDelay(callCount, estimatedTimeToRegainAccess) {
-    // TIER 1 - BLOCKED: estimated_time_to_regain_access > 0
-    if (estimatedTimeToRegainAccess > 0) {
-      const delayMs = estimatedTimeToRegainAccess * 1000;
-      return {
-        tier: "BLOCKED",
-        delay: delayMs,
-        message: `🛑 TIER 1 BLOCKED: Rate limited by Meta. Waiting ${estimatedTimeToRegainAccess}s to regain access`,
-      };
-    }
-
-    // TIER 2 - CRITICAL: call_count > 85
-    if (callCount > 85) {
-      return {
-        tier: "CRITICAL",
-        delay: this.tierSystem.CRITICAL.delay,
-        message: `⚠️  TIER 2 CRITICAL: Call count ${callCount}/100. Waiting ${this.tierSystem.CRITICAL.delay / 1000}s`,
-      };
-    }
-
-    // TIER 3 - WARNING: 50 <= call_count <= 85
-    if (callCount >= 50 && callCount <= 85) {
-      const randomDelay = Math.random() * (this.tierSystem.WARNING.delayMax - this.tierSystem.WARNING.delayMin) + this.tierSystem.WARNING.delayMin;
-      return {
-        tier: "WARNING",
-        delay: randomDelay,
-        message: `⚡ TIER 3 WARNING: Call count ${callCount}/100. Waiting ${(randomDelay / 1000).toFixed(1)}s (random: 15-20s)`,
-      };
-    }
-
-    // TIER 4 - SAFE: call_count < 50
-    return {
-      tier: "SAFE",
-      delay: this.tierSystem.SAFE.delay,
-      message: `✅ TIER 4 SAFE: Call count ${callCount}/100. Waiting ${this.tierSystem.SAFE.delay / 1000}s`,
-    };
   }
 
   /**
@@ -448,189 +367,6 @@ export class AdaptiveSerialQueue {
     this.results = [];
     this.currentOperation = null;
     console.log(`[AdaptiveSerialQueue] Queue cleared for account ${this.accountId}`);
-  }
-
-  /**
-   * LOOP-BASED ADSET CREATION WITH PER-ITERATION RATE LIMIT CHECKING
-   * 
-   * Creates adsets one at a time (1 adset per iteration) with:
-   * - Rate limit check after each adset
-   * - TIER-based delay between iterations
-   * - Support for creative uploading after each adset
-   * - Detailed progress tracking and logging
-   * 
-   * @param {Array} adsetConfigs - Array of adset configuration objects
-   * @param {Function} createAdsetFn - Function to create single adset: async (config) => result
-   * @param {Function} uploadCreativesFn - Function to upload creatives: async (adsetId, creatives) => result
-   * @param {object} options - Additional options like onIterationComplete callback
-   * @returns {Promise<object>} { successful, failed, results }
-   */
-  async processAdsetCreationLoop(adsetConfigs, createAdsetFn, uploadCreativesFn = null, options = {}) {
-    const totalAdsets = adsetConfigs.length;
-    console.log(`\n[AdaptiveSerialQueue] 🚀 Starting LOOP-BASED ADSET CREATION`);
-    console.log(`[AdaptiveSerialQueue] Total adsets to create: ${totalAdsets}`);
-    console.log(`[AdaptiveSerialQueue] ════════════════════════════════════════\n`);
-
-    const results = {
-      successful: [],
-      failed: [],
-      totalCreated: 0,
-      totalFailed: 0,
-      details: [],
-    };
-
-    for (let i = 0; i < totalAdsets; i++) {
-      const adsetConfig = adsetConfigs[i];
-      const iterationNumber = i + 1;
-      const completed = results.totalCreated;
-      const failed = results.totalFailed;
-      const pending = totalAdsets - iterationNumber;
-
-      // Progress header
-      console.log(`\n[AdaptiveSerialQueue] ┌────────────────────────────────────────────────────┐`);
-      console.log(`[AdaptiveSerialQueue] │ PROGRESS: ${completed}/${totalAdsets} created, ${failed} failed, ${pending} pending`);
-      console.log(`[AdaptiveSerialQueue] │ ITERATION ${iterationNumber}/${totalAdsets}: ${adsetConfig.name || `Adset ${iterationNumber}`}`);
-      console.log(`[AdaptiveSerialQueue] └────────────────────────────────────────────────────┘`);
-
-      try {
-        // ✅ STEP 1: Check rate limit BEFORE creating adset
-        console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] [Step 1/3] Checking rate limit...`);
-        await this.checkAndEnforceRateLimit({ type: "adset_create" });
-
-        // ✅ STEP 2: Create the adset
-        const adsetName = adsetConfig.name || `Adset ${iterationNumber}`;
-        console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] [Step 2/3] Creating adset: "${adsetName}"...`);
-        const adsetResult = await createAdsetFn(adsetConfig);
-
-        if (!adsetResult || !adsetResult.id) {
-          throw new Error("Failed to create adset: no ID returned from API");
-        }
-
-        const adsetId = adsetResult.id;
-        console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] ✅ Adset created: ${adsetId}`);
-
-        // ✅ STEP 3: Upload creatives for this adset (if provided)
-        if (uploadCreativesFn && adsetConfig.creatives && adsetConfig.creatives.length > 0) {
-          const creativeCount = adsetConfig.creatives.length;
-          console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] [Step 3/3] Uploading ${creativeCount} creative(s)...`);
-          
-          try {
-            const creativesResult = await uploadCreativesFn(adsetId, adsetConfig.creatives);
-            const uploadedCount = creativesResult?.successful || 0;
-            console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] ✅ Creatives uploaded: ${uploadedCount}/${creativeCount}`);
-          } catch (creativeError) {
-            console.warn(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] ⚠️  Creative upload failed: ${creativeError.message}`);
-            // Don't fail the whole operation if creatives upload fails
-          }
-        } else {
-          console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] [Step 3/3] Skipped (no creatives)`);
-        }
-
-        // Mark as successful
-        results.successful.push(adsetId);
-        results.totalCreated++;
-        results.details.push({
-          iteration: iterationNumber,
-          adsetId: adsetId,
-          status: "success",
-          config: adsetName,
-        });
-
-        // Log progress update
-        const newCompleted = results.totalCreated;
-        const newFailed = results.totalFailed;
-        const newPending = totalAdsets - iterationNumber;
-        console.log(`[AdaptiveSerialQueue] [✅ UPDATE] ${newCompleted}/${totalAdsets} operations completed, ${newFailed} failed, ${newPending} pending`);
-
-        // Callback for progress tracking
-        if (options.onIterationComplete) {
-          options.onIterationComplete({
-            iteration: iterationNumber,
-            total: totalAdsets,
-            completed: newCompleted,
-            failed: newFailed,
-            pending: newPending,
-            status: "success",
-            adsetId: adsetId,
-            currentTask: adsetName,
-          });
-        }
-
-        // ✅ STEP 4: Check rate limit AFTER creating adset and before next iteration
-        if (i < totalAdsets - 1) {
-          console.log(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] [Rate Limit Check] Checking before next iteration...`);
-          await this.applyTierRateLimit(...this.getCurrentRateLimitStatus());
-        }
-      } catch (error) {
-        // Mark as failed
-        results.failed.push({
-          iteration: iterationNumber,
-          config: adsetConfig.name || `Adset ${iterationNumber}`,
-          error: error.message,
-        });
-        results.totalFailed++;
-        results.details.push({
-          iteration: iterationNumber,
-          status: "failed",
-          error: error.message,
-          config: adsetConfig.name || `Adset ${iterationNumber}`,
-        });
-
-        const errorAdsetName = adsetConfig.name || `Adset ${iterationNumber}`;
-        console.error(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] ❌ FAILED: "${errorAdsetName}"`);
-        console.error(`[AdaptiveSerialQueue] [${iterationNumber}/${totalAdsets}] Error: ${error.message}`);
-
-        // Log progress update
-        const newCompleted = results.totalCreated;
-        const newFailed = results.totalFailed;
-        const newPending = totalAdsets - iterationNumber;
-        console.error(`[AdaptiveSerialQueue] [❌ UPDATE] ${newCompleted}/${totalAdsets} operations completed, ${newFailed} failed, ${newPending} pending`);
-
-        // Callback for progress tracking
-        if (options.onIterationComplete) {
-          options.onIterationComplete({
-            iteration: iterationNumber,
-            total: totalAdsets,
-            completed: newCompleted,
-            failed: newFailed,
-            pending: newPending,
-            status: "failed",
-            error: error.message,
-            currentTask: errorAdsetName,
-          });
-        }
-
-        // Decide if we should continue or stop on error
-        if (options.stopOnError) {
-          console.error(`[AdaptiveSerialQueue] ⛔ Stopping loop due to error (stopOnError: true)`);
-          break;
-        }
-      }
-    }
-
-    // Final Summary
-    console.log(`\n[AdaptiveSerialQueue] ════════════════════════════════════════`);
-    console.log(`[AdaptiveSerialQueue] 🎉 LOOP COMPLETED`);
-    console.log(`[AdaptiveSerialQueue] ════════════════════════════════════════`);
-    console.log(`[AdaptiveSerialQueue] Total Adsets: ${totalAdsets}`);
-    console.log(`[AdaptiveSerialQueue] ✅ Successful: ${results.totalCreated}`);
-    console.log(`[AdaptiveSerialQueue] ❌ Failed: ${results.totalFailed}`);
-    console.log(`[AdaptiveSerialQueue] Success Rate: ${((results.totalCreated / totalAdsets) * 100).toFixed(1)}%`);
-    console.log(`[AdaptiveSerialQueue] ════════════════════════════════════════\n`);
-
-    return results;
-  }
-
-  /**
-   * Get current rate limit status from tracker
-   * @returns {Array} [callCount, estimatedTimeToRegainAccess]
-   */
-  getCurrentRateLimitStatus() {
-    const usage = rateLimitTracker.getUsage(this.accountId);
-    if (!usage) {
-      return [0, 0]; // Default to safe values if no data
-    }
-    return [usage.callCount, usage.estimatedTimeToRegainAccess];
   }
 }
 
