@@ -1,0 +1,226 @@
+*   [33m75411c8[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mstaging-kevin[m[33m, [m[1;31morigin/staging[m[33m)[m Merge pull request #47 from youssefchaouachiiii/staging-rayhan
+[31m|[m[32m\[m  
+[31m|[m * [33m3592459[m[33m ([m[1;31morigin/staging-rayhan[m[33m, [m[1;31morigin/staging-kevin[m[33m, [m[1;32mstaging-rayhan[m[33m)[m fix: duplicate campaign sync for its adset and ads
+[31m|[m * [33mc7e3ab6[m fix: CTA depends on user choice with guide provided
+[31m|[m * [33m03816a5[m feat: destination type on adset field & fix error handler of session issue
+[31m|[m * [33m1a2c6e0[m fix: pacing type conditional for adset budget on adset level
+* [32m|[m [33ma85b073[m Merge pull request #46 from youssefchaouachiiii/staging-rayhan
+[33m|[m[32m\[m[32m|[m 
+[33m|[m * [33m80c6498[m fix: refine user message handler through message fields for: app promotion campaign, duplicate adset if its failed, etc.
+[33m|[m * [33mc5ca310[m fix: update fields on create campaign multi account modal
+[33m|[m * [33m9054168[m fix: undefined some assets issue on ad creation
+[33m|[m * [33m711b3b2[m fix: set pacing_types at campaign level
+[33m|[m * [33mb475d39[m fix: set pixel_id and event_type as promoted_object that being sent for sales adset & each optimization_goal adjustment
+* [34m|[m [33m75ec391[m Merge pull request #45 from youssefchaouachiiii/staging-rayhan DONE BY RAYHAN
+[35m|[m[34m\[m[34m|[m 
+[35m|[m * [33m250358f[m fix: decimal bid amount and fetch geo data on adset creationn
+[35m|[m * [33m69f4b8b[m fix: state management of ad creative, browse creative library bug, and fix cta field recommendations
+[35m|[m * [33meaaedd0[m feat: multiple special ad categories and countries on campaign creation
+[35m|[m * [33m2673710[m fix: default params conditional, update response format, frontend ad category location validation, map engagement to conversations optimization_goal
+[35m|[m * [33m6b615ea[m fix: await async ops on upload videos and images endpoints of ads creative
+[35m|[m * [33mb252451[m fix: page ID field on create ad
+[35m|[m * [33m208f176[m fix: pacing_type when adset_schedule is on
+[35m|[m * [33m5c4111d[m fix: campaign budget adjustment on its adset creation
+* [36m|[m [33m9391b53[m Merge pull request #44 from youssefchaouachiiii/staging-rayhan
+[1;31m|[m[36m\[m[36m|[m 
+[1;31m|[m * [33mefc206f[m fix: try catch syntax error
+[1;31m|[m * [33m5a5f383[m feat: on campaign level, add budget choice (campaign or adset level), budget type, bid strategy, campaign preview
+[1;31m|[m * [33m8b3b341[m[33m ([m[1;31morigin/staging-dewa[m[33m)[m Fix: Hide budget field in create campaign; Auto-Set Billing Event to Impression & hide Field; Add Search Filter for Country Selection
+* [1;32m|[m [33m6f0cf62[m Merge pull request #42 from youssefchaouachiiii/staging-dewa
+[1;33m|[m[1;32m\[m[1;32m|[m 
+[1;33m|[m * [33m3c1a417[m fix: adset second naming;
+[1;33m|[m * [33m5df2c3c[m fix special ad categories validation in duplicate adset;
+[1;33m|[m * [33md14c0d9[m fix error 404;
+[1;33m|[m * [33m1b99f73[m Add Special Ad Categories condition; Change button validation;
+[1;33m|[m * [33m0d8e037[m Change: Validation on Submit and show error massage; Special Ad Categories Compatibility;
+[1;33m|[m * [33mdf096c4[m Fix: Page ID Missing Error;
+[1;33m|[m * [33m1ca8262[m fix batch null;
+[1;33m|[m * [33ma52b7fa[m fix error "getObjectiveFriendlyName", "Special Ad Category Advantage+", "deep_copy false";
+[1;33m|[m * [33m4e4eb0a[m add filtering and validation in create and duplicate adset to multiple campaign
+[1;33m|[m * [33mde4c7c9[m fix campaign doesn't match account and invalid combination
+[1;33m|[m[1;33m/[m  
+*   [33meb3e691[m Merge pull request #41 from youssefchaouachiiii/staging-rayhan
+[1;35m|[m[1;36m\[m  
+[1;35m|[m * [33m311299f[m feat: add create ads (modal) with adcreatives on create adset for multiple campaigns flow
+[1;35m|[m * [33m644d316[m fix: multiple adsets response parsing
+[1;35m|[m * [33m3ae78d1[m fix: update required params for adsets on multimple campaigns and better error handling
+[1;35m|[m * [33m05fcc74[m feat: re-add modal preventive warnings when user clicks outside modal area
+[1;35m|[m *   [33m184de0e[m Merge remote-tracking branch 'origin/staging-rayhan' into staging-rayhan
+[1;35m|[m [31m|[m[32m\[m  
+[1;35m|[m [31m|[m * [33m3526a82[m fix: complete more fields for Create Ad Set for Multiple Campaigns and reate Campaign for Multiple Ad Accounts features
+[1;35m|[m * [32m|[m [33mb13e644[m feat: add simple warning when exiting modal without using close button to prevent user losing data
+[1;35m|[m * [32m|[m [33mc42f63f[m fix: complete more fields for Create Ad Set for Multiple Campaigns and reate Campaign for Multiple Ad Accounts features
+[1;35m|[m [32m|[m[32m/[m  
+* [32m|[m [33m169031a[m Merge pull request #40 from youssefchaouachiiii/staging-dewa
+[33m|[m[32m\[m[32m|[m 
+[33m|[m * [33mf1d9c10[m fix is_adset_budget_sharing_enabled field error
+[33m|[m * [33mdaf13d1[m fix "parameter special_ad_categories is required" error;
+[33m|[m * [33md96be67[m -
+[33m|[m * [33m65f696e[m fix "no ads account"
+[33m|[m * [33m16c928b[m Add feature create multiple account campaign;
+[33m|[m * [33mdb7bf30[m add console.log debugging
+[33m|[m * [33m99df853[m fix error Invalid parameter Special Ad Category;
+[33m|[m * [33m2fbbba7[m -
+[33m|[m * [33mfe9281e[m -
+[33m|[m * [33ma79a6d0[m -
+[33m|[m * [33m4c7ddee[m -
+[33m|[m * [33mb6355a3[m Add Multiple Campaign Adset Creation;
+[33m|[m * [33m7c51344[m fix Multiple Select Campaign; Add debugging;
+[33m|[m * [33m6a4a88b[m fix error missing campaign_id;
+[33m|[m * [33mbc654af[m add multi campaign feature;
+[33m|[m[33m/[m  
+*   [33m6b06f87[m Merge pull request #39 from youssefchaouachiiii/staging-rayhan
+[35m|[m[36m\[m  
+[35m|[m * [33m991f71a[m fix: duplicate adset to multiple accounts with additional step of pick campaign from ad account target
+* [36m|[m [33m3b661f8[m Merge pull request #37 from youssefchaouachiiii/staging-rayhan
+[1;31m|[m[36m\[m[36m|[m 
+[1;31m|[m * [33m5d3f4ef[m feat: duplicate campaign for multiple ad accounts
+* [1;32m|[m [33m7c34eca[m Merge pull request #35 from youssefchaouachiiii/staging-rayhan
+[1;33m|[m[1;32m\[m[1;32m|[m 
+[1;33m|[m * [33mf3689e1[m fix: promoted object handling on adset and update cta based on meta api
+* [1;34m|[m [33m92fe5cf[m Merge pull request #33 from youssefchaouachiiii/staging-rayhan
+[1;35m|[m[1;34m\[m[1;34m|[m 
+[1;35m|[m * [33mef6a0ca[m fix: adset fields missing
+[1;35m|[m[1;35m/[m  
+*   [33m23006a1[m Merge pull request #32 from youssefchaouachiiii/staging-dewa
+[31m|[m[32m\[m  
+[31m|[m * [33me41b1a7[m -
+[31m|[m * [33m00c0ea4[m fix creative upload bug;
+[31m|[m * [33me9ba5f8[m -
+[31m|[m * [33m80e1586[m fix duplicate dialog box; fix creative upload bug
+[31m|[m * [33m2fa78ce[m fix "result.forEach is not a function"; add dialog for duplicate;
+[31m|[m * [33m4e85b1e[m fix upload creative bug; add duplicate rule to another ad account
+[31m|[m * [33m5771c49[m fix validation failed error
+[31m|[m * [33m7e186a4[m add debugging console.log for checkValidation
+[31m|[m * [33mc520743[m -
+[31m|[m * [33m15e31c3[m fix add condition rule bug
+[31m|[m * [33m4118815[m implemented duplicate rule; fix gdrive creative upload glitch;
+[31m|[m[31m/[m  
+*   [33m3fa9018[m Merge pull request #30 from youssefchaouachiiii/staging-rayhan
+[33m|[m[34m\[m  
+[33m|[m * [33mecf7fc4[m fix: engagement and lead campaign issues, hide unnecessary fields on the top of adset
+* [34m|[m [33m38a0f02[m Merge pull request #28 from youssefchaouachiiii/staging-rayhan
+[35m|[m[34m\[m[34m|[m 
+[35m|[m * [33m23dc4e9[m fix: button placement & metric UI update
+* [36m|[m [33m150457f[m Merge pull request #27 from youssefchaouachiiii/staging-dewa
+[1;31m|[m[36m\[m[36m|[m 
+[1;31m|[m * [33m2c41f71[m fix schedule continuously freq
+[1;31m|[m * [33mc7f6b56[m -
+[1;31m|[m * [33m06bb5ad[m fix Trigger type is required error
+[1;31m|[m * [33m1b9f599[m fix custom schedule bug
+[1;31m|[m * [33m3a842e8[m fix Unknown Schedule UI
+[1;31m|[m * [33m9593e2c[m remove process window
+[1;31m|[m * [33m254a8c6[m Fix error "Invalid Parameter"
+[1;31m|[m * [33m38ffa48[m fix ad_account_id is required
+[1;31m|[m * [33m492ccd3[m fix ad_account_id is required error
+[1;31m|[m * [33m435041d[m fix error ad_account_id is required
+[1;31m|[m * [33m2d13b89[m fix css issue
+[1;31m|[m * [33mad88456[m fix css on Multi-Account Rule Creation feature
+[1;31m|[m * [33m0edf694[m debugging multi account feature
+[1;31m|[m * [33m737c407[m debug multi account feature
+[1;31m|[m * [33m9e83a04[m make Multi-Account Rule Creation feature
+[1;31m|[m[1;31m/[m  
+*   [33ma59c0d1[m Merge pull request #26 from youssefchaouachiiii/staging-rayhan
+[1;33m|[m[1;34m\[m  
+[1;33m|[m * [33m0a4ed35[m feat: operator budget & bid fix, param budget-reset added to solve daily_budget status on ad manager, target_field validated & not needed for now, schedule normalized (HOURLY & SEMI-HOURLY -> Continuously), notif-rules investigated (required more advanced acess, SET bid/budget option hidden, double & emtpy field on UPDATE flow is solved, reduce operations & add min-max (range) for in/not in range operation
+* [1;34m|[m [33mf62813f[m Merge pull request #25 from youssefchaouachiiii/staging-dewa
+[1;35m|[m[1;34m\[m[1;34m|[m 
+[1;35m|[m * [33md57d9b5[m fix daily budget and lifetime budget glitch
+[1;35m|[m * [33mdd26d31[m check validation
+[1;35m|[m * [33m2434f62[m adjust the bid amount can increase and decrease
+[1;35m|[m * [33md420a7d[m fix: change unit to ACCOUNT_CURRENCY
+[1;35m|[m * [33m2bbade0[m fix: add unit field in change_spec
+[1;35m|[m * [33mc0b8bff[m fix change_bid feature
+[1;35m|[m * [33m5677c32[m rollback code
+[1;35m|[m * [33m7de3cc0[m fix condition adding in evaluation_spec
+[1;35m|[m * [33m35cdc5d[m Add filter in evaluation_spec
+[1;35m|[m * [33m3d7b314[m fix error Invalid target_field in change_spec
+[1;35m|[m * [33m8df8529[m fix error Invalid keys \"change_spec\"
+[1;35m|[m * [33m59826b8[m fix the Invalid keys error
+[1;35m|[m * [33maca5684[m test new adjust budget based on Meta API
+[1;35m|[m * [33m29fdcbd[m fix action adjust budget
+[1;35m|[m * [33mfe38227[m fix action adjust budget
+[1;35m|[m * [33m6514702[m add exec_type based on action type and entity type
+[1;35m|[m * [33m720a322[m change fix approach
+[1;35m|[m * [33m640c920[m change: execution_spec code for change_budget
+[1;35m|[m *   [33m1162a8c[m Merge branch 'staging' of https://github.com/youssefchaouachiiii/zuckcannon-v1-pub into staging-dewa
+[1;35m|[m [31m|[m[1;35m\[m  
+[1;35m|[m [31m|[m[1;35m/[m  
+[1;35m|[m[1;35m/[m[31m|[m   
+* [31m|[m   [33m76e73a9[m Merge pull request #24 from youssefchaouachiiii/staging-rayhan
+[33m|[m[34m\[m [31m\[m  
+[33m|[m * [31m|[m [33m4f81865[m UI changes on: hiding fields that not needed for now. Further, need to test the change budget & bid flow
+[33m|[m[33m/[m [31m/[m  
+* [31m|[m [33m7cb4a05[m fix: adding form condition in edit rules
+* [31m|[m [33m7aa5d41[m add: console log for edit debugging
+* [31m|[m [33mcabebac[m fix: Error failed to load rule data
+* [31m|[m [33mee5b153[m add: logging in subscriber
+* [31m|[m [33mf3d892f[m fix glitch
+* [31m|[m [33maba54d1[m add console log for debugging
+* [31m|[m [33ma9880d3[m rollback
+* [31m|[m [33mf5c719d[m rollback
+* [31m|[m [33m9f60c85[m Fix bug
+* [31m|[m [33m5085978[m fix
+* [31m|[m [33m9027027[m fix: UI table glitch, error resource not found, extra empty condition when edit
+* [31m|[m [33mcb66d75[m fix: error "Failed to load automated rules"
+* [31m|[m [33mc9f7a91[m fix: error schedule is required param, value 0 validation, invalid operator error, toggle UI not update
+* [31m|[m   [33mcb6f41f[m Merge pull request #23 from youssefchaouachiiii/staging-rayhan
+[35m|[m[36m\[m [31m\[m  
+[35m|[m * [31m|[m [33mf7937c8[m feat: automated rule feature, need to fix Subscriber field, and check other bugs
+* [36m|[m [31m|[m [33mc76e191[m Merge pull request #21 from youssefchaouachiiii/staging-rayhan
+[1;31m|[m[36m\[m[36m|[m [31m|[m 
+[1;31m|[m * [31m|[m [33m03bde81[m fix: css opacity of optional pixel and custom event issue
+[1;31m|[m[1;31m/[m [31m/[m  
+* [31m|[m [33m3a4b58c[m clean debugging console.log
+* [31m|[m [33m538d38c[m remove pixel icon
+* [31m|[m [33mb046bda[m fix box max age and remove status round in pixel
+* [31m|[m [33m0793f3f[m fix brace
+* [31m|[m [33m6e51f56[m test pixel sorting
+* [31m|[m [33m3d51c0b[m add console log to check pixel and fix max age box field
+* [31m|[m [33mcf4738e[m fix: pixel filtering (again)
+* [31m|[m [33ma679522[m fix pixel filtering
+* [31m|[m [33m1b30691[m fix: filtering pixel
+* [31m|[m [33mf55b5d9[m -
+* [31m|[m [33m9bd853b[m fix: Max age box, add bid_amount for bid_strategy, add filter unavailable pixel
+* [31m|[m [33mcfff021[m fix: pacing_type now conditional
+* [31m|[m [33md2f20bb[m fix: adset duplicate refresh issue
+* [31m|[m   [33mb80dfb5[m Merge pull request #20 from youssefchaouachiiii/staging-rayhan
+[1;33m|[m[1;34m\[m [31m\[m  
+[1;33m|[m * [31m|[m [33m1bbd3bd[m fix: move daily and lifetime budget field to adset level, add pacing_type param, fix adset schedule time format, fix adset pixel id param, and fix ui bug on adset fields
+[1;33m|[m[1;33m/[m [31m/[m  
+* [31m|[m   [33me2d408a[m Merge branch 'staging' of https://github.com/youssefchaouachiiii/zuckcannon-v1-pub into staging
+[1;35m|[m[1;36m\[m [31m\[m  
+* [1;36m|[m [31m|[m [33m41379c1[m fix double budget bugs
+[1;36m|[m [1;36m|[m * [33m9ecf11c[m Merge branch 'staging' of https://github.com/youssefchaouachiiii/zuckcannon-v1-pub into staging-dewa
+[1;36m|[m [1;36m|[m[1;36m/[m[1;36m|[m 
+[1;36m|[m[1;36m/[m[1;36m|[m[1;36m/[m  
+[1;36m|[m *   [33mcb0d920[m Merge pull request #19 from youssefchaouachiiii/staging-rayhan
+[1;36m|[m [33m|[m[34m\[m  
+[1;36m|[m [33m|[m * [33m54757d2[m feat: adset schedule (not done) and fix: adset field UI bug
+[1;36m|[m [33m|[m[33m/[m  
+* [33m|[m [33mbb473fc[m Merge pull request #18 from youssefchaouachiiii/staging
+[35m|[m[33m\[m[33m|[m 
+[35m|[m * [33m0463ebb[m fix pixel for OFFSITE CONVERSIONS
+[35m|[m * [33m4ed377a[m fix pixel issue
+[35m|[m *   [33m0309507[m Merge branch 'staging' of https://github.com/youssefchaouachiiii/zuckcannon-v1-pub into staging
+[35m|[m [1;31m|[m[1;32m\[m  
+[35m|[m [1;31m|[m *   [33mb1b892c[m Merge pull request #17 from youssefchaouachiiii/staging-dewa
+[35m|[m [1;31m|[m [1;33m|[m[1;34m\[m  
+[35m|[m [1;31m|[m [1;33m|[m * [33m9d8018c[m fix dropdown glitch
+[35m|[m [1;31m|[m [1;33m|[m[1;33m/[m  
+[35m|[m [1;31m|[m *   [33madc119a[m Merge pull request #16 from youssefchaouachiiii/staging-rayhan
+[35m|[m [1;31m|[m [1;35m|[m[1;36m\[m  
+[35m|[m [1;31m|[m [1;35m|[m * [33mf21645c[m fix: special ad category country requirement, auto adjust optimization goal on campaign while create adset, & update UI warnings
+[35m|[m [1;31m|[m [1;35m|[m * [33m7605638[m fix: duplicate ads mapping on duplicate campaign flow & refine success message for user to the UI
+[35m|[m [1;31m|[m [1;35m|[m * [33md851d42[m cleaning logs, mostly on duplicate adset
+[35m|[m [1;31m|[m [1;35m|[m * [33m61338c0[m debug server.js
+[35m|[m [1;31m|[m [1;35m|[m[1;35m/[m  
+[35m|[m * [1;35m/[m [33m6966b42[m fix dropdown
+[35m|[m [1;35m|[m[1;35m/[m  
+[35m|[m *   [33mc525882[m Merge pull request #15 from youssefchaouachiiii/staging-dewa
+[35m|[m [31m|[m[32m\[m  
+[35m|[m [31m|[m *   [33m8e6e2c3[m Merge branch 'staging' of https://github.com/youssefchaouachiiii/zuckcannon-v1-pub into staging-dewa
+[35m|[m [31m|[m [33m|[m[31m\[m  
+[35m|[m [31m|[m [33m|[m[31m/[m  
+[35m|[m [31m|[m[31m/[m[33m|[m   
+[35m|[m * [33m|
