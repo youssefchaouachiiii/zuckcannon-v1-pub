@@ -3095,6 +3095,11 @@ h2 {
   color: #155724;
 }
 
+.account-progress-status.partial {
+  background: #ffeaa7;
+  color: #856404;
+}
+
 .account-progress-status.failed {
   background: #ff7675;
   color: #721c24;
