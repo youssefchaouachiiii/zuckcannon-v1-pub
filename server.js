@@ -27,6 +27,7 @@ import { validateRequest, loginRateLimiter, apiRateLimiter } from "./backend/mid
 import { getPaths } from "./backend/utils/paths.js";
 import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
+import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -208,6 +209,24 @@ const oauth2Client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.
 oauth2Client.setCredentials({
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
 });
+
+// Setup axios interceptor to track Facebook API rate limits
+axios.interceptors.response.use(
+  (response) => {
+    // Track rate limits from Facebook Graph API responses
+    if (response.config.url && response.config.url.includes("graph.facebook.com")) {
+      trackRateLimitFromResponse(response);
+    }
+    return response;
+  },
+  (error) => {
+    // Track rate limits even from error responses
+    if (error.response && error.config.url && error.config.url.includes("graph.facebook.com")) {
+      trackRateLimitFromResponse(error.response);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // SSE Upload Progress Management
 const uploadSessions = new Map();
@@ -608,6 +627,31 @@ app.delete("/api/meta-cache", async (req, res) => {
   }
 });
 
+// Rate limit statistics endpoint
+app.get("/api/rate-limit-stats", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    const allUsage = rateLimitTracker.getAllUsage();
+    const summary = rateLimitTracker.getSummary();
+
+    res.json({
+      success: true,
+      accounts: allUsage.map((usage) => ({
+        accountId: usage.accountId,
+        callCount: usage.callCount,
+        tier: usage.tier,
+        totalTime: usage.totalTime,
+        estimatedTimeToRegainAccess: usage.estimatedTimeToRegainAccess,
+        status: rateLimitTracker.isCritical(usage) ? "CRITICAL" : rateLimitTracker.isApproachingLimit(usage) ? "WARNING" : "OK",
+        timestamp: new Date(usage.timestamp).toISOString(),
+      })),
+      summary,
+    });
+  } catch (error) {
+    console.error("Error fetching rate limit stats:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create upload session endpoint
 app.post("/api/create-upload-session", (req, res) => {
   const sessionId = createUploadSession();
@@ -880,6 +924,10 @@ async function fetchUserAdAccounts(userAccessToken) {
         fields: "name,id,account_id,business{id,name}",
       },
     });
+
+    // Track rate limit from response
+    trackRateLimitFromResponse(adAccResponse);
+
     return { adAccounts: adAccResponse.data.data };
   } catch (err) {
     console.error("❌ Error fetching user ad accounts:", err.message);
@@ -961,8 +1009,12 @@ async function fetchAssignedPages() {
 async function fetchCampaigns(account_id, userAccessToken = null) {
   const campaignUrl = `https://graph.facebook.com/${api_version}/${account_id}/campaigns`;
   const token = userAccessToken || access_token;
+  const normalizedAccountId = normalizeAdAccountId(account_id);
 
   try {
+    // Enforce rate limiting before making request
+    await enforceRateLimit(normalizedAccountId);
+
     const campaignResponse = await axios.get(campaignUrl, {
       params: {
         fields: "account_id,id,name,objective,bid_strategy,special_ad_categories,status,insights{spend,clicks},adsets{id,name},daily_budget,lifetime_budget,created_time",
@@ -1047,6 +1099,22 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
   const token = userAccessToken || access_token;
 
   try {
+    // Enforce rate limiting before making request
+    await enforceRateLimit(normalizedAccountId);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Image file not found: ${filePath}`);
+    }
+
+    // Check file size - minimum 1KB for valid image
+    const stats = fs.statSync(filePath);
+    if (stats.size < 1024) {
+      throw new Error(`Image file too small (${stats.size} bytes - less than 1KB). The file may be corrupted or incomplete. Please try uploading again.`);
+    }
+
+    console.log(`Uploading image to Meta: ${filePath} (${stats.size} bytes)`);
+
     const fd = new FormData();
     fd.append("source", fs.createReadStream(filePath));
     fd.append("access_token", token);
@@ -1059,6 +1127,7 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
       maxBodyLength: Infinity,
     });
 
+    // Response is automatically tracked by axios interceptor
     console.log("Successfully uploaded image to Meta!");
     const images = response.data.images;
     const dynamicKey = Object.keys(images)[0];
@@ -2726,6 +2795,37 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
   console.log(`  - Requested Account: ${normalizedAccountId}`);
   console.log(`  - Cross-Account: ${isCrossAccount}`);
 
+  // EARLY DSA DETECTION for cross-account ad set duplication
+  let dsaMismatchInfo = null;
+  if (isCrossAccount) {
+    console.log("🔍 Checking DSA beneficiary match for cross-account ad set duplication...");
+    try {
+      const sourceDSA = await MetaBatch.fetchDSAConfiguration(sourceAdSetAccountId, userAccessToken);
+      const targetDSA = await MetaBatch.fetchDSAConfiguration(targetCampaignAccountId, userAccessToken);
+
+      dsaMismatchInfo = MetaBatch.detectDSAMismatch(sourceDSA, targetDSA);
+
+      if (dsaMismatchInfo.hasMismatch && !dsaMismatchInfo.matchedPageId) {
+        console.error("❌ DSA beneficiary mismatch with no matching page found");
+        return res.status(400).json({
+          success: false,
+          error: "DSA beneficiary page mismatch",
+          details: "Source and target accounts have different DSA beneficiary pages, and no matching page was found in target account.",
+          availablePages: dsaMismatchInfo.availablePages.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
+          sourcePageId: dsaMismatchInfo.sourcePageId,
+          targetPageId: dsaMismatchInfo.targetPageId,
+          requiresUserSelection: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to check DSA configuration:", err.message);
+      // Don't fail the duplication, just log and continue
+    }
+  }
+
   // Validation: Check if campaign belongs to the specified account
   if (targetCampaignAccountId && normalizedAccountId !== targetCampaignAccountId) {
     console.error(`❌ MISMATCH: Campaign ${campaign_id} belongs to account ${targetCampaignAccountId}, but request specifies account ${normalizedAccountId}`);
@@ -2840,6 +2940,17 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.targeting) {
         let targetingCopy = JSON.parse(JSON.stringify(sourceAdSet.targeting)); // Deep clone
 
+        // Remove deprecated targeting fields that Facebook no longer accepts
+        if (targetingCopy.targeting_optimization) {
+          delete targetingCopy.targeting_optimization;
+          console.log("  - Removed targeting_optimization (deprecated)");
+        }
+        
+        if (targetingCopy.targeting_automation) {
+          delete targetingCopy.targeting_automation;
+          console.log("  - Removed targeting_automation (deprecated)");
+        }
+
         if (hasSpecialCategories) {
           console.log("⚠️ Target campaign has special ad categories. Removing Advantage+ targeting settings...");
 
@@ -2869,7 +2980,17 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         createAdSetPayload.targeting = targetingCopy;
       }
       if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
-      if (sourceAdSet.promoted_object) createAdSetPayload.promoted_object = sourceAdSet.promoted_object;
+      
+      // Handle DSA beneficiary page matching for cross-account duplication
+      let promotedObject = sourceAdSet.promoted_object ? JSON.parse(JSON.stringify(sourceAdSet.promoted_object)) : {};
+      if (dsaMismatchInfo?.matchedPageId && promotedObject) {
+        promotedObject.page_id = dsaMismatchInfo.matchedPageId;
+        console.log(`📍 Updated promoted_object page_id to matched DSA page: ${dsaMismatchInfo.matchedPageId}`);
+      }
+      if (promotedObject && Object.keys(promotedObject).length > 0) {
+        createAdSetPayload.promoted_object = promotedObject;
+      }
+      
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
       // Note: pacing_type is a CAMPAIGN-LEVEL setting only. Do not copy to ad set level.
@@ -2906,77 +3027,356 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
         // For cross-account, we need to fetch full ad details and recreate them
         // Cannot use /copies endpoint across accounts
-        console.log("⚠️ Cross-account ad duplication: fetching full ad details...");
-
-        // Get page_id from promoted_object for target account
-        const targetPageId = createAdSetPayload.promoted_object?.page_id || sourceAdSet.promoted_object?.page_id;
-
-        if (!targetPageId) {
-          console.error("⚠️ No page_id found in promoted_object. Ads cannot be created without a page.");
-          return res.json({
-            success: true,
-            mode: "cross_account_sync",
-            id: newAdSetId,
-            original_id: ad_set_id,
-            message: "Ad set created successfully, but ads cannot be duplicated (no page_id found in promoted_object)",
-          });
-        }
-
-        console.log(`Using page_id ${targetPageId} for ad creatives in target account`);
+        console.log("🔄 Cross-account ad duplication: Attempting to clone creatives intelligently...");
+        console.log("📌 Strategy: Keep original page_id, re-upload images to get new account-specific image_hash");
 
         const FormData = (await import("form-data")).default;
         const batchOperations = [];
 
-        // Fetch full details for each ad
-        for (const ad of adsData) {
+        // Map to store source creative ID -> target creative ID to avoid duplicate uploads
+        const creativeMapping = {};
+        let creativesProcessed = 0;
+
+        // Fetch full details for each ad with rate limit handling
+        for (let adIndex = 0; adIndex < adsData.length; adIndex++) {
+          const ad = adsData[adIndex];
+
+          // Add delay between requests to avoid rate limiting (stagger by 100ms per ad)
+          if (adIndex > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+
+          // Add delay every 10 ads to avoid rate limits
+          if (creativesProcessed > 0 && creativesProcessed % 10 === 0) {
+            console.log(`⏸️ Pausing 2 seconds to avoid rate limits (processed ${creativesProcessed} creatives)...`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+
           try {
             const adDetailsUrl = `https://graph.facebook.com/${api_version}/${ad.id}`;
             const adDetailsResponse = await axios.get(adDetailsUrl, {
               params: {
-                fields: "name,adcreatives{id,name,object_story_spec,image_url,image_hash,video_id,thumbnail_url}",
+                fields: "name,creative{id,name,effective_object_story_id,object_story_spec,call_to_action_type,link_url,image_url,video_id}",
                 access_token: userAccessToken,
               },
             });
 
             const sourceAd = adDetailsResponse.data;
-            const adCreative = sourceAd.adcreatives?.data?.[0];
+            const sourceCreative = sourceAd.creative;
 
-            if (!adCreative) {
+            if (!sourceCreative?.id) {
               console.log(`⚠️ Ad ${ad.id} has no creative, skipping...`);
               continue;
             }
 
-            // Clone object_story_spec and update page_id for target account
-            let targetObjectStorySpec = JSON.parse(JSON.stringify(adCreative.object_story_spec || {}));
-            targetObjectStorySpec.page_id = targetPageId;
+            let targetCreativeId = null;
 
-            console.log(`Ad ${ad.id}: Updated page_id from ${adCreative.object_story_spec?.page_id} to ${targetPageId}`);
+            // Check if we already processed this creative
+            if (creativeMapping[sourceCreative.id]) {
+              targetCreativeId = creativeMapping[sourceCreative.id];
+              console.log(`✓ Using cached creative mapping: ${sourceCreative.id} -> ${targetCreativeId}`);
+            } else {
+              try {
+                // Fetch creative details including image URL
+                const creativeDetailUrl = `https://graph.facebook.com/${api_version}/${sourceCreative.id}`;
+                const creativeResponse = await axios.get(creativeDetailUrl, {
+                  params: {
+                    fields: "name,object_story_spec,object_story_id,call_to_action_type,link_url,image_url,thumbnail_url",
+                    access_token: userAccessToken,
+                  },
+                });
 
-            // Build batch operation to create new ad with creative
-            // We need to create ad creative first, then ad
-            const createAdCreativeOp = {
-              name: `create_creative_${ad.id}`,
-              method: "POST",
-              relative_url: `act_${normalizedAccountId}/adcreatives`,
-              body: `name=${encodeURIComponent(adCreative.name || `${ad.name} Creative`)}&object_story_spec=${encodeURIComponent(JSON.stringify(targetObjectStorySpec))}`,
-            };
+                const sourceCreativeData = creativeResponse.data;
+                console.log(`\n📋 Processing creative ${sourceCreative.id}: ${sourceCreativeData.name}`);
 
-            const createAdOp = {
-              name: `create_ad_${ad.id}`,
-              method: "POST",
-              relative_url: `act_${normalizedAccountId}/ads`,
-              body: `name=${encodeURIComponent(sourceAd.name || ad.name)}&adset_id=${newAdSetId}&creative={creative_id:{result=create_creative_${ad.id}:$.id}}&status=${status_option || "PAUSED"}`,
-            };
+                // Validate creative has valid external link (required for OUTCOME_TRAFFIC campaigns)
+                let hasValidExternalLink = false;
 
-            batchOperations.push(createAdCreativeOp);
-            batchOperations.push(createAdOp);
+                if (sourceCreativeData.object_story_spec) {
+                  const spec = sourceCreativeData.object_story_spec;
+
+                  // Check for external link in link_data
+                  if (spec.link_data?.link) {
+                    const link = spec.link_data.link;
+                    // Valid if it's NOT a Facebook/Instagram internal link
+                    if (!link.includes("facebook.com") && !link.includes("instagram.com") && !link.includes("fb.me")) {
+                      hasValidExternalLink = true;
+                    }
+                  }
+
+                  // Also check video_data (some creatives use video_data instead of link_data)
+                  if (!hasValidExternalLink && spec.video_data?.call_to_action?.value?.link) {
+                    const link = spec.video_data.call_to_action.value.link;
+                    if (!link.includes("facebook.com") && !link.includes("instagram.com") && !link.includes("fb.me")) {
+                      hasValidExternalLink = true;
+                    }
+                  }
+                }
+
+                // Skip creatives without valid external links
+                if (!hasValidExternalLink) {
+                  console.log(`   ⚠️ Skipping: no valid external link (required for OUTCOME_TRAFFIC)`);
+                  creativesProcessed++;
+                  continue;
+                }
+
+                // Build new creative for target account
+                const createCreativePayload = {
+                  name: sourceCreativeData.name || `${sourceAd.name} Creative`,
+                  access_token: userAccessToken,
+                };
+
+                // Handle object_story_spec - DON'T change page_id, but re-upload images for target account
+                if (sourceCreativeData.object_story_spec) {
+                  const spec = { ...sourceCreativeData.object_story_spec };
+                  const sourcePageId = spec.page_id;
+
+                  console.log(`   📄 Source page_id: ${sourcePageId}`);
+                  console.log(`   ✓ Keeping original page_id (both accounts likely have access)`);
+
+                  // Handle image re-upload for link_data
+                  if (spec.link_data?.image_hash) {
+                    const sourceImageHash = spec.link_data.image_hash;
+                    console.log(`   🔄 Detected image_hash in link_data: ${sourceImageHash}`);
+                    console.log(`   📥 Re-uploading image to target account...`);
+
+                    try {
+                      // Get image URL from creative's image_url field or picture URL
+                      let imageDownloadUrl = sourceCreativeData.image_url;
+
+                      // If no image_url, try to get from link_data picture field
+                      if (!imageDownloadUrl && spec.link_data.picture) {
+                        imageDownloadUrl = spec.link_data.picture;
+                      }
+
+                      // If still no URL, try fetching the ad account's image
+                      if (!imageDownloadUrl) {
+                        const sourceAdAccountMatch = sourceCreative.id.match(/^(\d+)/);
+                        if (sourceAdAccountMatch) {
+                          const sourceAccountId = sourceAdAccountMatch[1];
+                          const imageHashUrl = `https://graph.facebook.com/${api_version}/act_${sourceAccountId}/adimages`;
+                          const imageHashResponse = await axios.get(imageHashUrl, {
+                            params: {
+                              hashes: [sourceImageHash],
+                              access_token: userAccessToken,
+                            },
+                          });
+
+                          if (imageHashResponse.data.data && imageHashResponse.data.data.length > 0) {
+                            imageDownloadUrl = imageHashResponse.data.data[0].url || imageHashResponse.data.data[0].url_128;
+                          }
+                        }
+                      }
+
+                      if (!imageDownloadUrl) {
+                        console.log(`   ⚠️ Could not get image URL for hash ${sourceImageHash}, skipping creative`);
+                        creativesProcessed++;
+                        continue;
+                      }
+
+                      console.log(`   📥 Downloading image from: ${imageDownloadUrl.substring(0, 100)}...`);
+
+                      // Download image to temp file
+                      const tempImagePath = `/tmp/creative_${sourceCreative.id}_${Date.now()}.jpg`;
+                      const imageData = await axios.get(imageDownloadUrl, { responseType: "arraybuffer" });
+                      fs.writeFileSync(tempImagePath, imageData.data);
+
+                      // Upload to target account
+                      const newImageHash = await uploadImageToMeta(tempImagePath, normalizedAccountId, userAccessToken);
+                      console.log(`   ✅ Image uploaded: ${sourceImageHash} -> ${newImageHash}`);
+
+                      // Replace image_hash in spec
+                      spec.link_data.image_hash = newImageHash;
+
+                      // Clean up temp file
+                      fs.unlinkSync(tempImagePath);
+                    } catch (imageErr) {
+                      console.error(`   ❌ Failed to re-upload image:`, imageErr.response?.data || imageErr.message);
+                      creativesProcessed++;
+                      continue;
+                    }
+                  }
+
+                  // Handle image re-upload for video_data thumbnail
+                  if (spec.video_data?.image_hash) {
+                    const sourceImageHash = spec.video_data.image_hash;
+                    console.log(`   🔄 Detected image_hash in video_data: ${sourceImageHash}`);
+                    console.log(`   📥 Re-uploading thumbnail to target account...`);
+
+                    try {
+                      // Get thumbnail URL from creative's thumbnail_url field
+                      let imageDownloadUrl = sourceCreativeData.thumbnail_url;
+
+                      // If no thumbnail_url, try to get from video_data picture field
+                      if (!imageDownloadUrl && spec.video_data.picture) {
+                        imageDownloadUrl = spec.video_data.picture;
+                      }
+
+                      // If still no URL, try fetching the ad account's image
+                      if (!imageDownloadUrl) {
+                        const sourceAdAccountMatch = sourceCreative.id.match(/^(\d+)/);
+                        if (sourceAdAccountMatch) {
+                          const sourceAccountId = sourceAdAccountMatch[1];
+                          const imageHashUrl = `https://graph.facebook.com/${api_version}/act_${sourceAccountId}/adimages`;
+                          const imageHashResponse = await axios.get(imageHashUrl, {
+                            params: {
+                              hashes: [sourceImageHash],
+                              access_token: userAccessToken,
+                            },
+                          });
+
+                          if (imageHashResponse.data.data && imageHashResponse.data.data.length > 0) {
+                            imageDownloadUrl = imageHashResponse.data.data[0].url || imageHashResponse.data.data[0].url_128;
+                          }
+                        }
+                      }
+
+                      if (!imageDownloadUrl) {
+                        console.log(`   ⚠️ Could not get thumbnail URL for hash ${sourceImageHash}, skipping creative`);
+                        creativesProcessed++;
+                        continue;
+                      }
+
+                      console.log(`   📥 Downloading thumbnail from: ${imageDownloadUrl.substring(0, 100)}...`);
+
+                      // Download image to temp file
+                      const tempImagePath = `/tmp/creative_${sourceCreative.id}_thumb_${Date.now()}.jpg`;
+                      const imageData = await axios.get(imageDownloadUrl, { responseType: "arraybuffer" });
+                      fs.writeFileSync(tempImagePath, imageData.data);
+
+                      // Upload to target account
+                      const newImageHash = await uploadImageToMeta(tempImagePath, normalizedAccountId, userAccessToken);
+                      console.log(`   ✅ Thumbnail uploaded: ${sourceImageHash} -> ${newImageHash}`);
+
+                      // Replace image_hash in spec
+                      spec.video_data.image_hash = newImageHash;
+
+                      // Clean up temp file
+                      fs.unlinkSync(tempImagePath);
+                    } catch (imageErr) {
+                      console.error(`   ❌ Failed to re-upload thumbnail:`, imageErr.response?.data || imageErr.message);
+                      creativesProcessed++;
+                      continue;
+                    }
+                  }
+
+                  createCreativePayload.object_story_spec = JSON.stringify(spec);
+                } else {
+                  // No object_story_spec
+                  console.log(`   ⚠️ Skipping: no object_story_spec`);
+                  creativesProcessed++;
+                  continue;
+                }
+
+                // Create creative in target account
+                const createCreativeUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adcreatives`;
+                const createCreativeResponse = await axios.post(createCreativeUrl, createCreativePayload);
+
+                targetCreativeId = createCreativeResponse.data.id;
+                creativeMapping[sourceCreative.id] = targetCreativeId;
+                creativesProcessed++;
+                console.log(`   ✅ Cloned creative: ${sourceCreative.id} -> ${targetCreativeId} (${creativesProcessed} total)\n`);
+              } catch (creativeErr) {
+                const errorData = creativeErr.response?.data?.error;
+
+                // Handle rate limit errors specifically
+                if (errorData?.code === 80004 || errorData?.error_subcode === 2446079) {
+                  const waitTime = parseInt(errorData.estimated_time_to_regain_access) || 60;
+                  console.warn(`   ⏳ Rate limit hit. Waiting ${waitTime} seconds before retrying...`);
+                  await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+
+                  // Retry this creative once
+                  try {
+                    const createCreativeUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adcreatives`;
+                    const retryResponse = await axios.post(createCreativeUrl, createCreativePayload);
+                    targetCreativeId = retryResponse.data.id;
+                    creativeMapping[sourceCreative.id] = targetCreativeId;
+                    creativesProcessed++;
+                    console.log(`   ✅ Cloned creative (retry): ${sourceCreative.id} -> ${targetCreativeId}\n`);
+                  } catch (retryErr) {
+                    console.error(`   ❌ Failed after retry:`, retryErr.response?.data || retryErr.message);
+                    continue;
+                  }
+                } else {
+                  console.error(`   ❌ Failed to clone creative:`, errorData || creativeErr.message);
+                  continue;
+                }
+              }
+            }
+
+            // Create ad with the new creative in target account
+            if (targetCreativeId) {
+              // Fetch and log the creative's object_story_spec for debugging
+              try {
+                const debugCreativeUrl = `https://graph.facebook.com/${api_version}/${targetCreativeId}`;
+                const debugResponse = await axios.get(debugCreativeUrl, {
+                  params: {
+                    fields: "id,name,object_story_spec,call_to_action_type,link_url",
+                    access_token: userAccessToken,
+                  },
+                });
+
+                const creativeData = debugResponse.data;
+                const spec = creativeData.object_story_spec;
+
+                console.log(`📋 Creating ad with creative ${targetCreativeId}:`);
+                console.log(`   Ad Name: ${sourceAd.name}`);
+                console.log(`   Creative Name: ${creativeData.name}`);
+
+                if (spec) {
+                  console.log(`   Page ID: ${spec.page_id || "N/A"}`);
+
+                  if (spec.link_data) {
+                    console.log(`   Link: ${spec.link_data.link || "N/A"}`);
+                    console.log(`   Image Hash: ${spec.link_data.image_hash || "N/A"}`);
+                    console.log(`   CTA: ${spec.link_data.call_to_action?.type || "N/A"}`);
+                  }
+
+                  if (spec.video_data) {
+                    console.log(`   Video ID: ${spec.video_data.video_id || "N/A"}`);
+                    console.log(`   Thumbnail Hash: ${spec.video_data.image_hash || "N/A"}`);
+                    if (spec.video_data.call_to_action) {
+                      console.log(`   CTA Type: ${spec.video_data.call_to_action.type || "N/A"}`);
+                      console.log(`   CTA Link: ${spec.video_data.call_to_action.value?.link || "N/A"}`);
+                    }
+                  }
+                }
+              } catch (debugErr) {
+                console.warn(`⚠️ Could not fetch creative details for debugging:`, debugErr.message);
+              }
+
+              // Determine the correct status for the ad
+              let adStatus = "PAUSED"; // Default to PAUSED
+              if (status_option && status_option !== "INHERITED_FROM_SOURCE") {
+                adStatus = status_option;
+              }
+
+              // Build batch operation to create ad
+              const createAdCreativeOp = {
+                name: `create_creative_ref_${ad.id}`,
+                method: "GET",
+                relative_url: `${targetCreativeId}?fields=id`,
+              };
+
+              const createAdOp = {
+                name: `create_ad_${ad.id}`,
+                method: "POST",
+                relative_url: `act_${normalizedAccountId}/ads`,
+                body: `name=${encodeURIComponent(sourceAd.name || ad.name)}&adset_id=${newAdSetId}&creative=${encodeURIComponent(JSON.stringify({ creative_id: targetCreativeId }))}&status=${adStatus}`,
+              };
+
+              batchOperations.push(createAdOp);
+            }
           } catch (err) {
-            console.error(`Failed to fetch details for ad ${ad.id}:`, err.response?.data || err.message);
+            console.error(`❌ Failed to process ad ${ad.id}:`, err.response?.data || err.message);
           }
         }
 
+        console.log(`\n✅ Prepared ${batchOperations.length} ad creation operations for cross-account duplication (from ${adsData.length} source ads)`);
+        console.log(`📊 Creatives processed: ${creativesProcessed}, Creatives mapped: ${Object.keys(creativeMapping).length}\n`);
+
         if (batchOperations.length === 0) {
-          console.log("⚠️ No ads to duplicate (no creatives found)");
+          console.log("⚠️ No ads to duplicate (no creatives found or all failed)");
           return res.json({
             success: true,
             mode: "cross_account_sync",
@@ -2991,6 +3391,10 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
         for (let i = 0; i < batchOperations.length; i += chunkSize) {
           const chunk = batchOperations.slice(i, i + chunkSize);
+
+          // Log what we're sending (creatives already created separately, batch only contains ads)
+          console.log(`📤 Batch chunk ${i / chunkSize + 1}: ${chunk.length} ads`);
+
           const formData = new FormData();
           formData.append("access_token", userAccessToken);
           formData.append("batch", JSON.stringify(chunk));
@@ -2998,12 +3402,33 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           try {
             const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
+          
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
             const batchResults = batchResponse.data;
             if (Array.isArray(batchResults)) {
-              console.log(`Batch results: ${batchResults.filter((r) => r.code === 200).length}/${batchResults.length} successful`);
+              const successCount = batchResults.filter((r) => r && r.code === 200).length;
+              console.log(`Batch results: ${successCount}/${batchResults.length} successful`);
+
+              // Log any errors with operation details
+              const errors = batchResults.filter((r) => r && r.code >= 400);
+              if (errors.length > 0) {
+                console.error(`⚠️ ${errors.length} batch operations failed:`);
+                errors.forEach((error, index) => {
+                  const operation = chunk[index];
+                  const operationName = operation?.name || `Operation ${index}`;
+                  try {
+                    const body = typeof error.body === "string" ? JSON.parse(error.body) : error.body;
+                    const errorMsg = body?.error?.message || body?.error?.error_user_msg || error.body;
+                    console.error(`  ❌ [${operationName}] ${error.code}: ${errorMsg}`);
+                  } catch {
+                    console.error(`  ❌ [${operationName}] ${error.code}: ${error.body}`);
+                  }
+                });
+              }
+            } else {
+              console.log(`Batch response:`, JSON.stringify(batchResults, null, 2));
             }
           } catch (err) {
             console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
@@ -3015,8 +3440,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           mode: "cross_account_sync_batch",
           id: newAdSetId,
           original_id: ad_set_id,
-          adsCount: batchOperations.length / 2, // Each ad = 2 operations (creative + ad)
-          message: `Ad set created in target account. ${batchOperations.length / 2} ads duplicated via batch request.`,
+          adsCount: batchOperations.length, // Each operation is one ad (creatives created separately)
+          creativesCloned: Object.keys(creativeMapping).length,
+          message: `Ad set created in target account with intelligent creative cloning. ${batchOperations.length} ads duplicated via batch request.`,
         });
       }
 
@@ -3122,12 +3548,23 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               data_keys: Object.keys(batchResponse.data || {}),
             });
 
+            // Check if synchronous execution (numeric keys indicate inline results)
+            const hasNumericKeys = batchResponse.data && Object.keys(batchResponse.data).some((k) => /^\d+$/.test(k));
+            if (hasNumericKeys) {
+              console.log(`[AD-BATCH ${index + 1}] ℹ️ Synchronous results detected`);
+            }
+
             // Extract batch request ID following Meta API documentation
-            // The response should have an 'id' field (shown by default per Meta docs)
             let batchRequestId = null;
 
+            // Check if response has numeric keys - this indicates synchronous execution
+            if (hasNumericKeys) {
+              // Create synthetic ID for tracking synchronous results
+              batchRequestId = `sync_${Date.now()}_${index}`;
+              console.log(`[AD-BATCH ${index + 1}] ✅ Sync batch: ${batchRequestId}`);
+            }
             // Priority: Try the documented response format first
-            if (batchResponse.data?.id) {
+            else if (batchResponse.data?.id) {
               batchRequestId = batchResponse.data.id;
               console.log(`[AD-BATCH ${index + 1}] ✅ ID extracted from data.id: ${batchRequestId}`);
             }
@@ -3146,10 +3583,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
               console.log(`[AD-BATCH ${index + 1}] ID extracted from array[0].id: ${batchRequestId}`);
             }
 
-            // If still no ID, attempt fallback: fetch pending batches from account
+            // If still no ID, fetch pending batches from account
             if (!batchRequestId) {
-              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID in response, attempting to fetch from pending requests...`);
-              console.warn(`[AD-BATCH ${index + 1}] Full response data:`, JSON.stringify(batchResponse.data, null, 2));
+              console.warn(`[AD-BATCH ${index + 1}] ⚠️ No ID found, checking pending batches...`);
 
               try {
                 // Per Meta docs: GET /act_{account_id}/async_requests lists all pending batch requests
@@ -3161,6 +3597,11 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                   },
                 });
 
+                console.log(`[AD-BATCH ${index + 1}] Pending batches response:`, {
+                  total_items: pendingResponse.data?.data?.length || 0,
+                  first_batch: pendingResponse.data?.data?.[0]?.id,
+                });
+
                 // Get the most recent pending batch (likely ours - created just now)
                 const recentBatch = pendingResponse.data?.data?.[0];
                 if (recentBatch?.id) {
@@ -3170,14 +3611,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                   console.error(`[AD-BATCH ${index + 1}] ❌ No pending batches found`);
                 }
               } catch (fetchErr) {
-                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, fetchErr.message);
+                console.error(`[AD-BATCH ${index + 1}] Failed to retrieve pending batches:`, {
+                  error: fetchErr.message,
+                  status: fetchErr.response?.status,
+                  data: fetchErr.response?.data,
+                });
               }
             }
 
             // If STILL no ID after all attempts, throw descriptive error
             if (!batchRequestId) {
-              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response structure: ${Object.keys(batchResponse.data || {}).join(", ")}`;
+              const dataInfo = batchResponse.data ? Object.keys(batchResponse.data).join(", ") : "no data";
+              const errorMsg = `Failed to get batch ID for ad set ${ad_set_id}. Response keys: ${dataInfo}`;
               console.error(`[AD-BATCH ${index + 1}] ❌ ${errorMsg}`);
+              console.error(`[AD-BATCH ${index + 1}] Full response for debugging:`, JSON.stringify(batchResponse.data, null, 2));
               throw new Error(errorMsg);
             }
 
@@ -3339,13 +3786,44 @@ app.post("/api/duplicate-campaign", async (req, res) => {
   const isCrossAccount = sourceCampaignAccountId && sourceCampaignAccountId !== normalizedAccountId;
   console.log(`Campaign ${campaign_id}: source=${sourceCampaignAccountId}, target=${normalizedAccountId}, cross-account=${isCrossAccount}`);
 
+  // EARLY DSA DETECTION (before full campaign fetch to save API quota)
+  let dsaMismatchInfo = null;
+  if (isCrossAccount && deep_copy) {
+    console.log("🔍 Checking DSA beneficiary match for cross-account duplication...");
+    try {
+      const sourceDSA = await MetaBatch.fetchDSAConfiguration(sourceCampaignAccountId, userAccessToken);
+      const targetDSA = await MetaBatch.fetchDSAConfiguration(normalizedAccountId, userAccessToken);
+
+      dsaMismatchInfo = MetaBatch.detectDSAMismatch(sourceDSA, targetDSA);
+
+      if (dsaMismatchInfo.hasMismatch && !dsaMismatchInfo.matchedPageId) {
+        console.error("❌ DSA beneficiary mismatch with no matching page found");
+        return res.status(400).json({
+          success: false,
+          error: "DSA beneficiary page mismatch",
+          details: "Source and target accounts have different DSA beneficiary pages, and no matching page was found in target account.",
+          availablePages: dsaMismatchInfo.availablePages.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
+          sourcePageId: dsaMismatchInfo.sourcePageId,
+          targetPageId: dsaMismatchInfo.targetPageId,
+          requiresUserSelection: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to check DSA configuration:", err.message);
+      // Don't fail the duplication, just log and continue
+    }
+  }
+
   // STEP 1 Fetch campaign structure (adsets + ads)
   if (deep_copy) {
     try {
       const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
       const campaignResponse = await axios.get(campaignDetailsUrl, {
         params: {
-          fields: "name,adsets{id,name,ads{id,name,adset_id}}",
+          fields: "name,adsets{id,name,ads.limit(500){id,name,adset_id}}",
           access_token: userAccessToken,
         },
       });
@@ -3361,12 +3839,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       });
 
       totalChildObjects = adsetCount + totalAdsCount;
-      // console.log(`Campaign ${campaign_id} structure:`, {
-      //   name: campaignData.name,
-      //   adsets: adsetCount,
-      //   ads: totalAdsCount,
-      //   totalChildObjects,
-      // });
+      console.log(`📋 Campaign ${campaign_id} structure:`, {
+        name: campaignData.name,
+        adsets: adsetCount,
+        ads: totalAdsCount,
+        totalChildObjects,
+      });
     } catch (err) {
       console.error("Failed to fetch campaign structure:", err.response?.data || err.message);
       return res.status(500).json({
@@ -3413,9 +3891,13 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       // Add optional fields if they exist
       if (sourceCampaign.special_ad_categories && sourceCampaign.special_ad_categories.length > 0) {
         createCampaignPayload.special_ad_categories = sourceCampaign.special_ad_categories;
+      } else {
+        createCampaignPayload.special_ad_categories = [];
       }
       if (sourceCampaign.special_ad_category_country && sourceCampaign.special_ad_category_country.length > 0) {
         createCampaignPayload.special_ad_category_country = sourceCampaign.special_ad_category_country;
+      } else {
+        createCampaignPayload.special_ad_category_country = [];
       }
       if (sourceCampaign.bid_strategy) {
         createCampaignPayload.bid_strategy = sourceCampaign.bid_strategy;
@@ -3486,7 +3968,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     const FormData = (await import("form-data")).default;
 
     // Send async batch with improved ID extraction per Meta API docs
-    const sendAsyncBatch = async (ops, label, retryCount = 0) => {
+    const sendAsyncBatch = async (ops, label, sourceAds = [], retryCount = 0) => {
       const formData = new FormData();
       formData.append("access_token", userAccessToken);
       formData.append("name", label);
@@ -3497,13 +3979,54 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
         const data = resp.data;
-        console.log(`[CAMPAIGN-BATCH] ${label} - Response type:`, typeof data, Array.isArray(data) ? "array" : "");
-        console.log(`[CAMPAIGN-BATCH] ${label} - Full response:`, JSON.stringify(data, null, 2));
 
         // Check if Meta executed synchronously (returns array of results)
         if (Array.isArray(data)) {
-          console.log(`[CAMPAIGN-BATCH] ${label} - Array response (synchronous execution)`);
-          // For synchronous execution, there's no batch ID - operation completed immediately
+          console.log(`[${label}] Synchronous execution: ${data.length} operation(s) completed`);
+          
+          // Per-ad logging
+          let successCount = 0;
+          let failCount = 0;
+          for (let i = 0; i < data.length && i < sourceAds.length; i++) {
+            const result = data[i];
+            const ad = sourceAds[i];
+            if (result.code >= 200 && result.code < 300) {
+              successCount++;
+              const adId = result.body?.id || result.body;
+              console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
+            } else {
+              failCount++;
+              const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+              console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
+            }
+          }
+          
+          if (failCount === 0) {
+            console.log(`\n✅ Batch result: All ${successCount} ads created successfully\n`);
+          } else {
+            console.log(`\n⚠️ Batch result: ${successCount} created, ${failCount} failed\n`);
+          }
+          return "sync_" + Date.now();
+        }
+
+        // Check if response has numeric keys - this indicates synchronous execution (inline results)
+        const hasNumericKeys = data && Object.keys(data).some((k) => /^\d+$/.test(k));
+        if (hasNumericKeys) {
+          console.log(`[${label}] Synchronous execution with numeric keys: ${Object.keys(data).length} operation(s)`);
+          // Log per-ad from numeric keys
+          for (const [idx, result] of Object.entries(data)) {
+            if (!isNaN(idx) && parseInt(idx) < sourceAds.length) {
+              const ad = sourceAds[parseInt(idx)];
+              const code = result.code || result.status;
+              if (code >= 200 && code < 300) {
+                const adId = result.body?.id || result.body;
+                console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
+              } else {
+                const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+                console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
+              }
+            }
+          }
           return "sync_" + Date.now();
         }
 
@@ -3512,7 +4035,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         // Fallback: Query pending batches if ID not in response
         if (!batchId) {
-          console.warn(`[CAMPAIGN-BATCH] ${label} - No ID in response, fetching pending batches...`);
+          console.warn(`[${label}] No batch ID in response, fetching pending batches...`);
           try {
             const pendingResponse = await axios.get(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_requests`, {
               params: {
@@ -3524,26 +4047,25 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             const recentBatch = pendingResponse.data?.data?.[0];
             if (recentBatch?.id) {
               batchId = recentBatch.id;
-              console.log(`[CAMPAIGN-BATCH] ${label} - Retrieved from pending: ${batchId}`);
+              console.log(`[${label}] Retrieved batch ID: ${batchId}`);
             }
           } catch (fetchErr) {
-            console.error(`[CAMPAIGN-BATCH] ${label} - Failed to fetch pending:`, fetchErr.message);
+            console.error(`[${label}] Failed to fetch pending:`, fetchErr.message);
           }
         }
 
         if (!batchId) {
-          const errorMsg = `Failed to get batch ID. Response structure: ${Object.keys(data || {}).join(", ")}`;
-          console.error(`[CAMPAIGN-BATCH] ${label} - ${errorMsg}`);
-          console.error(`[CAMPAIGN-BATCH] ${label} - Full data:`, JSON.stringify(data, null, 2));
+          const errorMsg = `Failed to get batch ID. Response keys: ${Object.keys(data || {}).join(", ")}`;
+          console.error(`[${label}] ${errorMsg}`);
           throw new Error(errorMsg);
         }
 
-        console.log(`[CAMPAIGN-BATCH] ${label} - Batch ID: ${batchId}`);
+        console.log(`[${label}] Queued: ${batchId}`);
         return batchId;
       } catch (error) {
         // Retry on network/server errors
         if (retryCount < 2 && (!error.response || error.response.status >= 500)) {
-          console.warn(`[CAMPAIGN-BATCH] ${label} - Retrying (${retryCount + 1}/2)...`);
+          console.warn(`[${label}] Retrying (${retryCount + 1}/2) due to ${error.response?.status || "network error"}...`);
           await new Promise((resolve) => setTimeout(resolve, 1000));
           return sendAsyncBatch(ops, label, retryCount + 1);
         }
@@ -3596,9 +4118,27 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           if (adset.daily_budget) payload.daily_budget = adset.daily_budget;
           if (adset.lifetime_budget) payload.lifetime_budget = adset.lifetime_budget;
           if (adset.bid_amount) payload.bid_amount = adset.bid_amount;
-          if (adset.targeting) payload.targeting = JSON.stringify(adset.targeting);
+          
+          // Clean targeting object - remove deprecated fields
+          if (adset.targeting) {
+            let cleanedTargeting = JSON.parse(JSON.stringify(adset.targeting));
+            delete cleanedTargeting.targeting_optimization;
+            delete cleanedTargeting.targeting_automation;
+            payload.targeting = JSON.stringify(cleanedTargeting);
+          }
+          
           if (adset.destination_type) payload.destination_type = adset.destination_type;
-          if (adset.promoted_object) payload.promoted_object = JSON.stringify(adset.promoted_object);
+          
+          // Handle DSA beneficiary page matching
+          let promotedObject = adset.promoted_object ? JSON.parse(JSON.stringify(adset.promoted_object)) : {};
+          if (dsaMismatchInfo?.matchedPageId && promotedObject) {
+            promotedObject.page_id = dsaMismatchInfo.matchedPageId;
+            console.log(`📍 Updated promoted_object page_id to matched DSA page: ${dsaMismatchInfo.matchedPageId}`);
+          }
+          if (Object.keys(promotedObject).length > 0) {
+            payload.promoted_object = JSON.stringify(promotedObject);
+          }
+          
           if (adset.start_time) payload.start_time = adset.start_time;
           if (adset.end_time) payload.end_time = adset.end_time;
           if (adset.pacing_type) payload.pacing_type = JSON.stringify(adset.pacing_type);
@@ -3626,6 +4166,9 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
     const adsetBatchIds = [];
     const adsetMapping = {};
+    let adsetSuccessCount = 0;
+    let adsetFailureCount = 0;
+    const adsetErrors = [];
 
     for (let i = 0; i < adsetChunks.length; i++) {
       const label = `Duplicate Campaign ${campaign_id} - AdSets (Part ${i + 1})`;
@@ -3639,20 +4182,21 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         const resp = await axios.post(`https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/async_batch_requests`, formData, { headers: formData.getHeaders(), timeout: 30000 });
         const data = resp.data;
 
-        // Enhanced logging to debug response structure
-        console.log(`[ADSET-BATCH ${i + 1}] Response type:`, typeof data, Array.isArray(data) ? "array" : "");
-        console.log(`[ADSET-BATCH ${i + 1}] Full response:`, JSON.stringify(data, null, 2));
-
-        // If Meta executed synchronously (returns array of results)
+        // Simplified logging - only show summary, not full response
         if (Array.isArray(data)) {
-          console.log(`[ADSET-BATCH ${i + 1}] Array response detected, processing results...`);
+          const successCount = data.filter(r => r.code >= 200 && r.code < 300).length;
+          const failCount = data.length - successCount;
+          console.log(`[ADSET-BATCH ${i + 1}] Synchronous: ${successCount} success, ${failCount} failed`);
 
           // Check for errors first
           if (data[0]?.code >= 400) {
             const errorBody = typeof data[0].body === "string" ? JSON.parse(data[0].body) : data[0].body;
             const errorMsg = errorBody?.error?.error_user_msg || errorBody?.error?.message || "Unknown error";
             console.error(`[ADSET-BATCH ${i + 1}] ❌ Error: ${errorMsg}`);
-            throw new Error(`Ad set batch ${i + 1} failed: ${errorMsg}`);
+            adsetFailureCount++;
+            adsetErrors.push(errorMsg);
+            adsetBatchIds.push(null);
+            continue;
           }
 
           // Process successful synchronous response
@@ -3668,13 +4212,15 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
                 if (newAdsetId && sourceAdsetId) {
                   adsetMapping[sourceAdsetId] = newAdsetId;
-                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created new adset: ${sourceAdsetId} -> ${newAdsetId}`);
+                  adsetSuccessCount++;
+                  console.log(`[ADSET-BATCH ${i + 1}] ✅ Created: ${newAdsetId}`);
                 }
               } else {
                 // For same-account copy, response has copied_adset_id mapping
                 const copied = parsed.ad_object_ids?.[0];
                 if (copied) {
                   adsetMapping[copied.source_id] = copied.copied_id;
+                  adsetSuccessCount++;
                   console.log(`[ADSET-BATCH ${i + 1}] ✅ Copied adset: ${copied.source_id} -> ${copied.copied_id}`);
                 }
               }
@@ -3690,6 +4236,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         // Extract batch ID per Meta API docs (for async execution)
         let batchId = data?.id || (typeof data === "string" ? data : null) || data?.async_batch_request_id || data?.handle;
+
+        // Check if response has numeric keys - this also indicates synchronous execution
+        if (!batchId && data && Object.keys(data).some((k) => /^\d+$/.test(k))) {
+          console.warn(`[ADSET-BATCH ${i + 1}] Response with numeric keys detected (synchronous execution)`);
+          batchId = "sync_" + Date.now() + "_" + i;
+        }
 
         // Fallback: Query pending batches if ID not in response
         if (!batchId) {
@@ -3721,43 +4273,596 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         adsetBatchIds.push(batchId);
       } catch (error) {
         console.error(`[ADSET-BATCH ${i + 1}] Request failed:`, error.message);
+        adsetFailureCount++;
+        // Try to extract user-friendly error message from Facebook API response
+        let errorMsg = error.message;
+        if (error.response?.data?.error?.error_user_msg) {
+          errorMsg = error.response.data.error.error_user_msg;
+        } else if (error.response?.data?.error?.message) {
+          errorMsg = error.response.data.error.message;
+        }
+        adsetErrors.push(errorMsg);
         adsetBatchIds.push(null);
       }
     }
+
+    // Check if all ad sets failed
+    if (adsetOps.length > 0 && adsetSuccessCount === 0 && adsetFailureCount > 0) {
+      console.error(`❌ All ad set batches failed (${adsetFailureCount}/${adsetOps.length})`);
+      const errorSummary = adsetErrors.slice(0, 3).join("; ");
+      return res.status(400).json({
+        success: false,
+        error: "Failed to create any ad sets",
+        details: errorSummary,
+        adsetErrors,
+        stats: {
+          attempted: adsetOps.length,
+          succeeded: adsetSuccessCount,
+          failed: adsetFailureCount,
+        },
+      });
+    }
+
+    // Log summary
+    console.log(`📊 Ad set creation summary: ${adsetSuccessCount} succeeded, ${adsetFailureCount} failed out of ${adsetOps.length} total`);
 
     // console.log("✅ All adset async batches created:", adsetBatchIds);
     // console.log("🗺️ Adset mapping:", adsetMapping);
 
     // STEP 4 Second async batch: duplicate ads into new adsets
     const adOps = [];
-    adsData.forEach((ad) => {
-      const newAdsetId = adsetMapping[ad.adset_id];
-      if (!newAdsetId) return;
-      adOps.push({
-        method: "POST",
-        relative_url: `${ad.id}/copies`,
-        body: `adset_id=${newAdsetId}&status_option=${status_option || "PAUSED"}`,
+
+    if (isCrossAccount) {
+      console.log("🔄 Cross-account detected: Attempting to clone creatives intelligently...");
+
+      // Get target account's page_id from cached data
+      let targetPageId = null;
+      try {
+        const cachedAdAccounts = await FacebookCacheDB.getAdAccounts(req.user.id);
+        const cachedPages = await FacebookCacheDB.getPages(req.user.id);
+
+        const targetAccount = cachedAdAccounts?.find((acc) => normalizeAdAccountId(acc.account_id) === normalizedAccountId);
+
+        if (targetAccount?.page_id) {
+          targetPageId = targetAccount.page_id;
+          console.log(`Using page_id from cached data: ${targetPageId}`);
+        } else {
+          // Fallback: try to get from user's pages
+          if (cachedPages && cachedPages.length > 0) {
+            targetPageId = cachedPages[0].id;
+            console.log(`Using first available page: ${targetPageId}`);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to get page_id from cache:", err.message);
+      }
+
+      if (!targetPageId) {
+        console.warn("⚠️ No page_id available for target account. Ads may fail validation.");
+      }
+
+      // Fetch ad details with rate limit handling
+      const adDetailsPromises = adsData.map(async (ad, index) => {
+        // Add delay between requests to avoid rate limiting (stagger by 100ms per ad)
+        await new Promise((resolve) => setTimeout(resolve, index * 100));
+
+        try {
+          const adDetailUrl = `https://graph.facebook.com/${api_version}/${ad.id}`;
+          const adDetailResponse = await axios.get(adDetailUrl, {
+            params: {
+              fields: "name,creative{id,name,effective_object_story_id,object_story_spec,call_to_action_type,link_url,image_url,video_id},status,tracking_specs,conversion_specs",
+              access_token: userAccessToken,
+            },
+          });
+          return { sourceId: ad.id, adset_id: ad.adset_id, details: adDetailResponse.data };
+        } catch (err) {
+          console.error(`Failed to fetch ad ${ad.id} details:`, err.message);
+          return { sourceId: ad.id, adset_id: ad.adset_id, details: null };
+        }
       });
-    });
 
-    const adChunks = [];
-    for (let i = 0; i < adOps.length; i += 50) adChunks.push(adOps.slice(i, i + 50));
+      const adDetailsResults = await Promise.all(adDetailsPromises);
 
-    const adBatchIds = [];
-    for (let i = 0; i < adChunks.length; i++) {
-      const label = `Duplicate Campaign ${campaign_id} - Ads (Batch ${i + 1})`;
-      const id = await sendAsyncBatch(adChunks[i], label);
-      adBatchIds.push(id);
+      // Map to store source creative ID -> target creative ID
+      const creativeMapping = {};
+      let creativesProcessed = 0;
+
+      // Process each ad's creative with rate limit awareness
+      for (const result of adDetailsResults) {
+        if (!result.details) continue;
+
+        const newAdsetId = adsetMapping[result.adset_id];
+        if (!newAdsetId) {
+          console.log(`⚠️ Skipping ad ${result.sourceId}: no mapped adset for ${result.adset_id}`);
+          continue;
+        }
+
+        const ad = result.details;
+        const sourceCreative = ad.creative;
+
+        if (!sourceCreative?.id) {
+          console.log(`⚠️ Skipping ad ${result.sourceId}: no creative found`);
+          continue;
+        }
+
+        let targetCreativeId = null;
+
+        // Check if we already processed this creative
+        if (creativeMapping[sourceCreative.id]) {
+          targetCreativeId = creativeMapping[sourceCreative.id];
+          console.log(`Using cached creative mapping: ${sourceCreative.id} -> ${targetCreativeId}`);
+        } else {
+          // Add delay every 10 creatives to avoid rate limits
+          if (creativesProcessed > 0 && creativesProcessed % 10 === 0) {
+            console.log(`Pausing briefly to avoid rate limits (processed ${creativesProcessed} creatives)...`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+
+          try {
+            // Fetch creative details including image URL
+            const creativeDetailUrl = `https://graph.facebook.com/${api_version}/${sourceCreative.id}`;
+            const creativeResponse = await axios.get(creativeDetailUrl, {
+              params: {
+                fields: "name,object_story_spec,object_story_id,call_to_action_type,link_url,image_url,thumbnail_url",
+                access_token: userAccessToken,
+              },
+            });
+
+            const sourceCreativeData = creativeResponse.data;
+            console.log(`Fetched creative ${sourceCreative.id}: ${sourceCreativeData.name}`);
+
+            // Validate creative has valid external link (required for OUTCOME_TRAFFIC campaigns)
+            let hasValidExternalLink = false;
+
+            if (sourceCreativeData.object_story_spec) {
+              const spec = sourceCreativeData.object_story_spec;
+
+              // Check for external link in link_data
+              if (spec.link_data?.link) {
+                const link = spec.link_data.link;
+                // Valid if it's NOT a Facebook/Instagram internal link
+                if (!link.includes("facebook.com") && !link.includes("instagram.com") && !link.includes("fb.me")) {
+                  hasValidExternalLink = true;
+                }
+              }
+
+              // Also check video_data (some creatives use video_data instead of link_data)
+              if (!hasValidExternalLink && spec.video_data?.call_to_action?.value?.link) {
+                const link = spec.video_data.call_to_action.value.link;
+                if (!link.includes("facebook.com") && !link.includes("instagram.com") && !link.includes("fb.me")) {
+                  hasValidExternalLink = true;
+                }
+              }
+            }
+
+            // Skip creatives without valid external links
+            if (!hasValidExternalLink) {
+              console.log(`⚠️ Skipping creative ${sourceCreative.id}: no valid external link (required for OUTCOME_TRAFFIC)`);
+              creativesProcessed++;
+              continue;
+            }
+
+            // Build new creative for target account
+            const createCreativePayload = {
+              name: sourceCreativeData.name || `${ad.name} Creative`,
+              access_token: userAccessToken,
+            };
+
+            // Handle object_story_spec - DON'T change page_id, but re-upload images for target account
+            if (sourceCreativeData.object_story_spec) {
+              const spec = { ...sourceCreativeData.object_story_spec };
+              const sourcePageId = spec.page_id;
+
+              console.log(`   Source page_id: ${sourcePageId} (keeping original - not forcing target page)`);
+
+              // Handle image re-upload for link_data
+              if (spec.link_data?.image_hash) {
+                const sourceImageHash = spec.link_data.image_hash;
+                console.log(`   🔄 Detected image_hash in link_data: ${sourceImageHash}`);
+                console.log(`   📥 Re-uploading image to target account...`);
+
+                try {
+                  // Get image URL from creative's image_url field or picture URL
+                  let imageDownloadUrl = sourceCreativeData.image_url;
+
+                  // If no image_url, try to get from link_data picture field
+                  if (!imageDownloadUrl && spec.link_data.picture) {
+                    imageDownloadUrl = spec.link_data.picture;
+                  }
+
+                  // If still no URL, try fetching the ad account's image
+                  if (!imageDownloadUrl) {
+                    // Get source ad account ID from the creative
+                    const sourceAdAccountMatch = sourceCreative.id.match(/^(\d+)/);
+                    if (sourceAdAccountMatch) {
+                      const sourceAccountId = sourceAdAccountMatch[1];
+                      const imageHashUrl = `https://graph.facebook.com/${api_version}/act_${sourceAccountId}/adimages`;
+                      const imageHashResponse = await axios.get(imageHashUrl, {
+                        params: {
+                          hashes: [sourceImageHash],
+                          access_token: userAccessToken,
+                        },
+                      });
+
+                      if (imageHashResponse.data.data && imageHashResponse.data.data.length > 0) {
+                        imageDownloadUrl = imageHashResponse.data.data[0].url || imageHashResponse.data.data[0].url_128;
+                      }
+                    }
+                  }
+
+                  if (!imageDownloadUrl) {
+                    console.log(`   ⚠️ Could not get image URL for hash ${sourceImageHash}, skipping creative`);
+                    creativesProcessed++;
+                    continue;
+                  }
+
+                  console.log(`   📥 Downloading image from: ${imageDownloadUrl.substring(0, 100)}...`);
+
+                  // Download image to temp file
+                  const tempImagePath = `/tmp/creative_${sourceCreative.id}_${Date.now()}.jpg`;
+                  const imageData = await axios.get(imageDownloadUrl, { responseType: "arraybuffer" });
+                  fs.writeFileSync(tempImagePath, imageData.data);
+
+                  // Upload to target account
+                  const newImageHash = await uploadImageToMeta(tempImagePath, normalizedAccountId, userAccessToken);
+                  console.log(`   ✅ Image uploaded: ${sourceImageHash} -> ${newImageHash}`);
+
+                  // Replace image_hash in spec
+                  spec.link_data.image_hash = newImageHash;
+
+                  // Clean up temp file
+                  fs.unlinkSync(tempImagePath);
+                } catch (imageErr) {
+                  console.error(`   ❌ Failed to re-upload image:`, imageErr.response?.data || imageErr.message);
+                  creativesProcessed++;
+                  continue;
+                }
+              } // Handle image re-upload for video_data thumbnail
+              if (spec.video_data?.image_hash) {
+                const sourceImageHash = spec.video_data.image_hash;
+                console.log(`   🔄 Detected image_hash in video_data: ${sourceImageHash}`);
+                console.log(`   📥 Re-uploading thumbnail to target account...`);
+
+                try {
+                  // Get thumbnail URL from creative's thumbnail_url field
+                  let imageDownloadUrl = sourceCreativeData.thumbnail_url;
+
+                  // If no thumbnail_url, try to get from video_data picture field
+                  if (!imageDownloadUrl && spec.video_data.picture) {
+                    imageDownloadUrl = spec.video_data.picture;
+                  }
+
+                  // If still no URL, try fetching the ad account's image
+                  if (!imageDownloadUrl) {
+                    const sourceAdAccountMatch = sourceCreative.id.match(/^(\d+)/);
+                    if (sourceAdAccountMatch) {
+                      const sourceAccountId = sourceAdAccountMatch[1];
+                      const imageHashUrl = `https://graph.facebook.com/${api_version}/act_${sourceAccountId}/adimages`;
+                      const imageHashResponse = await axios.get(imageHashUrl, {
+                        params: {
+                          hashes: [sourceImageHash],
+                          access_token: userAccessToken,
+                        },
+                      });
+
+                      if (imageHashResponse.data.data && imageHashResponse.data.data.length > 0) {
+                        imageDownloadUrl = imageHashResponse.data.data[0].url || imageHashResponse.data.data[0].url_128;
+                      }
+                    }
+                  }
+
+                  if (!imageDownloadUrl) {
+                    console.log(`   ⚠️ Could not get thumbnail URL for hash ${sourceImageHash}, skipping creative`);
+                    creativesProcessed++;
+                    continue;
+                  }
+
+                  console.log(`   📥 Downloading thumbnail from: ${imageDownloadUrl.substring(0, 100)}...`);
+
+                  // Download image to temp file
+                  const tempImagePath = `/tmp/creative_${sourceCreative.id}_thumb_${Date.now()}.jpg`;
+                  const imageData = await axios.get(imageDownloadUrl, { responseType: "arraybuffer" });
+                  fs.writeFileSync(tempImagePath, imageData.data);
+
+                  // Upload to target account
+                  const newImageHash = await uploadImageToMeta(tempImagePath, normalizedAccountId, userAccessToken);
+                  console.log(`   ✅ Thumbnail uploaded: ${sourceImageHash} -> ${newImageHash}`);
+
+                  // Replace image_hash in spec
+                  spec.video_data.image_hash = newImageHash;
+
+                  // Clean up temp file
+                  fs.unlinkSync(tempImagePath);
+                } catch (imageErr) {
+                  console.error(`   ❌ Failed to re-upload thumbnail:`, imageErr.response?.data || imageErr.message);
+                  creativesProcessed++;
+                  continue;
+                }
+              }
+
+              createCreativePayload.object_story_spec = JSON.stringify(spec);
+            } else {
+              // No object_story_spec - should have been caught above, but skip just in case
+              console.log(`⚠️ Skipping creative ${sourceCreative.id}: no object_story_spec`);
+              creativesProcessed++;
+              continue;
+            }
+
+            // Create creative in target account
+            const createCreativeUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adcreatives`;
+            const createCreativeResponse = await axios.post(createCreativeUrl, createCreativePayload);
+
+            targetCreativeId = createCreativeResponse.data.id;
+            creativeMapping[sourceCreative.id] = targetCreativeId;
+            creativesProcessed++;
+            console.log(`✅ Cloned creative: ${sourceCreative.id} -> ${targetCreativeId} (${creativesProcessed} total)`);
+          } catch (creativeErr) {
+            const errorData = creativeErr.response?.data?.error;
+
+            // Handle rate limit errors specifically
+            if (errorData?.code === 80004 || errorData?.error_subcode === 2446079) {
+              const waitTime = parseInt(errorData.estimated_time_to_regain_access) || 60;
+              console.warn(`⏳ Rate limit hit. Waiting ${waitTime} seconds before retrying...`);
+              await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+
+              // Retry this creative once
+              try {
+                const retryResponse = await axios.post(createCreativeUrl, createCreativePayload);
+                targetCreativeId = retryResponse.data.id;
+                creativeMapping[sourceCreative.id] = targetCreativeId;
+                creativesProcessed++;
+                console.log(`✅ Cloned creative (retry): ${sourceCreative.id} -> ${targetCreativeId}`);
+              } catch (retryErr) {
+                console.error(`Failed to clone creative ${sourceCreative.id} after retry:`, retryErr.response?.data || retryErr.message);
+                continue;
+              }
+            } else {
+              console.error(`Failed to clone creative ${sourceCreative.id}:`, errorData || creativeErr.message);
+              continue;
+            }
+          }
+        }
+
+        // Create ad with the new creative in target account
+        if (targetCreativeId) {
+          // Fetch and log the creative's object_story_spec for debugging
+          try {
+            const debugCreativeUrl = `https://graph.facebook.com/${api_version}/${targetCreativeId}`;
+            const debugResponse = await axios.get(debugCreativeUrl, {
+              params: {
+                fields: "id,name,object_story_spec,call_to_action_type,link_url",
+                access_token: userAccessToken,
+              },
+            });
+
+            const creativeData = debugResponse.data;
+            const spec = creativeData.object_story_spec;
+
+            console.log(`\n📋 DEBUG - Creating ad with creative ${targetCreativeId}:`);
+            console.log(`   Ad Name: ${ad.name}`);
+            console.log(`   Creative Name: ${creativeData.name}`);
+            console.log(`   Call To Action Type: ${creativeData.call_to_action_type || "N/A"}`);
+            console.log(`   Link URL: ${creativeData.link_url || "N/A"}`);
+
+            if (spec) {
+              console.log(`   Page ID: ${spec.page_id || "N/A"}`);
+
+              if (spec.link_data) {
+                console.log(`   Link Data:`);
+                console.log(`      - Link: ${spec.link_data.link || "N/A"}`);
+                console.log(`      - Image Hash: ${spec.link_data.image_hash || "N/A"}`);
+                console.log(`      - Message: ${spec.link_data.message || "N/A"}`);
+                console.log(`      - Call To Action: ${spec.link_data.call_to_action?.type || "N/A"}`);
+              }
+
+              if (spec.video_data) {
+                console.log(`   Video Data:`);
+                console.log(`      - Video ID: ${spec.video_data.video_id || "N/A"}`);
+                console.log(`      - Image Hash: ${spec.video_data.image_hash || "N/A"}`);
+                console.log(`      - Message: ${spec.video_data.message || "N/A"}`);
+                if (spec.video_data.call_to_action) {
+                  console.log(`      - Call To Action Type: ${spec.video_data.call_to_action.type || "N/A"}`);
+                  console.log(`      - Call To Action Link: ${spec.video_data.call_to_action.value?.link || "N/A"}`);
+                }
+              }
+            } else {
+              console.log(`   ⚠️ No object_story_spec found!`);
+            }
+            console.log(`\n`);
+          } catch (debugErr) {
+            console.warn(`⚠️ Could not fetch creative details for debugging:`, debugErr.message);
+          }
+
+          const payload = {
+            adset_id: newAdsetId,
+            name: ad.name,
+            creative: JSON.stringify({ creative_id: targetCreativeId }),
+            status: status_option || "PAUSED",
+          };
+
+          // Add optional fields
+          if (ad.tracking_specs) {
+            payload.tracking_specs = JSON.stringify(ad.tracking_specs);
+          }
+          if (ad.conversion_specs) {
+            payload.conversion_specs = JSON.stringify(ad.conversion_specs);
+          }
+
+          adOps.push({
+            method: "POST",
+            relative_url: `act_${normalizedAccountId}/ads`,
+            body: new URLSearchParams(payload).toString(),
+          });
+        }
+      }
+
+      console.log(`✅ Prepared ${adOps.length} ad creation operations for cross-account duplication (from ${adsData.length} source ads)`);
+    } else {
+      // Same-account: Use /copies endpoint
+      adsData.forEach((ad) => {
+        const newAdsetId = adsetMapping[ad.adset_id];
+        if (!newAdsetId) return;
+        adOps.push({
+          method: "POST",
+          relative_url: `${ad.id}/copies`,
+          body: `adset_id=${newAdsetId}&status_option=${status_option || "PAUSED"}`,
+        });
+      });
     }
 
-    // console.log("✅ All ad async batch requests created:", adBatchIds);
+    // STEP 4.5 Check existing ad counts in target ad sets to avoid 50-ad limit
+    console.log(`\n📊 Checking existing ad counts in ${Object.keys(adsetMapping).length} target ad sets...`);
+    const adsetAdCounts = {};
+    let totalExistingAds = 0;
+    
+    for (const [sourceAdsetId, targetAdsetId] of Object.entries(adsetMapping)) {
+      try {
+        const adCountUrl = `https://graph.facebook.com/${api_version}/${targetAdsetId}`;
+        const adCountResponse = await axios.get(adCountUrl, {
+          params: {
+            fields: "ads.limit(1).summary(true)",
+            access_token: userAccessToken,
+          },
+        });
+        
+        const existingAdCount = adCountResponse.data.ads?.summary?.total_count || 0;
+        adsetAdCounts[targetAdsetId] = existingAdCount;
+        totalExistingAds += existingAdCount;
+        
+        if (existingAdCount > 0) {
+          console.log(`  - Ad set ${targetAdsetId}: ${existingAdCount} existing ads`);
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch ad count for ${targetAdsetId}:`, err.message);
+        adsetAdCounts[targetAdsetId] = 0;
+      }
+    }
+    
+    console.log(`📋 Total existing ads in target ad sets: ${totalExistingAds}`);
+
+    // Filter adOps to respect 50-ad limit per ad set
+    let adsSkipped = 0;
+    const filteredAdOps = [];
+    
+    for (const adOp of adOps) {
+      // Extract adset_id from body
+      const bodyParams = new URLSearchParams(adOp.body);
+      const adsetId = bodyParams.get('adset_id');
+      
+      if (adsetId && adsetAdCounts[adsetId] !== undefined) {
+        const currentCount = adsetAdCounts[adsetId];
+        
+        if (currentCount >= 50) {
+          console.warn(`⚠️ Skipping ad for ad set ${adsetId}: already at 50-ad limit`);
+          adsSkipped++;
+          continue;
+        }
+        
+        // Add the ad and increment counter
+        filteredAdOps.push(adOp);
+        adsetAdCounts[adsetId]++;
+      } else {
+        // If we can't determine adset_id, include it anyway
+        filteredAdOps.push(adOp);
+      }
+    }
+    
+    console.log(`\n📋 Ad Duplication Summary:`);
+    console.log(`   Total source ads: ${adsData.length}`);
+    console.log(`   Ads to duplicate: ${filteredAdOps.length}`);
+    console.log(`   Ads skipped (50-ad limit): ${adsSkipped}`);
+    console.log(`   Existing ads in target: ${totalExistingAds}`);
+
+    // Create mapping of filtered ad ops to source ads for logging
+    const filteredAds = [];
+    for (let i = 0; i < filteredAdOps.length; i++) {
+      const adOp = filteredAdOps[i];
+      // Find matching source ad
+      const bodyParams = new URLSearchParams(adOp.body);
+      const adName = bodyParams.get('name') || `Ad ${i}`;
+      filteredAds.push({ name: adName, op: adOp });
+    }
+
+    // Split ads into smaller batches (25 ads per batch) to avoid timeout errors
+    const adChunks = [];
+    const adDataChunks = [];
+    const ADS_PER_BATCH = 25;
+    for (let i = 0; i < filteredAdOps.length; i += ADS_PER_BATCH) {
+      adChunks.push(filteredAdOps.slice(i, i + ADS_PER_BATCH));
+      adDataChunks.push(filteredAds.slice(i, i + ADS_PER_BATCH));
+    }
+
+    console.log(`📦 Splitting ${filteredAdOps.length} ads into ${adChunks.length} batches of ${ADS_PER_BATCH} ads each`);
+
+    const adBatchIds = [];
+    const adBatchResults = [];
+    let adSuccessCount = 0;
+    let adFailureCount = 0;
+    const adErrors = [];
+
+    for (let i = 0; i < adChunks.length; i++) {
+      // Add 5-second delay between batches to avoid timeout/rate limit errors
+      if (i > 0) {
+        console.log(`⏱️ Waiting 5 seconds before batch ${i + 1} of ${adChunks.length}...`);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+
+      const label = `Duplicate Campaign ${campaign_id} - Ads (Batch ${i + 1}/${adChunks.length})`;
+      const adsInBatch = adChunks[i];
+      const adsDataInBatch = adDataChunks[i];
+      console.log(`📤 Sending ${adsInBatch.length} ads in batch ${i + 1}/${adChunks.length}`);
+      
+      try {
+        const id = await sendAsyncBatch(adsInBatch, label, adsDataInBatch);
+        adBatchIds.push(id);
+        
+        // Track batch result
+        adBatchResults.push({
+          batchNum: i + 1,
+          batchId: id,
+          adsInBatch: adChunks[i].length,
+          status: "queued",
+        });
+        
+        console.log(`✅ Batch ${i + 1} queued successfully (ID: ${id})`);
+      } catch (err) {
+        console.error(`❌ Batch ${i + 1} failed:`, err.message);
+        adFailureCount++;
+        
+        adBatchResults.push({
+          batchNum: i + 1,
+          batchId: null,
+          adsInBatch: adChunks[i].length,
+          status: "failed",
+          error: err.message,
+        });
+        
+        let errorMsg = err.message;
+        if (err.response?.data?.error?.error_user_msg) {
+          errorMsg = err.response.data.error.error_user_msg;
+        }
+        adErrors.push(`Batch ${i + 1}: ${errorMsg}`);
+      }
+    }
+
+    console.log(`\n📊 Ad Batch Summary:`);
+    console.log(`   Total batches: ${adChunks.length}`);
+    console.log(`   Successful batches: ${adChunks.length - adFailureCount}`);
+    console.log(`   Failed batches: ${adFailureCount}`);
+    console.log(`   Total ads queued: ${filteredAdOps.length}`);
+    
+    if (adFailureCount > 0) {
+      console.error(`❌ ${adFailureCount} batch(es) failed:`);
+      adErrors.forEach((err) => console.error(`   - ${err}`));
+    }
 
     // STEP 5 Return combined result
     return res.json({
-      success: true,
+      success: adFailureCount === 0,
       mode: "async_double_batch",
       newCampaignId,
       originalCampaignId: campaign_id,
+      crossAccount: isCrossAccount,
       batchRequestIds: {
         adsets: adsetBatchIds,
         ads: adBatchIds,
@@ -3767,7 +4872,27 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         ads: totalAdsCount,
         totalChildObjects,
       },
-      message: "Campaign duplicated with two-phase async batch (adsets first, ads second). Check Meta Ads Manager after 1–5 minutes.",
+      adsetStats: {
+        attempted: adsetOps.length,
+        succeeded: adsetSuccessCount,
+        failed: adsetFailureCount,
+        errors: adsetErrors,
+      },
+      adStats: {
+        sourceAds: adsData.length,
+        adsToDuplicate: filteredAdOps.length,
+        adsSkipped,
+        existingAdsInTarget: totalExistingAds,
+      },
+      adBatchStats: {
+        totalBatches: adChunks.length,
+        successfulBatches: adChunks.length - adFailureCount,
+        failedBatches: adFailureCount,
+        batchDetails: adBatchResults,
+      },
+      message: adFailureCount === 0 
+        ? `Campaign duplicated successfully! Duplicating ${filteredAdOps.length} ads in ${adChunks.length} batches (${adsSkipped} skipped due to 50-ad limit). Check Meta Ads Manager after 1–5 minutes.`
+        : `Campaign partially duplicated with errors. ${adChunks.length - adFailureCount}/${adChunks.length} ad batches queued, ${adFailureCount} failed. Check logs for details.`,
     });
   } catch (err) {
     console.error("❌ Error duplicating campaign:", err.response?.data || err.message);
@@ -3832,6 +4957,21 @@ app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (re
   }
 
   try {
+    // Check if this is a synthetic sync batch ID (from synchronous execution)
+    if (batch_id.startsWith("sync_")) {
+      console.log(`[BATCH-STATUS] Synthetic sync batch ID detected: ${batch_id}`);
+      return res.json({
+        status: "completed",
+        batch_id,
+        is_completed: true,
+        success_count: 1,
+        error_count: 0,
+        in_progress_count: 0,
+        total_count: 1,
+        message: "Batch executed synchronously and completed immediately",
+      });
+    }
+
     const statusUrl = `https://graph.facebook.com/${api_version}/${batch_id}`;
     const response = await axios.get(statusUrl, {
       params: {
@@ -4684,7 +5824,14 @@ app.post("/api/create-ad-creative", (req, res) => {
     async function createAdCreative(asset) {
       let creativeData;
 
-      const adName = asset.adName || name;
+      // Generate ad name: use asset.adName if provided, otherwise use request name, otherwise use filename
+      let adName = asset.adName || name;
+
+      // If still no name, use the creative filename
+      if (!adName || adName === "creative") {
+        adName = asset.value.creativeId || "ad";
+      }
+
       const assetType = asset.value.type;
 
       // IZAK - i believe to update the display link it is "caption" https://developers.facebook.com/docs/marketing-api/reference/ad-creative-link-data/
@@ -4716,6 +5863,49 @@ app.post("/api/create-ad-creative", (req, res) => {
         }
       } else {
         // payload for image upload
+        let imageHash = asset.value.imageHash || asset.value.facebookIds?.facebook_image_hash || asset.value.data?.imageHash;
+
+        // If image is from library, fetch the hash from database
+        if (asset.value.isFromLibrary && !imageHash && asset.value.creativeId) {
+          console.log(`[createAdCreative] Fetching imageHash from library for: ${asset.value.creativeId}`);
+          try {
+            // Search for creative by filename
+            const creatives = await CreativeDB.search(asset.value.creativeId);
+
+            if (creatives && creatives.length > 0) {
+              const creative = creatives[0];
+              // Get the Facebook IDs for this account
+              const fbIds = await CreativeAccountDB.getFacebookIds(creative.id, account_id);
+              imageHash = fbIds?.facebook_image_hash;
+              console.log(`[createAdCreative] Found imageHash from database: ${imageHash}`);
+            } else {
+              console.warn(`[createAdCreative] Creative not found in library: ${asset.value.creativeId}`);
+            }
+          } catch (dbError) {
+            console.error(`[createAdCreative] Error fetching from database:`, dbError.message);
+          }
+        }
+
+        // Log for debugging
+        console.log(`[createAdCreative] Processing image asset:`, {
+          adName,
+          assetType,
+          imageHash,
+          isFromLibrary: asset.value.isFromLibrary,
+          creativeId: asset.value.creativeId,
+          assetValueKeys: Object.keys(asset.value),
+        });
+
+        // Validate imageHash exists and is not empty
+        if (!imageHash || typeof imageHash !== "string" || imageHash.trim() === "") {
+          console.error(`[createAdCreative] Invalid imageHash for ad "${adName}":`, {
+            imageHash,
+            assetValue: asset.value,
+            asset: asset,
+          });
+          throw new Error(`Invalid image hash for ad "${adName}". Image from library could not be found. Please try uploading the image again.`);
+        }
+
         creativeData = {
           name: adName,
           object_story_spec: {
@@ -4723,7 +5913,7 @@ app.post("/api/create-ad-creative", (req, res) => {
               message,
               link,
               name: headline, // Headline text - shown as the main title
-              image_hash: asset.value.imageHash,
+              image_hash: imageHash,
               description,
               call_to_action: {
                 type,
