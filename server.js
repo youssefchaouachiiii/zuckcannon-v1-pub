@@ -2909,6 +2909,17 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (sourceAdSet.targeting) {
         let targetingCopy = JSON.parse(JSON.stringify(sourceAdSet.targeting)); // Deep clone
 
+        // Remove deprecated targeting fields that Facebook no longer accepts
+        if (targetingCopy.targeting_optimization) {
+          delete targetingCopy.targeting_optimization;
+          console.log("  - Removed targeting_optimization (deprecated)");
+        }
+        
+        if (targetingCopy.targeting_automation) {
+          delete targetingCopy.targeting_automation;
+          console.log("  - Removed targeting_automation (deprecated)");
+        }
+
         if (hasSpecialCategories) {
           console.log("⚠️ Target campaign has special ad categories. Removing Advantage+ targeting settings...");
 
@@ -3350,6 +3361,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           try {
             const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
+          
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
@@ -4008,7 +4020,15 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           if (adset.daily_budget) payload.daily_budget = adset.daily_budget;
           if (adset.lifetime_budget) payload.lifetime_budget = adset.lifetime_budget;
           if (adset.bid_amount) payload.bid_amount = adset.bid_amount;
-          if (adset.targeting) payload.targeting = JSON.stringify(adset.targeting);
+          
+          // Clean targeting object - remove deprecated fields
+          if (adset.targeting) {
+            let cleanedTargeting = JSON.parse(JSON.stringify(adset.targeting));
+            delete cleanedTargeting.targeting_optimization;
+            delete cleanedTargeting.targeting_automation;
+            payload.targeting = JSON.stringify(cleanedTargeting);
+          }
+          
           if (adset.destination_type) payload.destination_type = adset.destination_type;
           if (adset.promoted_object) payload.promoted_object = JSON.stringify(adset.promoted_object);
           if (adset.start_time) payload.start_time = adset.start_time;
