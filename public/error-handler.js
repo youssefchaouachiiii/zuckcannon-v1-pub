@@ -129,7 +129,18 @@ class ErrorHandler {
                 return response;
               }
 
-              const message = error.error || error.message || `HTTP ${response.status} error`;
+              // Extract user-friendly error message from Meta API response structure
+              let message;
+              if (error.error && typeof error.error === "object") {
+                // Meta API returns nested error object
+                message = error.error.error_user_msg || error.error.error_user_title || error.error.message || error.message || `HTTP ${response.status} error`;
+              } else if (error.details && typeof error.details === "object") {
+                // Some responses have details object
+                message = error.details.error_user_msg || error.details.error_user_title || error.details.message || error.message || `HTTP ${response.status} error`;
+              } else {
+                // Fallback to direct properties
+                message = error.error_user_msg || error.error || error.message || `HTTP ${response.status} error`;
+              }
 
               // Show user-friendly error messages
               this.handleApiError(response.status, message);
