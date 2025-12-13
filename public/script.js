@@ -409,11 +409,43 @@ async function extractErrorMessage(responseOrError) {
     if (responseOrError instanceof Response) {
       const cloned = responseOrError.clone();
       const data = await cloned.json().catch(() => ({}));
+      // Check nested error structure first (Meta API format)
+      if (data.error && typeof data.error === "object") {
+        return data.error.error_user_msg || data.error.error_user_title || data.error.message || data.error_user_msg || data.message || data.error || "An error occurred. Please try again.";
+      }
+      // Check details structure
+      if (data.details && typeof data.details === "object") {
+        return data.details.error_user_msg || data.details.error_user_title || data.details.message || data.error_user_msg || data.message || data.error || "An error occurred. Please try again.";
+      }
       return data.error_user_msg || data.message || data.error || "An error occurred. Please try again.";
     }
 
     // If it's already a parsed object
     if (typeof responseOrError === "object") {
+      // Check nested error structure first (Meta API format)
+      if (responseOrError.error && typeof responseOrError.error === "object") {
+        return (
+          responseOrError.error.error_user_msg ||
+          responseOrError.error.error_user_title ||
+          responseOrError.error.message ||
+          responseOrError.error_user_msg ||
+          responseOrError.message ||
+          responseOrError.error ||
+          "An error occurred. Please try again."
+        );
+      }
+      // Check details structure
+      if (responseOrError.details && typeof responseOrError.details === "object") {
+        return (
+          responseOrError.details.error_user_msg ||
+          responseOrError.details.error_user_title ||
+          responseOrError.details.message ||
+          responseOrError.error_user_msg ||
+          responseOrError.message ||
+          responseOrError.error ||
+          "An error occurred. Please try again."
+        );
+      }
       return responseOrError.error_user_msg || responseOrError.message || responseOrError.error || "An error occurred. Please try again.";
     }
 
@@ -10730,14 +10762,17 @@ async function processBulkCampaignDuplication(account) {
 
     // Check for errors even in 200 OK responses
     if (!response.ok || data.success === false) {
-      // Prioritize showing actual error details over generic error message
-      let errorMsg = data.error || `Failed with status ${response.status}`;
+      // Extract user-friendly error message from Meta API response
+      let errorMsg = await extractErrorMessage(data);
 
-      // If we have adsetErrors with actual error messages, use those instead
-      if (data.adsetErrors && data.adsetErrors.length > 0) {
-        errorMsg = data.adsetErrors[0];
-      } else if (data.details) {
-        errorMsg = data.details;
+      // Fallback to generic message if no error extracted
+      if (errorMsg === "An error occurred. Please try again.") {
+        errorMsg = data.error || `Failed with status ${response.status}`;
+
+        // If we have adsetErrors with actual error messages, use those
+        if (data.adsetErrors && data.adsetErrors.length > 0) {
+          errorMsg = data.adsetErrors[0];
+        }
       }
 
       throw new Error(errorMsg);
@@ -10761,11 +10796,14 @@ async function processBulkCampaignDuplication(account) {
     }
 
     let detailMessage = `✓ Campaign created: ${data.newCampaignId || data.id}`;
+    let partialDetails = null;
     if (data.mode === "async_double_batch") {
       if (hasPartialFailure) {
         detailMessage += `\n⚠️ ${data.adsetStats.succeeded}/${data.adsetStats.attempted} ad sets created (${data.adsetStats.failed} failed)`;
+        partialDetails = `${data.adsetStats.succeeded}/${data.adsetStats.attempted} ad sets created successfully`;
         if (data.adsetStats.errors && data.adsetStats.errors.length > 0) {
           detailMessage += `\nError: ${data.adsetStats.errors[0]}`;
+          partialDetails += `. Error: ${data.adsetStats.errors[0]}`;
         }
         detailMessage += `\n${data.structure?.ads || 0} ads will be duplicated asynchronously.`;
       } else {
@@ -10778,6 +10816,8 @@ async function processBulkCampaignDuplication(account) {
     return {
       account,
       success: true,
+      partialSuccess: hasPartialFailure,
+      partialDetails: partialDetails,
       campaignId: data.newCampaignId || data.id,
       mode: data.mode,
       structure: data.structure,
@@ -10817,17 +10857,27 @@ function showBulkCampaignResults(results) {
 
   let successCount = 0;
   let failedCount = 0;
+  let partialCount = 0;
 
   results.forEach((result) => {
-    if (result.success) successCount++;
-    else failedCount++;
+    if (result.success) {
+      // Check if this is a partial success
+      if (result.partialSuccess) {
+        partialCount++;
+      } else {
+        successCount++;
+      }
+    } else {
+      failedCount++;
+    }
   });
 
   const successStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.success .stat-number");
   const failedStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.failed .stat-number");
   const accountsStat = document.querySelector(".bulk-duplicate-campaign-modal .result-stat.accounts .stat-number");
 
-  if (successStat) successStat.textContent = successCount;
+  // Show combined success + partial success count
+  if (successStat) successStat.textContent = successCount + partialCount;
   if (failedStat) failedStat.textContent = failedCount;
   if (accountsStat) accountsStat.textContent = results.length;
 
@@ -10839,8 +10889,20 @@ function showBulkCampaignResults(results) {
       const item = document.createElement("div");
       item.className = "result-item";
 
-      const statusClass = result.success ? "success" : "failed";
-      const statusText = result.success ? "Success" : "Failed";
+      // Determine status display
+      let statusClass, statusText;
+      if (result.success) {
+        if (result.partialSuccess) {
+          statusClass = "partial";
+          statusText = "Partial Success";
+        } else {
+          statusClass = "success";
+          statusText = "Success";
+        }
+      } else {
+        statusClass = "failed";
+        statusText = "Failed";
+      }
 
       item.innerHTML = `
         <div class="result-item-header">
@@ -10853,6 +10915,7 @@ function showBulkCampaignResults(results) {
             ? `<div class="result-details" style="color: #666; font-size: 13px;">⏱️ Duplicating ${result.structure?.adsets || 0} adsets and ${result.structure?.ads || 0} ads asynchronously. Check Meta Ads Manager in 1-5 minutes.</div>`
             : ""
         }
+        ${result.partialDetails ? `<div class="result-details" style="color: #856404; font-size: 13px;">⚠️ ${result.partialDetails}</div>` : ""}
         ${result.error ? `<div class="result-errors"><div class="result-errors-title">Error:</div><div>${result.error}</div></div>` : ""}
       `;
 
@@ -11543,46 +11606,54 @@ async function processBulkAdSetDuplication(account) {
       }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json();
-      // Extract the most user-friendly error message
-      const userMessage = errorData.details?.error_user_msg || errorData.details?.error_user_title || errorData.details?.message || errorData.error || `Failed with status ${response.status}`;
+      // Extract the most user-friendly error message from Meta API response
+      const userMessage = await extractErrorMessage(data);
       throw new Error(userMessage);
     }
 
-    const data = await response.json();
+    // Check for partial success
+    const isPartialSuccess = data.partial === true;
 
-    statusSpan.textContent = "Success";
-    statusSpan.className = "account-progress-status success";
-    detailsDiv.textContent = `✓ Ad Set created: ${data.id}`;
+    if (isPartialSuccess) {
+      statusSpan.textContent = "Partial Success";
+      statusSpan.className = "account-progress-status partial";
+      detailsDiv.textContent = `⚠️ Ad Set created: ${data.id}\n${data.adsSucceeded}/${data.adsAttempted} ads created successfully`;
+      detailsDiv.style.whiteSpace = "pre-line";
 
-    return {
-      account,
-      success: true,
-      adSetId: data.id,
-    };
+      return {
+        account,
+        success: true,
+        partialSuccess: true,
+        adSetId: data.id,
+        adsSucceeded: data.adsSucceeded,
+        adsAttempted: data.adsAttempted,
+        error: data.error_user_msg || `${data.adsFailed} ads failed to create`,
+      };
+    } else {
+      statusSpan.textContent = "Success";
+      statusSpan.className = "account-progress-status success";
+      detailsDiv.textContent = `✓ Ad Set created: ${data.id}`;
+
+      return {
+        account,
+        success: true,
+        adSetId: data.id,
+      };
+    }
   } catch (error) {
     console.error(`Error duplicating ad set to account ${accountId}:`, error);
 
-    // Extract error_user_msg from response if available
-    let errorMessage = error.message;
-    if (error.message.includes("Failed with status")) {
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.details?.error_user_msg || errorData.details?.message || errorData.error || error.message;
-      } catch (e) {
-        // If parsing fails, use original error message
-      }
-    }
-
     statusSpan.textContent = "Failed";
     statusSpan.className = "account-progress-status failed";
-    detailsDiv.textContent = `✗ ${errorMessage}`;
+    detailsDiv.textContent = `✗ ${error.message}`;
 
     return {
       account,
       success: false,
-      error: errorMessage,
+      error: error.message,
     };
   }
 }
@@ -11607,17 +11678,26 @@ function showBulkAdSetResults(results) {
 
   let successCount = 0;
   let failedCount = 0;
+  let partialCount = 0;
 
   results.forEach((result) => {
-    if (result.success) successCount++;
-    else failedCount++;
+    if (result.success) {
+      if (result.partialSuccess) {
+        partialCount++;
+      } else {
+        successCount++;
+      }
+    } else {
+      failedCount++;
+    }
   });
 
   const successStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.success .stat-number");
   const failedStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.failed .stat-number");
   const accountsStat = document.querySelector(".bulk-duplicate-adset-modal .result-stat.accounts .stat-number");
 
-  if (successStat) successStat.textContent = successCount;
+  // Show combined success + partial success count
+  if (successStat) successStat.textContent = successCount + partialCount;
   if (failedStat) failedStat.textContent = failedCount;
   if (accountsStat) accountsStat.textContent = results.length;
 
@@ -11629,15 +11709,35 @@ function showBulkAdSetResults(results) {
       const item = document.createElement("div");
       item.className = "result-item";
 
-      const statusClass = result.success ? "success" : "failed";
-      const statusText = result.success ? "Success" : "Failed";
+      // Determine status display
+      let statusClass, statusText;
+      if (result.success) {
+        if (result.partialSuccess) {
+          statusClass = "partial";
+          statusText = "Partial Success";
+        } else {
+          statusClass = "success";
+          statusText = "Success";
+        }
+      } else {
+        statusClass = "failed";
+        statusText = "Failed";
+      }
+
+      let detailsHtml = "";
+      if (result.success) {
+        detailsHtml = `<div class="result-details">Ad Set ID: ${result.adSetId}</div>`;
+        if (result.partialSuccess && result.adsSucceeded && result.adsAttempted) {
+          detailsHtml += `<div class="result-details" style="color: #856404; font-size: 13px;">⚠️ ${result.adsSucceeded}/${result.adsAttempted} ads created successfully</div>`;
+        }
+      }
 
       item.innerHTML = `
         <div class="result-item-header">
           <span class="result-account-name">${result.account.name}</span>
           <span class="result-status ${statusClass}">${statusText}</span>
         </div>
-        ${result.success ? `<div class="result-details">Ad Set ID: ${result.adSetId}</div>` : ""}
+        ${detailsHtml}
         ${result.error ? `<div class="result-errors"><div class="result-errors-title">Error:</div><div>${result.error}</div></div>` : ""}
       `;
 
