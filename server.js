@@ -2842,7 +2842,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       const adSetDetailsUrl = `https://graph.facebook.com/${api_version}/${ad_set_id}`;
       const adSetResponse = await axios.get(adSetDetailsUrl, {
         params: {
-          fields: "name,ads{id,name}",
+          fields: "name,ads.limit(100){id,name}",
           access_token: userAccessToken,
         },
       });
@@ -2892,7 +2892,8 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       const adSetDetailsResponse = await axios.get(adSetDetailsUrl, {
         params: {
           fields:
-            "name,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,bid_amount,targeting,destination_type,promoted_object,status,start_time,end_time,pacing_type,adset_schedule" + (deep_copy ? ",ads{id,name}" : ""),
+            "name,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,bid_amount,targeting,destination_type,promoted_object,status,start_time,end_time,pacing_type,adset_schedule" +
+            (deep_copy ? ",ads.limit(100){id,name}" : ""),
           access_token: userAccessToken,
         },
       });
@@ -2945,7 +2946,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           delete targetingCopy.targeting_optimization;
           console.log("  - Removed targeting_optimization (deprecated)");
         }
-        
+
         if (targetingCopy.targeting_automation) {
           delete targetingCopy.targeting_automation;
           console.log("  - Removed targeting_automation (deprecated)");
@@ -2980,7 +2981,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         createAdSetPayload.targeting = targetingCopy;
       }
       if (sourceAdSet.destination_type) createAdSetPayload.destination_type = sourceAdSet.destination_type;
-      
+
       // Handle DSA beneficiary page matching for cross-account duplication
       let promotedObject = sourceAdSet.promoted_object ? JSON.parse(JSON.stringify(sourceAdSet.promoted_object)) : {};
       if (dsaMismatchInfo?.matchedPageId && promotedObject) {
@@ -2990,7 +2991,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       if (promotedObject && Object.keys(promotedObject).length > 0) {
         createAdSetPayload.promoted_object = promotedObject;
       }
-      
+
       if (sourceAdSet.start_time) createAdSetPayload.start_time = sourceAdSet.start_time;
       if (sourceAdSet.end_time) createAdSetPayload.end_time = sourceAdSet.end_time;
       // Note: pacing_type is a CAMPAIGN-LEVEL setting only. Do not copy to ad set level.
@@ -3388,6 +3389,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
         // Send batch operations in chunks
         const chunkSize = 50;
+        let totalSuccessfulAds = 0;
+        let totalFailedAds = 0;
+        const allErrors = [];
 
         for (let i = 0; i < batchOperations.length; i += chunkSize) {
           const chunk = batchOperations.slice(i, i + chunkSize);
@@ -3402,17 +3406,18 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           try {
             const batchResponse = await axios.post(`https://graph.facebook.com/${api_version}/`, formData, { headers: formData.getHeaders(), timeout: 30000 });
 
-          
             console.log(`✅ Batch request submitted for chunk ${i / chunkSize + 1}`);
 
             // For synchronous batch (not async), response is immediate
             const batchResults = batchResponse.data;
             if (Array.isArray(batchResults)) {
               const successCount = batchResults.filter((r) => r && r.code === 200).length;
+              totalSuccessfulAds += successCount;
               console.log(`Batch results: ${successCount}/${batchResults.length} successful`);
 
               // Log any errors with operation details
               const errors = batchResults.filter((r) => r && r.code >= 400);
+              totalFailedAds += errors.length;
               if (errors.length > 0) {
                 console.error(`⚠️ ${errors.length} batch operations failed:`);
                 errors.forEach((error, index) => {
@@ -3422,8 +3427,20 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
                     const body = typeof error.body === "string" ? JSON.parse(error.body) : error.body;
                     const errorMsg = body?.error?.message || body?.error?.error_user_msg || error.body;
                     console.error(`  ❌ [${operationName}] ${error.code}: ${errorMsg}`);
+                    // Collect error for response
+                    allErrors.push({
+                      operation: operationName,
+                      code: error.code,
+                      message: errorMsg,
+                      error_user_msg: body?.error?.error_user_msg || null,
+                    });
                   } catch {
                     console.error(`  ❌ [${operationName}] ${error.code}: ${error.body}`);
+                    allErrors.push({
+                      operation: operationName,
+                      code: error.code,
+                      message: error.body,
+                    });
                   }
                 });
               }
@@ -3432,18 +3449,62 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             }
           } catch (err) {
             console.error(`Failed to submit batch chunk ${i / chunkSize + 1}:`, err.response?.data || err.message);
+            // Count all operations in this chunk as failed
+            totalFailedAds += chunk.length;
+            allErrors.push({
+              operation: `chunk_${i / chunkSize + 1}`,
+              message: err.response?.data?.error?.message || err.message,
+              error_user_msg: err.response?.data?.error?.error_user_msg || null,
+            });
           }
         }
 
-        return res.json({
-          success: true,
-          mode: "cross_account_sync_batch",
-          id: newAdSetId,
-          original_id: ad_set_id,
-          adsCount: batchOperations.length, // Each operation is one ad (creatives created separately)
-          creativesCloned: Object.keys(creativeMapping).length,
-          message: `Ad set created in target account with intelligent creative cloning. ${batchOperations.length} ads duplicated via batch request.`,
-        });
+        // Determine overall success status
+        const hasFailures = totalFailedAds > 0;
+        const hasSuccesses = totalSuccessfulAds > 0;
+
+        // Return accurate response based on actual results
+        if (hasFailures && hasSuccesses) {
+          // Partial success
+          return res.json({
+            success: true,
+            partial: true,
+            mode: "cross_account_sync_batch",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            adsAttempted: batchOperations.length,
+            adsSucceeded: totalSuccessfulAds,
+            adsFailed: totalFailedAds,
+            creativesCloned: Object.keys(creativeMapping).length,
+            errors: allErrors.slice(0, 5), // Return first 5 errors
+            error_user_msg: allErrors[0]?.error_user_msg || `${totalFailedAds} out of ${batchOperations.length} ads failed to create`,
+            message: `Ad set created with partial success: ${totalSuccessfulAds}/${batchOperations.length} ads created successfully.`,
+          });
+        } else if (hasFailures && !hasSuccesses) {
+          // Complete failure
+          return res.status(400).json({
+            success: false,
+            mode: "cross_account_sync_batch",
+            id: newAdSetId,
+            error: "All ad creation operations failed",
+            error_user_msg: allErrors[0]?.error_user_msg || "Failed to create ads in the duplicated ad set",
+            details: allErrors[0]?.message || "Batch operations failed",
+            adsAttempted: batchOperations.length,
+            adsFailed: totalFailedAds,
+            errors: allErrors.slice(0, 5),
+          });
+        } else {
+          // Complete success
+          return res.json({
+            success: true,
+            mode: "cross_account_sync_batch",
+            id: newAdSetId,
+            original_id: ad_set_id,
+            adsCount: totalSuccessfulAds,
+            creativesCloned: Object.keys(creativeMapping).length,
+            message: `Ad set created in target account with intelligent creative cloning. ${totalSuccessfulAds} ads duplicated via batch request.`,
+          });
+        }
       }
 
       // No deep copy or no ads
@@ -3823,7 +3884,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       const campaignDetailsUrl = `https://graph.facebook.com/${api_version}/${campaign_id}`;
       const campaignResponse = await axios.get(campaignDetailsUrl, {
         params: {
-          fields: "name,adsets{id,name,ads.limit(500){id,name,adset_id}}",
+          fields: "name,adsets.limit(100){id,name}",
           access_token: userAccessToken,
         },
       });
@@ -3832,13 +3893,34 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       adsetsData = campaignData.adsets?.data || [];
       adsetCount = adsetsData.length;
 
-      adsetsData.forEach((adset) => {
-        const ads = adset.ads?.data || [];
-        totalAdsCount += ads.length;
-        adsData.push(...ads.map((ad) => ({ ...ad, adset_id: adset.id })));
+      // Fetch ads for EACH adset separately
+      const adFetchPromises = adsetsData.map(async (adset) => {
+        try {
+          const adsetAdsUrl = `https://graph.facebook.com/${api_version}/${adset.id}`;
+          const adsetAdsResponse = await axios.get(adsetAdsUrl, {
+            params: {
+              fields: "ads.limit(100){id,name,adset_id}", // ← Explicit limit here
+              access_token: userAccessToken,
+            },
+          });
+
+          const ads = adsetAdsResponse.data.ads?.data || [];
+          totalAdsCount += ads.length;
+
+          return ads.map((ad) => ({
+            ...ad,
+            adset_id: adset.id,
+          }));
+        } catch (err) {
+          console.warn(`Failed to fetch ads for adset ${adset.id}:`, err.message);
+          return [];
+        }
       });
 
+      const adsFetched = await Promise.all(adFetchPromises);
+      adsData = adsFetched.flat();
       totalChildObjects = adsetCount + totalAdsCount;
+
       console.log(`📋 Campaign ${campaign_id} structure:`, {
         name: campaignData.name,
         adsets: adsetCount,
@@ -3983,7 +4065,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         // Check if Meta executed synchronously (returns array of results)
         if (Array.isArray(data)) {
           console.log(`[${label}] Synchronous execution: ${data.length} operation(s) completed`);
-          
+
           // Per-ad logging
           let successCount = 0;
           let failCount = 0;
@@ -3996,11 +4078,11 @@ app.post("/api/duplicate-campaign", async (req, res) => {
               console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
             } else {
               failCount++;
-              const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+              const errorMsg = result.body?.error?.message || result.body || "Unknown error";
               console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
             }
           }
-          
+
           if (failCount === 0) {
             console.log(`\n✅ Batch result: All ${successCount} ads created successfully\n`);
           } else {
@@ -4022,7 +4104,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
                 const adId = result.body?.id || result.body;
                 console.log(`  ✅ Ad created: ${ad.name} -> ${adId}`);
               } else {
-                const errorMsg = result.body?.error?.message || result.body || 'Unknown error';
+                const errorMsg = result.body?.error?.message || result.body || "Unknown error";
                 console.warn(`  ❌ Ad failed: ${ad.name} - ${errorMsg}`);
               }
             }
@@ -4118,7 +4200,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           if (adset.daily_budget) payload.daily_budget = adset.daily_budget;
           if (adset.lifetime_budget) payload.lifetime_budget = adset.lifetime_budget;
           if (adset.bid_amount) payload.bid_amount = adset.bid_amount;
-          
+
           // Clean targeting object - remove deprecated fields
           if (adset.targeting) {
             let cleanedTargeting = JSON.parse(JSON.stringify(adset.targeting));
@@ -4126,9 +4208,9 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             delete cleanedTargeting.targeting_automation;
             payload.targeting = JSON.stringify(cleanedTargeting);
           }
-          
+
           if (adset.destination_type) payload.destination_type = adset.destination_type;
-          
+
           // Handle DSA beneficiary page matching
           let promotedObject = adset.promoted_object ? JSON.parse(JSON.stringify(adset.promoted_object)) : {};
           if (dsaMismatchInfo?.matchedPageId && promotedObject) {
@@ -4138,7 +4220,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           if (Object.keys(promotedObject).length > 0) {
             payload.promoted_object = JSON.stringify(promotedObject);
           }
-          
+
           if (adset.start_time) payload.start_time = adset.start_time;
           if (adset.end_time) payload.end_time = adset.end_time;
           if (adset.pacing_type) payload.pacing_type = JSON.stringify(adset.pacing_type);
@@ -4184,7 +4266,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
         // Simplified logging - only show summary, not full response
         if (Array.isArray(data)) {
-          const successCount = data.filter(r => r.code >= 200 && r.code < 300).length;
+          const successCount = data.filter((r) => r.code >= 200 && r.code < 300).length;
           const failCount = data.length - successCount;
           console.log(`[ADSET-BATCH ${i + 1}] Synchronous: ${successCount} success, ${failCount} failed`);
 
@@ -4714,7 +4796,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     console.log(`\n📊 Checking existing ad counts in ${Object.keys(adsetMapping).length} target ad sets...`);
     const adsetAdCounts = {};
     let totalExistingAds = 0;
-    
+
     for (const [sourceAdsetId, targetAdsetId] of Object.entries(adsetMapping)) {
       try {
         const adCountUrl = `https://graph.facebook.com/${api_version}/${targetAdsetId}`;
@@ -4724,11 +4806,11 @@ app.post("/api/duplicate-campaign", async (req, res) => {
             access_token: userAccessToken,
           },
         });
-        
+
         const existingAdCount = adCountResponse.data.ads?.summary?.total_count || 0;
         adsetAdCounts[targetAdsetId] = existingAdCount;
         totalExistingAds += existingAdCount;
-        
+
         if (existingAdCount > 0) {
           console.log(`  - Ad set ${targetAdsetId}: ${existingAdCount} existing ads`);
         }
@@ -4737,27 +4819,27 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         adsetAdCounts[targetAdsetId] = 0;
       }
     }
-    
+
     console.log(`📋 Total existing ads in target ad sets: ${totalExistingAds}`);
 
     // Filter adOps to respect 50-ad limit per ad set
     let adsSkipped = 0;
     const filteredAdOps = [];
-    
+
     for (const adOp of adOps) {
       // Extract adset_id from body
       const bodyParams = new URLSearchParams(adOp.body);
-      const adsetId = bodyParams.get('adset_id');
-      
+      const adsetId = bodyParams.get("adset_id");
+
       if (adsetId && adsetAdCounts[adsetId] !== undefined) {
         const currentCount = adsetAdCounts[adsetId];
-        
+
         if (currentCount >= 50) {
           console.warn(`⚠️ Skipping ad for ad set ${adsetId}: already at 50-ad limit`);
           adsSkipped++;
           continue;
         }
-        
+
         // Add the ad and increment counter
         filteredAdOps.push(adOp);
         adsetAdCounts[adsetId]++;
@@ -4766,7 +4848,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         filteredAdOps.push(adOp);
       }
     }
-    
+
     console.log(`\n📋 Ad Duplication Summary:`);
     console.log(`   Total source ads: ${adsData.length}`);
     console.log(`   Ads to duplicate: ${filteredAdOps.length}`);
@@ -4779,7 +4861,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       const adOp = filteredAdOps[i];
       // Find matching source ad
       const bodyParams = new URLSearchParams(adOp.body);
-      const adName = bodyParams.get('name') || `Ad ${i}`;
+      const adName = bodyParams.get("name") || `Ad ${i}`;
       filteredAds.push({ name: adName, op: adOp });
     }
 
@@ -4811,11 +4893,11 @@ app.post("/api/duplicate-campaign", async (req, res) => {
       const adsInBatch = adChunks[i];
       const adsDataInBatch = adDataChunks[i];
       console.log(`📤 Sending ${adsInBatch.length} ads in batch ${i + 1}/${adChunks.length}`);
-      
+
       try {
         const id = await sendAsyncBatch(adsInBatch, label, adsDataInBatch);
         adBatchIds.push(id);
-        
+
         // Track batch result
         adBatchResults.push({
           batchNum: i + 1,
@@ -4823,12 +4905,12 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           adsInBatch: adChunks[i].length,
           status: "queued",
         });
-        
+
         console.log(`✅ Batch ${i + 1} queued successfully (ID: ${id})`);
       } catch (err) {
         console.error(`❌ Batch ${i + 1} failed:`, err.message);
         adFailureCount++;
-        
+
         adBatchResults.push({
           batchNum: i + 1,
           batchId: null,
@@ -4836,7 +4918,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
           status: "failed",
           error: err.message,
         });
-        
+
         let errorMsg = err.message;
         if (err.response?.data?.error?.error_user_msg) {
           errorMsg = err.response.data.error.error_user_msg;
@@ -4850,7 +4932,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
     console.log(`   Successful batches: ${adChunks.length - adFailureCount}`);
     console.log(`   Failed batches: ${adFailureCount}`);
     console.log(`   Total ads queued: ${filteredAdOps.length}`);
-    
+
     if (adFailureCount > 0) {
       console.error(`❌ ${adFailureCount} batch(es) failed:`);
       adErrors.forEach((err) => console.error(`   - ${err}`));
@@ -4890,9 +4972,10 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         failedBatches: adFailureCount,
         batchDetails: adBatchResults,
       },
-      message: adFailureCount === 0 
-        ? `Campaign duplicated successfully! Duplicating ${filteredAdOps.length} ads in ${adChunks.length} batches (${adsSkipped} skipped due to 50-ad limit). Check Meta Ads Manager after 1–5 minutes.`
-        : `Campaign partially duplicated with errors. ${adChunks.length - adFailureCount}/${adChunks.length} ad batches queued, ${adFailureCount} failed. Check logs for details.`,
+      message:
+        adFailureCount === 0
+          ? `Campaign duplicated successfully! Duplicating ${filteredAdOps.length} ads in ${adChunks.length} batches (${adsSkipped} skipped due to 50-ad limit). Check Meta Ads Manager after 1–5 minutes.`
+          : `Campaign partially duplicated with errors. ${adChunks.length - adFailureCount}/${adChunks.length} ad batches queued, ${adFailureCount} failed. Check logs for details.`,
     });
   } catch (err) {
     console.error("❌ Error duplicating campaign:", err.response?.data || err.message);
