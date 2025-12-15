@@ -6,6 +6,15 @@
 
 import { rateLimitTracker, enforceRateLimit } from "./rate-limit-tracker.js";
 
+/**
+ * Rate limit error codes from Meta API
+ */
+const RATE_LIMIT_ERRORS = {
+  HTTP_429: 429,
+  FB_THROTTLE_CODE: 80004,
+  APP_REQUEST_LIMIT: 2446079,
+};
+
 export class AdaptiveSerialQueue {
   constructor(accountId, options = {}) {
     this.accountId = accountId;
@@ -179,7 +188,7 @@ export class AdaptiveSerialQueue {
         operation.retryCount++;
 
         // Check if it's a rate limit error
-        const isRateLimitError = error.response?.status === 429 || error.response?.data?.error?.code === 80004 || error.response?.data?.error?.error_subcode === 2446079;
+        const isRateLimitError = error.response?.status === RATE_LIMIT_ERRORS.HTTP_429 || error.response?.data?.error?.code === RATE_LIMIT_ERRORS.FB_THROTTLE_CODE || error.response?.data?.error?.error_subcode === RATE_LIMIT_ERRORS.APP_REQUEST_LIMIT;
 
         if (isRateLimitError && attempt < this.maxRetries) {
           // Exponential backoff for rate limit errors
@@ -298,12 +307,12 @@ export class AdaptiveSerialQueue {
     }
 
     // Handle rate limit errors specifically
-    if (error.response?.status === 429) {
-      details.message = `Rate limit exceeded (429) - API throttled`;
-    } else if (error.response?.data?.error?.code === 80004) {
-      details.message = `Rate limit error (code 80004) - API throttled`;
-    } else if (error.response?.data?.error?.error_subcode === 2446079) {
-      details.message = `Application request limit reached (2446079)`;
+    if (error.response?.status === RATE_LIMIT_ERRORS.HTTP_429) {
+      details.message = `Rate limit exceeded (${RATE_LIMIT_ERRORS.HTTP_429}) - API throttled`;
+    } else if (error.response?.data?.error?.code === RATE_LIMIT_ERRORS.FB_THROTTLE_CODE) {
+      details.message = `Rate limit error (code ${RATE_LIMIT_ERRORS.FB_THROTTLE_CODE}) - API throttled`;
+    } else if (error.response?.data?.error?.error_subcode === RATE_LIMIT_ERRORS.APP_REQUEST_LIMIT) {
+      details.message = `Application request limit reached (${RATE_LIMIT_ERRORS.APP_REQUEST_LIMIT})`;
     }
 
     return details;
@@ -336,23 +345,30 @@ export class AdaptiveSerialQueue {
    * @returns {Promise<Array>} Results array
    */
   async waitUntilComplete() {
+    // If nothing to process, return immediately
     if (!this.processing && this.queue.length === 0) {
       return this.results;
     }
 
-    // If not processing yet, start it
+    // If not processing yet but has operations, start processing
     if (!this.processing && this.queue.length > 0) {
       return await this.processQueue();
     }
 
-    // Wait for processing to complete
+    // If processing is already ongoing, wait for completion via callback
     return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
-        if (!this.processing && this.queue.length === 0) {
-          clearInterval(checkInterval);
-          resolve(this.results);
+      // Save original onComplete callback
+      const originalOnComplete = this.onComplete;
+
+      // Override onComplete to resolve this promise
+      this.onComplete = (result) => {
+        // Call original callback if it exists
+        if (originalOnComplete) {
+          originalOnComplete(result);
         }
-      }, 100);
+        // Resolve the promise with current results
+        resolve(this.results);
+      };
     });
   }
 
