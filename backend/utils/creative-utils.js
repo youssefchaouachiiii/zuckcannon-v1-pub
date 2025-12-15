@@ -1,60 +1,28 @@
-import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
 import { CreativeDB, CreativeAccountDB } from './database.js'
-import { getPaths } from './paths.js'
+import { 
+  calculateFileHash, 
+  moveToCreativeLibrary, 
+  getCreativeFilePath,
+  getThumbnailFilePath,
+  saveThumbnailToLibrary,
+  deleteFileIfExists,
+  getCreativeSubdir 
+} from './file-handler.js'
 
-// Calculate SHA-256 hash of a file
-export async function calculateFileHash(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256')
-    const stream = fs.createReadStream(filePath)
-    
-    stream.on('data', data => hash.update(data))
-    stream.on('end', () => resolve(hash.digest('hex')))
-    stream.on('error', reject)
-  })
-}
+// ============================================
+// Creative Processing
+// ============================================
 
-// Get the appropriate subdirectory based on file type
-export function getCreativeSubdir(mimeType) {
-  if (mimeType.startsWith('video/')) return 'videos'
-  if (mimeType.startsWith('image/')) return 'images'
-  throw new Error(`Unsupported file type: ${mimeType}`)
-}
-
-// Move file to creative library
-export async function moveToCreativeLibrary(tempPath, originalName, mimeType) {
-  const subdir = getCreativeSubdir(mimeType)
-  const timestamp = Date.now()
-  const ext = path.extname(originalName)
-  const baseName = path.basename(originalName, ext)
-  const newFileName = `${timestamp}-${baseName}${ext}`
-  const paths = getPaths()
-  const newPath = path.join(paths.creativeLibrary, subdir, newFileName)
-  
-  // Create directory if it doesn't exist
-  const dir = path.dirname(newPath)
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  
-  // Copy the file (can't use rename across different filesystems)
-  fs.copyFileSync(tempPath, newPath)
-  // Delete the original file
-  fs.unlinkSync(tempPath)
-  
-  return {
-    fileName: newFileName,
-    filePath: newPath,
-    relativePath: path.join('creative-library', subdir, newFileName)
-  }
-}
-
-// Process uploaded creative with deduplication
+/**
+ * Process uploaded creative with deduplication
+ * Checks if creative already exists by file hash, handles duplicates and new uploads
+ * @param {Object} file - Multer file object
+ * @param {string} adAccountId - Ad account ID
+ * @returns {Promise<Object>} - Processing result with creative data and metadata
+ */
 export async function processCreative(file, adAccountId) {
   try {
-    // Calculate file hash
+    // Calculate file hash for deduplication
     const fileHash = await calculateFileHash(file.path)
     
     // Check if creative already exists
@@ -67,11 +35,7 @@ export async function processCreative(file, adAccountId) {
       if (isUploaded) {
         // Already uploaded to this account, return existing IDs
         const facebookIds = await CreativeAccountDB.getFacebookIds(creative.id, adAccountId)
-        
-        // Delete the temporary file
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path)
-        }
+        deleteFileIfExists(file.path)
         
         return {
           isNew: false,
@@ -82,10 +46,7 @@ export async function processCreative(file, adAccountId) {
         }
       } else {
         // Creative exists but not uploaded to this account
-        // Delete the temporary file since we have it in library
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path)
-        }
+        deleteFileIfExists(file.path)
         
         return {
           isNew: false,
@@ -96,7 +57,7 @@ export async function processCreative(file, adAccountId) {
         }
       }
     } else {
-      // New creative, move to library
+      // New creative, move to library and create database entry
       const mimeType = file.mimetype || (file.originalname.match(/\.(mp4|mov|avi)$/i) ? 'video/mp4' : 'image/jpeg')
       const { fileName, filePath, relativePath } = await moveToCreativeLibrary(
         file.path,
@@ -104,7 +65,6 @@ export async function processCreative(file, adAccountId) {
         mimeType
       )
       
-      // Create database entry
       const creativeId = await CreativeDB.create({
         fileHash,
         fileName,
@@ -132,40 +92,23 @@ export async function processCreative(file, adAccountId) {
   }
 }
 
-// Update creative with thumbnail path
+// ============================================
+// Thumbnail Management
+// ============================================
+
+/**
+ * Update creative with thumbnail path
+ * Saves thumbnail to library and updates database reference
+ * @param {number} creativeId - Creative ID
+ * @param {string} thumbnailPath - Source thumbnail path
+ * @returns {Promise<string>} - Relative path to saved thumbnail
+ */
 export async function updateCreativeThumbnail(creativeId, thumbnailPath) {
   const db = (await import('./database.js')).default
   
-  // Move thumbnail to library
-  const timestamp = Date.now()
-  const newThumbnailName = `thumb-${timestamp}.png`
-  const paths = getPaths()
-  const newThumbnailPath = path.join(paths.thumbnails, newThumbnailName)
+  const relativePath = await saveThumbnailToLibrary(creativeId, thumbnailPath)
   
-  // Create directory if it doesn't exist
-  const dir = path.dirname(newThumbnailPath)
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  
-  // Copy thumbnail (don't move, as it might be needed for upload)
-  try {
-    // Check if source thumbnail exists
-    if (!fs.existsSync(thumbnailPath)) {
-      console.error(`Source thumbnail does not exist: ${thumbnailPath}`)
-      throw new Error(`Thumbnail file not found: ${thumbnailPath}`)
-    }
-    
-    fs.copyFileSync(thumbnailPath, newThumbnailPath)
-    console.log(`Thumbnail copied from ${thumbnailPath} to ${newThumbnailPath}`)
-  } catch (error) {
-    console.error('Error copying thumbnail:', error)
-    throw error
-  }
-  
-  const relativePath = path.join('creative-library', 'thumbnails', newThumbnailName)
-  
-  // Use the same promise pattern as other DB operations
+  // Update database with new thumbnail path
   return new Promise((resolve, reject) => {
     db.run(
       'UPDATE creatives SET thumbnail_path = ? WHERE id = ?',
@@ -183,25 +126,27 @@ export async function updateCreativeThumbnail(creativeId, thumbnailPath) {
   })
 }
 
-// Get creative file path from library
-export function getCreativeFilePath(creative) {
-  const paths = getPaths()
-  // If file_path is absolute, return as is
-  if (path.isAbsolute(creative.file_path)) {
-    return creative.file_path
-  }
-  // Otherwise, resolve relative to data directory
-  return path.join(paths.data, creative.file_path)
-}
+// ============================================
+// Path Resolution (Legacy exports for compatibility)
+// ============================================
 
-// Get thumbnail file path from library
-export function getThumbnailFilePath(creative) {
-  if (!creative.thumbnail_path) return null
-  const paths = getPaths()
-  // If thumbnail_path is absolute, return as is
-  if (path.isAbsolute(creative.thumbnail_path)) {
-    return creative.thumbnail_path
-  }
-  // Otherwise, resolve relative to data directory
-  return path.join(paths.data, creative.thumbnail_path)
-}
+/**
+ * Get creative file path from library
+ * @param {Object} creative - Creative object
+ * @returns {string} - Absolute file path
+ */
+export { getCreativeFilePath } from './file-handler.js'
+
+/**
+ * Get thumbnail file path from library
+ * @param {Object} creative - Creative object
+ * @returns {string|null} - Absolute file path or null
+ */
+export { getThumbnailFilePath } from './file-handler.js'
+
+/**
+ * Get creative subdirectory based on MIME type
+ * @param {string} mimeType - MIME type
+ * @returns {string} - Subdirectory name
+ */
+export { getCreativeSubdir } from './file-handler.js'
