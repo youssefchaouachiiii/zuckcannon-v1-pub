@@ -120,20 +120,36 @@ async function initializeDatabase() {
   }
 }
 
-// Creative operations
-// Error handling wrapper for database operations
-async function dbOperation(operation, errorMessage) {
+// ============================================
+// Database Operation Wrapper
+// ============================================
+
+// Async wrapper for db.run() operations
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err)
+      else resolve({ id: this.lastID, changes: this.changes })
+    })
+  })
+}
+
+// Main wrapper for all database operations with error handling
+async function dbOperation(operation, errorContext) {
   try {
     await ensureDb()
     return await operation()
   } catch (err) {
-    console.error(`${errorMessage}:`, err)
-    throw new Error(`${errorMessage}: ${err.message}`)
+    console.error(`${errorContext}:`, err)
+    throw new Error(`${errorContext}: ${err.message}`)
   }
 }
 
+// ============================================
+// Creative Database Operations
+// ============================================
+
 export const CreativeDB = {
-  // Find creative by file hash
   async findByHash(fileHash) {
     return dbOperation(
       () => db.getAsync('SELECT * FROM creatives WHERE file_hash = ?', fileHash),
@@ -141,234 +157,222 @@ export const CreativeDB = {
     )
   },
 
-  // Create new creative entry
   async create(creativeData) {
     const { fileHash, fileName, originalName, filePath, fileType, fileSize, thumbnailPath, batchId } = creativeData
-    
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         `INSERT INTO creatives (file_hash, file_name, original_name, file_path, file_type, file_size, thumbnail_path, batch_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [fileHash, fileName, originalName, filePath, fileType, fileSize, thumbnailPath, batchId || null],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.lastID)
-        }
-      )
-    })
+        [fileHash, fileName, originalName, filePath, fileType, fileSize, thumbnailPath, batchId || null]
+      ),
+      'Error creating creative'
+    )
   },
 
-  // Get all creatives
   async getAll(limit = 100, offset = 0) {
-    return await db.allAsync(
-      `SELECT c.*, 
-              COUNT(DISTINCT ca.ad_account_id) as account_count,
-              GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
-       FROM creatives c
-       LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
-       GROUP BY c.id
-       ORDER BY c.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [limit, offset]
+    return dbOperation(
+      () => db.allAsync(
+        `SELECT c.*, 
+                COUNT(DISTINCT ca.ad_account_id) as account_count,
+                GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
+         FROM creatives c
+         LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
+         GROUP BY c.id
+         ORDER BY c.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      ),
+      'Error fetching creatives'
     )
   },
 
-  // Get creative by ID with account information
   async getById(id) {
-    const creative = await db.getAsync('SELECT * FROM creatives WHERE id = ?', id)
-    if (!creative) return null
-
-    const accounts = await db.allAsync(
-      'SELECT * FROM creative_accounts WHERE creative_id = ?',
-      id
+    return dbOperation(
+      async () => {
+        const creative = await db.getAsync('SELECT * FROM creatives WHERE id = ?', id)
+        if (!creative) return null
+        const accounts = await db.allAsync('SELECT * FROM creative_accounts WHERE creative_id = ?', id)
+        return { ...creative, accounts }
+      },
+      'Error fetching creative by ID'
     )
-
-    return { ...creative, accounts }
   },
 
-  // Search creatives by name
   async search(query) {
-    return await db.allAsync(
-      `SELECT c.*, 
-              COUNT(DISTINCT ca.ad_account_id) as account_count,
-              GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
-       FROM creatives c
-       LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
-       WHERE c.original_name LIKE ? OR c.file_name LIKE ?
-       GROUP BY c.id
-       ORDER BY c.created_at DESC`,
-      [`%${query}%`, `%${query}%`]
+    return dbOperation(
+      () => db.allAsync(
+        `SELECT c.*, 
+                COUNT(DISTINCT ca.ad_account_id) as account_count,
+                GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
+         FROM creatives c
+         LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
+         WHERE c.original_name LIKE ? OR c.file_name LIKE ?
+         GROUP BY c.id
+         ORDER BY c.created_at DESC`,
+        [`%${query}%`, `%${query}%`]
+      ),
+      'Error searching creatives'
     )
   },
 
-  // Delete a creative by ID
   async delete(id) {
-    return new Promise((resolve, reject) => {
-      db.run('DELETE FROM creatives WHERE id = ?', [id], function(err) {
-        if (err) reject(err)
-        else resolve(this.changes)
-      })
-    })
+    return dbOperation(
+      () => dbRun('DELETE FROM creatives WHERE id = ?', [id]),
+      'Error deleting creative'
+    )
   },
 
-  // Delete all creatives
   async deleteAll() {
-    return new Promise((resolve, reject) => {
-      db.run('DELETE FROM creatives', function(err) {
-        if (err) reject(err)
-        else resolve(this.changes)
-      })
-    })
+    return dbOperation(
+      () => dbRun('DELETE FROM creatives'),
+      'Error deleting all creatives'
+    )
   },
 
-  // Update creative's batch assignment
   async updateBatch(creativeId, batchId) {
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         'UPDATE creatives SET batch_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [batchId, creativeId],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.changes)
-        }
-      )
-    })
+        [batchId, creativeId]
+      ),
+      'Error updating creative batch'
+    )
   },
 
-  // Bulk update batch assignment
   async updateBatchBulk(creativeIds, batchId) {
     const placeholders = creativeIds.map(() => '?').join(',')
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         `UPDATE creatives SET batch_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
-        [batchId, ...creativeIds],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.changes)
-        }
-      )
-    })
+        [batchId, ...creativeIds]
+      ),
+      'Error bulk updating creatives batch'
+    )
   }
 }
 
-// Creative-Account relationship operations
+// ============================================
+// Creative-Account Relationship Operations
+// ============================================
+
 export const CreativeAccountDB = {
-  // Record upload to ad account
   async recordUpload(creativeId, adAccountId, facebookIds) {
     const { creativeId: fbCreativeId, videoId, imageHash } = facebookIds
-    
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         `INSERT OR REPLACE INTO creative_accounts 
          (creative_id, ad_account_id, facebook_creative_id, facebook_video_id, facebook_image_hash)
          VALUES (?, ?, ?, ?, ?)`,
-        [creativeId, adAccountId, fbCreativeId, videoId, imageHash],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.lastID)
-        }
-      )
-    })
+        [creativeId, adAccountId, fbCreativeId, videoId, imageHash]
+      ),
+      'Error recording upload'
+    )
   },
 
-  // Check if creative is already uploaded to account
   async isUploadedToAccount(creativeId, adAccountId) {
-    const result = await db.getAsync(
-      'SELECT * FROM creative_accounts WHERE creative_id = ? AND ad_account_id = ?',
-      [creativeId, adAccountId]
+    return dbOperation(
+      async () => {
+        const result = await db.getAsync(
+          'SELECT * FROM creative_accounts WHERE creative_id = ? AND ad_account_id = ?',
+          [creativeId, adAccountId]
+        )
+        return !!result
+      },
+      'Error checking upload status'
     )
-    return !!result
   },
 
-  // Get Facebook IDs for creative in account
   async getFacebookIds(creativeId, adAccountId) {
-    return await db.getAsync(
-      'SELECT facebook_creative_id, facebook_video_id, facebook_image_hash FROM creative_accounts WHERE creative_id = ? AND ad_account_id = ?',
-      [creativeId, adAccountId]
+    return dbOperation(
+      () => db.getAsync(
+        'SELECT facebook_creative_id, facebook_video_id, facebook_image_hash FROM creative_accounts WHERE creative_id = ? AND ad_account_id = ?',
+        [creativeId, adAccountId]
+      ),
+      'Error fetching Facebook IDs'
     )
   },
 
-  // Get all accounts where creative is uploaded
   async getUploadedAccounts(creativeId) {
-    return await db.allAsync(
-      'SELECT * FROM creative_accounts WHERE creative_id = ?',
-      creativeId
+    return dbOperation(
+      () => db.allAsync(
+        'SELECT * FROM creative_accounts WHERE creative_id = ?',
+        creativeId
+      ),
+      'Error fetching uploaded accounts'
     )
   }
 }
 
-// Batch operations
+// ============================================
+// Batch Database Operations
+// ============================================
+
 export const BatchDB = {
-  // Create a new batch
   async create(name, description = null) {
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         'INSERT INTO creative_batches (name, description) VALUES (?, ?)',
-        [name, description],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.lastID)
-        }
-      )
-    })
+        [name, description]
+      ),
+      'Error creating batch'
+    )
   },
 
-  // Get all batches with creative count
   async getAll() {
-    return await db.allAsync(`
-      SELECT 
-        cb.*,
-        COUNT(c.id) as creative_count,
-        SUM(CASE WHEN c.file_type LIKE 'video/%' THEN 1 ELSE 0 END) as video_count,
-        SUM(CASE WHEN c.file_type LIKE 'image/%' THEN 1 ELSE 0 END) as image_count
-      FROM creative_batches cb
-      LEFT JOIN creatives c ON cb.id = c.batch_id
-      GROUP BY cb.id
-      ORDER BY cb.created_at DESC
-    `)
+    return dbOperation(
+      () => db.allAsync(`
+        SELECT 
+          cb.*,
+          COUNT(c.id) as creative_count,
+          SUM(CASE WHEN c.file_type LIKE 'video/%' THEN 1 ELSE 0 END) as video_count,
+          SUM(CASE WHEN c.file_type LIKE 'image/%' THEN 1 ELSE 0 END) as image_count
+        FROM creative_batches cb
+        LEFT JOIN creatives c ON cb.id = c.batch_id
+        GROUP BY cb.id
+        ORDER BY cb.created_at DESC
+      `),
+      'Error fetching batches'
+    )
   },
 
-  // Get batch by ID
   async getById(id) {
-    return await db.getAsync('SELECT * FROM creative_batches WHERE id = ?', id)
+    return dbOperation(
+      () => db.getAsync('SELECT * FROM creative_batches WHERE id = ?', id),
+      'Error fetching batch by ID'
+    )
   },
 
-  // Update batch
   async update(id, name, description) {
-    return new Promise((resolve, reject) => {
-      db.run(
+    return dbOperation(
+      () => dbRun(
         'UPDATE creative_batches SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [name, description, id],
-        function(err) {
-          if (err) reject(err)
-          else resolve(this.changes)
-        }
-      )
-    })
+        [name, description, id]
+      ),
+      'Error updating batch'
+    )
   },
 
-  // Delete batch (creatives will have batch_id set to NULL due to ON DELETE SET NULL)
   async delete(id) {
-    return new Promise((resolve, reject) => {
-      db.run('DELETE FROM creative_batches WHERE id = ?', [id], function(err) {
-        if (err) reject(err)
-        else resolve(this.changes)
-      })
-    })
+    return dbOperation(
+      () => dbRun('DELETE FROM creative_batches WHERE id = ?', [id]),
+      'Error deleting batch'
+    )
   },
 
-  // Get creatives in a batch
   async getCreatives(batchId) {
-    return await db.allAsync(
-      `SELECT c.*, 
-              COUNT(DISTINCT ca.ad_account_id) as account_count,
-              GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
-       FROM creatives c
-       LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
-       WHERE c.batch_id = ?
-       GROUP BY c.id
-       ORDER BY c.created_at DESC`,
-      batchId
+    return dbOperation(
+      () => db.allAsync(
+        `SELECT c.*, 
+                COUNT(DISTINCT ca.ad_account_id) as account_count,
+                GROUP_CONCAT(DISTINCT ca.ad_account_id) as uploaded_accounts
+         FROM creatives c
+         LEFT JOIN creative_accounts ca ON c.id = ca.creative_id
+         WHERE c.batch_id = ?
+         GROUP BY c.id
+         ORDER BY c.created_at DESC`,
+        batchId
+      ),
+      'Error fetching batch creatives'
     )
   }
 }
