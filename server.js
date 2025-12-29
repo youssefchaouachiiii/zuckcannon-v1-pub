@@ -40,7 +40,6 @@ import {
     circuitBreakers,
     sendTelegramNotification
 } from "./utils/circuit-breaker.js";
-import { handleUploadVideos, handleUploadImages } from "./handlers/upload.handler.js";
 
 
 // ffmpeg set up
