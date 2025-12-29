@@ -29,6 +29,7 @@ import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 import { upload, uploadVideo, uploadImage } from "./config/multer.config.js";
+import { handleUploadVideos, handleUploadImages } from "./handlers/upload.handler.js";
 import {
     uploadSessions,
     sendSSE,
