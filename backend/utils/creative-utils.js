@@ -1,12 +1,12 @@
 import { CreativeDB, CreativeAccountDB } from './database.js'
-import { 
-  calculateFileHash, 
-  moveToCreativeLibrary, 
+import {
+  calculateFileHash,
+  moveToCreativeLibrary,
   getCreativeFilePath,
   getThumbnailFilePath,
   saveThumbnailToLibrary,
   deleteFileIfExists,
-  getCreativeSubdir 
+  getCreativeSubdir
 } from './file-handler.js'
 
 // ============================================
@@ -24,19 +24,19 @@ export async function processCreative(file, adAccountId) {
   try {
     // Calculate file hash for deduplication
     const fileHash = await calculateFileHash(file.path)
-    
+
     // Check if creative already exists
     let creative = await CreativeDB.findByHash(fileHash)
-    
+
     if (creative) {
       // Creative exists, check if it's already uploaded to this account
       const isUploaded = await CreativeAccountDB.isUploadedToAccount(creative.id, adAccountId)
-      
+
       if (isUploaded) {
         // Already uploaded to this account, return existing IDs
         const facebookIds = await CreativeAccountDB.getFacebookIds(creative.id, adAccountId)
         deleteFileIfExists(file.path)
-        
+
         return {
           isNew: false,
           isDuplicate: true,
@@ -47,7 +47,7 @@ export async function processCreative(file, adAccountId) {
       } else {
         // Creative exists but not uploaded to this account
         deleteFileIfExists(file.path)
-        
+
         return {
           isNew: false,
           isDuplicate: false,
@@ -64,19 +64,19 @@ export async function processCreative(file, adAccountId) {
         file.originalname,
         mimeType
       )
-      
-      const creativeId = await CreativeDB.create({
-        fileHash,
-        fileName,
-        originalName: file.originalname,
-        filePath: relativePath,
-        fileType: mimeType,
-        fileSize: file.size,
-        thumbnailPath: null // Will be updated after thumbnail creation
+
+      const result = await CreativeDB.create({
+          fileHash,
+          fileName,
+          originalName: file.originalname,
+          filePath: relativePath,
+          fileType: mimeType,
+          fileSize: file.size,
+          thumbnailPath: null
       })
-      
-      creative = await CreativeDB.getById(creativeId)
-      
+
+      creative = await CreativeDB.getById(result.id)
+
       return {
         isNew: true,
         isDuplicate: false,
@@ -105,9 +105,9 @@ export async function processCreative(file, adAccountId) {
  */
 export async function updateCreativeThumbnail(creativeId, thumbnailPath) {
   const db = (await import('./database.js')).default
-  
+
   const relativePath = await saveThumbnailToLibrary(creativeId, thumbnailPath)
-  
+
   // Update database with new thumbnail path
   return new Promise((resolve, reject) => {
     db.run(
