@@ -32,10 +32,11 @@ import { upload, uploadVideo, uploadImage } from "./config/multer.config.js";
 import { handleUploadVideos, handleUploadImages } from "./handlers/upload.handler.js";
 import {
     uploadSessions,
-    sendSSE,
     createUploadSession,
     broadcastToSession,
-    broadcastMetaDataUpdate
+    broadcastMetaDataUpdate,
+    sendSSE,
+    metaDataClients
 } from "./utils/sse.utils.js";
 import {
     circuitBreakers,
