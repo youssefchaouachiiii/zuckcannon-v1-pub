@@ -85,6 +85,7 @@ ecosystem.config.js.backup
 
 # ========== PROJECT SPECIFIC ==========
 personal-docs/
+.worktrees/
 
 __tests__
 
