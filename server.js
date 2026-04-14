@@ -206,6 +206,9 @@ app.use("/api/", apiRateLimiter);
 // FB Accounts routes (system user tokens)
 app.use("/api/fb-accounts", ensureAuthenticatedAPI, fbAccountsRouter);
 
+// Rules engine UI routes — require auth (must be before n8n prefix)
+app.use("/api/rules-engine/ui", ensureAuthenticatedAPI, rulesEngineUiRouter);
+
 // Rules engine n8n routes — shared secret auth
 app.use("/api/rules-engine", (req, res, next) => {
   const secret = process.env.N8N_SHARED_SECRET;
@@ -214,9 +217,6 @@ app.use("/api/rules-engine", (req, res, next) => {
   }
   next();
 }, rulesEngineN8nRouter);
-
-// Rules engine UI routes — require auth
-app.use("/api/rules-engine/ui", ensureAuthenticatedAPI, rulesEngineUiRouter);
 
 // Facebook Graph API credentials
 const api_version = "v24.0";
