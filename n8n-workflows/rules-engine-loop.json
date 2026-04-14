@@ -30,7 +30,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.N8N_SHARED_SECRET }}" }
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
           ]
         },
         "options": {}
@@ -141,7 +141,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.N8N_SHARED_SECRET }}" }
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
           ]
         },
         "sendQuery": true,
@@ -253,7 +253,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.N8N_SHARED_SECRET }}" }
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
           ]
         },
         "sendBody": true,
@@ -274,7 +274,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.N8N_SHARED_SECRET }}" }
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
           ]
         },
         "sendBody": true,
@@ -295,7 +295,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.N8N_SHARED_SECRET }}" }
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
           ]
         },
         "sendBody": true,
