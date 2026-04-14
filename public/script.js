@@ -524,6 +524,9 @@ document.addEventListener("DOMContentLoaded", () => {
   checkAuthStatus();
   setupLogout();
   setupRefreshButton();
+  if (typeof initFbAccountsPage === 'function') initFbAccountsPage();
+  if (typeof initRulesEnginePanel === 'function') initRulesEnginePanel();
+  if (typeof updateSetupChecklist === 'function') updateSetupChecklist();
 });
 
 class AppStateManager {

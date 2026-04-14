@@ -1,0 +1,87 @@
+// backend/routes/rules-engine-n8n.js
+import express from 'express';
+import { RulesEngineDB } from '../db/rules-engine-db.js';
+import { resolveRuleEntities } from '../utils/rules-engine-resolver.js';
+import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
+
+export const rulesEngineN8nRouter = express.Router();
+
+rulesEngineN8nRouter.get('/health', (req, res) => {
+  res.json({ ok: true, ts: new Date().toISOString() });
+});
+
+rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
+  try {
+    const rules = await RulesEngineDB.listActiveRules();
+    const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
+    const token = systemUserTokens[0]?.access_token || null;
+
+    const resolved = await Promise.all(
+      rules.map(async (rule) => ({
+        ...rule,
+        conditions: JSON.parse(rule.conditions_json),
+        action_params: rule.action_params_json ? JSON.parse(rule.action_params_json) : null,
+        entities: await resolveRuleEntities(rule.id),
+        token,
+      }))
+    );
+
+    res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/active-schedules', async (req, res) => {
+  try {
+    const schedules = await RulesEngineDB.listActiveSchedules();
+    const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
+    const token = systemUserTokens[0]?.access_token || null;
+
+    const resolved = await Promise.all(
+      schedules.map(async (s) => {
+        const campaignRows = await RulesEngineDB.getCampaignsForSchedule(s.id);
+        return {
+          ...s,
+          days: JSON.parse(s.days_json),
+          campaign_ids: campaignRows.map(r => r.campaign_id),
+          token,
+        };
+      })
+    );
+
+    res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/log', async (req, res) => {
+  try {
+    await RulesEngineDB.addLog(req.body);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/exemptions', async (req, res) => {
+  const { rule_id, entity_id, type, cooldown_hours } = req.body;
+  const hours = cooldown_hours || 4;
+  const expiresAt = new Date(Date.now() + hours * 3600000).toISOString();
+  try {
+    await RulesEngineDB.setExemption(rule_id, entity_id, type, expiresAt);
+    res.json({ ok: true, expires_at: expiresAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/tokens', async (req, res) => {
+  try {
+    const tokens = await FacebookAuthDB.listSystemUserTokens();
+    res.json(tokens.map(({ access_token, ...rest }) => rest));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

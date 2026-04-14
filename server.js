@@ -28,6 +28,11 @@ import { getPaths } from "./backend/utils/paths.js";
 import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
+import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
+import { selectFbToken } from "./backend/utils/fb-token-selector.js";
+import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
+import { rulesEngineN8nRouter } from "./backend/routes/rules-engine-n8n.js";
+import { rulesEngineUiRouter } from "./backend/routes/rules-engine-ui.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -197,6 +202,21 @@ app.use("/uploads", express.static(paths.uploads));
 
 // Apply rate limiting to API routes
 app.use("/api/", apiRateLimiter);
+
+// FB Accounts routes (system user tokens)
+app.use("/api/fb-accounts", ensureAuthenticatedAPI, fbAccountsRouter);
+
+// Rules engine n8n routes — shared secret auth
+app.use("/api/rules-engine", (req, res, next) => {
+  const secret = process.env.N8N_SHARED_SECRET;
+  if (!secret || req.headers["x-n8n-secret"] !== secret) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+}, rulesEngineN8nRouter);
+
+// Rules engine UI routes — require auth
+app.use("/api/rules-engine/ui", ensureAuthenticatedAPI, rulesEngineUiRouter);
 
 // Facebook Graph API credentials
 const api_version = "v24.0";

@@ -1,0 +1,234 @@
+{
+  "name": "Schedule Check",
+  "nodes": [
+    {
+      "id": "node-schedule-trigger",
+      "name": "Every 1 Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 1 }]
+        }
+      }
+    },
+    {
+      "id": "node-get-schedules",
+      "name": "Get Active Schedules",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/active-schedules",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-split-schedules",
+      "name": "Split Schedules",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300],
+      "parameters": { "batchSize": 1, "options": {} }
+    },
+    {
+      "id": "node-eval-time",
+      "name": "Evaluate Time Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "jsCode": "const schedule = $input.item.json;\n\nconst now = new Date();\nconst tz = schedule.timezone || 'America/New_York';\n\nconst currentDay = now.toLocaleDateString('en-US', {\n  timeZone: tz,\n  weekday: 'short'\n});\nconst dayNum = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(currentDay);\nconst dayMon1 = dayNum === 0 ? 7 : dayNum;\n\nconst timeParts = now.toLocaleTimeString('en-US', {\n  timeZone: tz,\n  hour: '2-digit',\n  minute: '2-digit',\n  hour12: false\n}).split(':');\nconst hour = parseInt(timeParts[0]);\nconst minute = parseInt(timeParts[1]);\nconst currentMinutes = hour * 60 + minute;\n\nconst [startH, startM] = schedule.start_time.split(':').map(Number);\nconst [endH, endM] = schedule.end_time.split(':').map(Number);\nconst startMinutes = startH * 60 + startM;\nconst endMinutes = endH * 60 + endM;\n\nconst days = schedule.days || [];\nconst inWindow = days.includes(dayMon1)\n  && currentMinutes >= startMinutes\n  && currentMinutes < endMinutes;\n\nreturn [{ json: { ...schedule, inWindow, campaign_ids: schedule.campaign_ids || [] } }];"
+      }
+    },
+    {
+      "id": "node-split-campaigns",
+      "name": "Split Campaigns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "parameters": {
+        "jsCode": "const { campaign_ids, inWindow, token, id: scheduleId } = $input.item.json;\nif (!campaign_ids || campaign_ids.length === 0) return [];\nreturn campaign_ids.map(campaignId => ({\n  json: { campaignId, inWindow, token, scheduleId }\n}));"
+      }
+    },
+    {
+      "id": "node-get-fb-status",
+      "name": "Get Campaign Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.campaignId }}?fields=status&access_token={{ $json.token }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-decide-action",
+      "name": "Decide Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "parameters": {
+        "jsCode": "const { inWindow, token, scheduleId, campaignId } = $('Split Campaigns').item.json;\nconst currentStatus = $input.item.json.status;\n\nconst shouldBeActive = inWindow;\nconst isCurrentlyActive = currentStatus === 'ACTIVE';\nconst needsChange = shouldBeActive !== isCurrentlyActive;\n\nreturn [{ json: { campaignId, shouldBeActive, needsChange, currentStatus, token, scheduleId } }];"
+      }
+    },
+    {
+      "id": "node-needs-change",
+      "name": "Needs Change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-needs-change",
+              "leftValue": "={{ $json.needsChange }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-check-exemption",
+      "name": "Check Rule Exemption",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions/check",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "rule_id", "value": "=0" },
+            { "name": "entity_id", "value": "={{ $json.campaignId }}" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-rule-override",
+      "name": "Rule Override?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-override",
+              "leftValue": "={{ $json.exempt }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-apply-schedule",
+      "name": "Apply Schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Decide Action').item.json.campaignId }}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "status", "value": "={{ $('Decide Action').item.json.shouldBeActive ? 'ACTIVE' : 'PAUSED' }}" },
+            { "name": "access_token", "value": "={{ $('Decide Action').item.json.token }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-log-schedule",
+      "name": "Log Schedule Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"entity_type\": \"campaign\",\n  \"entity_id\": \"{{ $('Decide Action').item.json.campaignId }}\",\n  \"action_taken\": \"{{ $('Decide Action').item.json.shouldBeActive ? 'enabled' : 'paused' }}\",\n  \"trigger_data_json\": \"{\\\"source\\\": \\\"schedule\\\", \\\"schedule_id\\\": {{ $('Decide Action').item.json.scheduleId }}}\",\n  \"is_dry_run\": 0\n}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 1 Minute": {
+      "main": [[{ "node": "Get Active Schedules", "type": "main", "index": 0 }]]
+    },
+    "Get Active Schedules": {
+      "main": [[{ "node": "Split Schedules", "type": "main", "index": 0 }]]
+    },
+    "Split Schedules": {
+      "main": [[{ "node": "Evaluate Time Window", "type": "main", "index": 0 }]]
+    },
+    "Evaluate Time Window": {
+      "main": [[{ "node": "Split Campaigns", "type": "main", "index": 0 }]]
+    },
+    "Split Campaigns": {
+      "main": [[{ "node": "Get Campaign Status", "type": "main", "index": 0 }]]
+    },
+    "Get Campaign Status": {
+      "main": [[{ "node": "Decide Action", "type": "main", "index": 0 }]]
+    },
+    "Decide Action": {
+      "main": [[{ "node": "Needs Change?", "type": "main", "index": 0 }]]
+    },
+    "Needs Change?": {
+      "main": [
+        [{ "node": "Check Rule Exemption", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Check Rule Exemption": {
+      "main": [[{ "node": "Rule Override?", "type": "main", "index": 0 }]]
+    },
+    "Rule Override?": {
+      "main": [
+        [{ "node": "Apply Schedule", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Apply Schedule": {
+      "main": [[{ "node": "Log Schedule Action", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": true }
+}

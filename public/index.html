@@ -32,6 +32,8 @@
       </button>
     </h1>
     <div class="header-controls">
+      <button id="rules-engine-btn" class="rules-engine-btn" title="Rules Engine">Rules Engine</button>
+      <button id="fb-accounts-btn" class="fb-accounts-btn" title="Manage FB System User Tokens">FB Accounts</button>
       <span id="username-display"></span>
       <button id="logout-btn" class="logout-btn">Logout</button>
     </div>
@@ -47,6 +49,15 @@
     <aside id="col-1" class="ad-acc-column">
       <h2>Select Ad Account</h2>
       <ul id="ad-acc-list"></ul>
+      <div id="setup-checklist" style="display:none;margin-top:16px;padding:12px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0;">
+        <strong style="font-size:13px;">🚀 Setup Checklist</strong>
+        <ul style="margin:8px 0 0 0;padding:0;list-style:none;font-size:12px;">
+          <li id="check-token" style="margin:4px 0;">⬜ Add FB Account token</li>
+          <li id="check-vertical" style="margin:4px 0;">⬜ Create a vertical</li>
+          <li id="check-rule" style="margin:4px 0;">⬜ Create a rule</li>
+          <li id="check-schedule" style="margin:4px 0;">⬜ Create a schedule</li>
+        </ul>
+      </div>
     </aside>
 
     <!-- Column 2 - Campaign -->
@@ -2844,7 +2855,265 @@
     </div>
   </div>
 
+  <!-- FB Accounts Modal -->
+  <div id="fb-accounts-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h2>FB Accounts</h2>
+        <span class="close" id="fb-accounts-modal-close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 16px; color: #666; font-size: 14px;">
+          System User tokens authenticate API calls without risking personal Facebook accounts.
+          Create a System User in <a href="https://business.facebook.com" target="_blank" style="color:#103dee;">Facebook Business Manager</a>
+          &rarr; Business Settings &rarr; System Users &rarr; Generate Token (scopes: ads_management, ads_read, business_management).
+        </p>
+        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+          <input type="text" id="system-user-token-input"
+            placeholder="Paste System User access token..."
+            style="flex: 1; padding: 8px 12px; font-size: 14px;" />
+          <button id="verify-token-btn" class="btn-primary">Verify &amp; Save</button>
+        </div>
+        <div id="verify-token-status" style="margin-bottom: 16px; font-size: 13px;"></div>
+        <div id="fb-accounts-confirm" style="display:none; background:#fff8f8; border:1px solid #f5c6cb; border-radius:4px; padding:14px; margin-top:12px;">
+          <p id="fb-accounts-confirm-msg" style="margin:0 0 12px 0; font-size:14px; color:#333;"></p>
+          <div style="display:flex; gap:8px;">
+            <button id="fb-accounts-confirm-yes" class="btn-danger btn-sm">Remove</button>
+            <button id="fb-accounts-confirm-no" class="btn-secondary btn-sm">Cancel</button>
+          </div>
+        </div>
+        <h3 style="margin-bottom: 12px;">Connected Business Managers</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="border-bottom: 1px solid #eee; text-align: left;">
+              <th style="padding: 6px 8px;">Business Manager</th>
+              <th style="padding: 6px 8px;">ID</th>
+              <th style="padding: 6px 8px;">Token</th>
+              <th style="padding: 6px 8px;">Expires</th>
+              <th style="padding: 6px 8px;">Status</th>
+              <th style="padding: 6px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody id="system-user-tokens-body">
+            <tr><td colspan="6" style="padding: 12px 8px; color: #888;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules Engine Panel -->
+  <div id="rules-engine-panel" class="modal" style="display:none;">
+    <div class="modal-content" style="width:95%;max-width:1100px;height:90vh;display:flex;flex-direction:column;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <div style="display:flex;gap:4px;align-items:center;">
+          <h2 style="margin-right:16px;">Rules Engine</h2>
+          <button class="re-tab-btn active" data-tab="rules">Rules</button>
+          <button class="re-tab-btn" data-tab="schedules">Schedules</button>
+          <button class="re-tab-btn" data-tab="verticals">Verticals</button>
+          <button class="re-tab-btn" data-tab="coverage">Coverage</button>
+          <button class="re-tab-btn" data-tab="activity-log">Activity Log</button>
+        </div>
+        <span class="close" id="rules-engine-panel-close">&times;</span>
+      </div>
+      <div class="modal-body" style="flex:1;overflow-y:auto;padding:20px;">
+        <div id="re-delete-confirm" style="display:none;background:#fff8f8;border:1px solid #f5c6cb;border-radius:4px;padding:12px;margin-bottom:12px;">
+          <p id="re-delete-msg" style="margin:0 0 10px 0;font-size:14px;"></p>
+          <div style="display:flex;gap:8px;">
+            <button id="re-delete-yes" class="btn-danger btn-sm">Delete</button>
+            <button id="re-delete-no" class="btn-secondary btn-sm">Cancel</button>
+          </div>
+        </div>
+        <!-- RULES TAB -->
+        <div id="re-tab-rules" class="re-tab-content">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;">Rules</h3>
+            <button id="new-rule-btn" class="btn-primary">+ New Rule</button>
+          </div>
+          <div id="rule-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
+            <h4 id="rule-editor-title" style="margin:0 0 12px 0;">New Rule</h4>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div>
+                <label style="display:block;font-size:13px;margin-bottom:4px;">Name</label>
+                <input type="text" id="rule-name" placeholder="e.g. Spend Cap Kill" style="width:100%;padding:6px 8px;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;margin-bottom:4px;">Scope</label>
+                <select id="rule-scope" style="width:100%;padding:6px 8px;">
+                  <option value="campaign">Campaign</option>
+                  <option value="adset">Ad Set</option>
+                  <option value="ad">Ad</option>
+                  <option value="account">Account</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <label style="display:block;font-size:13px;margin-bottom:4px;">Conditions</label>
+              <div id="conditions-builder"></div>
+              <button onclick="addCondition()" class="btn-secondary btn-sm" style="margin-top:6px;">+ Add Condition</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div>
+                <label style="display:block;font-size:13px;margin-bottom:4px;">Action</label>
+                <select id="rule-action" style="width:100%;padding:6px 8px;">
+                  <option value="pause">Pause</option>
+                  <option value="scale_budget">Scale Budget</option>
+                  <option value="enable">Enable</option>
+                </select>
+              </div>
+              <div id="scale-params" style="display:none;">
+                <label style="display:block;font-size:13px;margin-bottom:4px;">Scale % / Cap $</label>
+                <input type="number" id="scale-pct" value="20" min="1" max="100" style="width:60px;" />
+                <span>/</span>
+                <input type="number" id="scale-cap" value="500" min="0" style="width:70px;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:13px;margin-bottom:4px;">Cooldown (hours)</label>
+                <input type="number" id="rule-cooldown" value="4" min="0" style="width:100%;padding:6px 8px;" />
+              </div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <label><input type="checkbox" id="rule-dry-run" style="margin-right:6px;" /> Dry Run (evaluate but don't act)</label>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="saveRule()" class="btn-primary">Save Rule</button>
+              <button onclick="closeRuleEditor()" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+          <div style="background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:12px;margin-bottom:16px;">
+            <h4 style="margin:0 0 10px 0;">Templates</h4>
+            <div id="rule-templates" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Name</th><th style="padding:8px;">Scope</th>
+                <th style="padding:8px;">Action</th><th style="padding:8px;">Status</th>
+                <th style="padding:8px;"></th>
+              </tr>
+            </thead>
+            <tbody id="rules-body"><tr><td colspan="5" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <!-- SCHEDULES TAB -->
+        <div id="re-tab-schedules" class="re-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;">Schedules</h3>
+            <button id="new-schedule-btn" class="btn-primary">+ New Schedule</button>
+          </div>
+          <div id="schedule-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
+            <h4 style="margin:0 0 12px 0;">New Schedule</h4>
+            <div style="margin-bottom:10px;">
+              <label style="display:block;font-size:13px;margin-bottom:4px;">Name</label>
+              <input type="text" id="schedule-name" placeholder="e.g. Business Hours" style="width:300px;padding:6px 8px;" />
+            </div>
+            <div style="margin-bottom:10px;">
+              <label style="display:block;font-size:13px;margin-bottom:6px;">Days</label>
+              <div class="day-picker" style="display:flex;gap:12px;">
+                <label><input type="checkbox" value="1" /> Mon</label>
+                <label><input type="checkbox" value="2" /> Tue</label>
+                <label><input type="checkbox" value="3" /> Wed</label>
+                <label><input type="checkbox" value="4" /> Thu</label>
+                <label><input type="checkbox" value="5" /> Fri</label>
+                <label><input type="checkbox" value="6" /> Sat</label>
+                <label><input type="checkbox" value="7" /> Sun</label>
+              </div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <label style="display:block;font-size:13px;margin-bottom:4px;">Hours (Eastern Time)</label>
+              <input type="time" id="schedule-start" value="08:00" />
+              <span style="margin:0 6px;">to</span>
+              <input type="time" id="schedule-end" value="20:00" />
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="saveSchedule()" class="btn-primary">Save</button>
+              <button onclick="closeScheduleEditor()" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Name</th><th style="padding:8px;">Days</th>
+                <th style="padding:8px;">Hours (ET)</th><th style="padding:8px;"></th>
+              </tr>
+            </thead>
+            <tbody id="schedules-body"><tr><td colspan="4" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <!-- VERTICALS TAB -->
+        <div id="re-tab-verticals" class="re-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;">Verticals</h3>
+            <button onclick="showAddVertical()" class="btn-primary">+ New Vertical</button>
+          </div>
+          <div id="vertical-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
+            <h4 style="margin:0 0 10px 0;">New Vertical</h4>
+            <input type="text" id="vertical-name" placeholder="e.g. Solar" style="padding:6px 8px;margin-right:8px;width:200px;" />
+            <button onclick="saveVertical()" class="btn-primary">Save</button>
+            <button onclick="document.getElementById('vertical-editor').style.display='none'" class="btn-secondary" style="margin-left:6px;">Cancel</button>
+          </div>
+          <div style="background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
+            <h4 style="margin:0 0 10px 0;">Bulk Assign by Name Pattern</h4>
+            <p style="font-size:13px;color:#666;margin:0 0 10px 0;">Pull all campaigns from FB cache and assign matching ones to a vertical.</p>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="text" id="bulk-pattern" placeholder="Name contains... (e.g. Solar)" style="padding:6px 8px;flex:1;max-width:300px;" />
+              <select id="bulk-vertical-select" style="padding:6px 8px;"><option value="">Select vertical</option></select>
+              <button onclick="bulkAssignByPattern()" class="btn-secondary">Assign</button>
+            </div>
+            <div id="bulk-preview" style="margin-top:8px;font-size:13px;color:#28a745;"></div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Name</th><th style="padding:8px;">Default Schedule</th><th style="padding:8px;"></th>
+              </tr>
+            </thead>
+            <tbody id="verticals-body"><tr><td colspan="3" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <!-- COVERAGE TAB -->
+        <div id="re-tab-coverage" class="re-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;">Coverage</h3>
+            <button onclick="loadCoverage()" class="btn-secondary">Refresh</button>
+          </div>
+          <p style="color:#666;font-size:13px;margin-bottom:16px;">Campaigns not fully covered by rules or schedules.</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Campaign</th><th style="padding:8px;">Rule</th>
+                <th style="padding:8px;">Schedule</th><th style="padding:8px;">Quick Assign</th>
+              </tr>
+            </thead>
+            <tbody id="coverage-body"><tr><td colspan="4" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <!-- ACTIVITY LOG TAB -->
+        <div id="re-tab-activity-log" class="re-tab-content" style="display:none;">
+          <h3 style="margin:0 0 16px 0;">Activity Log</h3>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+            <input type="date" id="log-date-filter" style="padding:6px 8px;" />
+            <label style="font-size:13px;"><input type="checkbox" id="log-dryrun-filter" style="margin-right:4px;" /> Dry Run only</label>
+            <button onclick="loadLogs()" class="btn-secondary">Filter</button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Time (ET)</th><th style="padding:8px;">Rule</th>
+                <th style="padding:8px;">Entity</th><th style="padding:8px;">Action</th>
+                <th style="padding:8px;">Data</th><th style="padding:8px;">Mode</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"><tr><td colspan="6" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="error-handler.js?v=20251129-ui-improvements"></script>
+  <script src="rules-engine.js"></script>
+  <script src="fb-accounts.js"></script>
   <script src="script.js?v=20251129-ui-improvements"></script>
   <script>
     setTimeout(() => {

@@ -32,7 +32,8 @@
     "start": "node init-directories.js && node server.js",
     "dev": "node init-directories.js && nodemon server.js",
     "s": "node init-directories.js && nodemon server.js",
-    "create-user": "node init-directories.js && node create-user.js"
+    "create-user": "node init-directories.js && node create-user.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
   "type": "module"
 }
