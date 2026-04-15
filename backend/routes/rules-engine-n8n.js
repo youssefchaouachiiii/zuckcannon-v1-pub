@@ -92,8 +92,11 @@ rulesEngineN8nRouter.get('/tokens', async (req, res) => {
 
 rulesEngineN8nRouter.post('/snapshots', async (req, res) => {
   try {
-    const { entity_id, entity_type, spend } = req.body;
-    await RulesEngineDB.saveSpendSnapshot(entity_id, entity_type, spend);
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    for (const { entity_id, entity_type, spend } of items) {
+      if (!entity_id) continue;
+      await RulesEngineDB.saveSpendSnapshot(entity_id, entity_type, spend ?? 0);
+    }
     await RulesEngineDB.pruneSpendSnapshots(7);
     res.json({ ok: true });
   } catch (err) {
