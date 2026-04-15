@@ -421,6 +421,7 @@ async function loadVerticals() {
         <td style="padding:8px;">${v.default_schedule_id ? `Schedule #${escapeHtml(String(v.default_schedule_id))}` : 'None'}</td>
         <td style="padding:8px;white-space:nowrap;">
           <button class="btn-secondary btn-sm view-vert-campaigns-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}" style="margin-right:6px;">View Campaigns</button>
+          <button class="btn-secondary btn-sm clear-vert-campaigns-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}" style="margin-right:6px;">Clear</button>
           <button class="btn-danger btn-sm delete-vertical-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}">Delete</button>
         </td>
       </tr>
@@ -634,6 +635,15 @@ function initRulesEnginePanel() {
     }
     if (e.target.classList.contains('view-vert-campaigns-btn')) {
       toggleVerticalCampaigns(parseInt(e.target.dataset.vertId), e.target.dataset.vertName, e.target);
+    }
+    if (e.target.classList.contains('clear-vert-campaigns-btn')) {
+      const { vertId, vertName } = e.target.dataset;
+      showConfirmDelete(`Clear all campaign assignments from "${vertName}"? This removes the labels but keeps the vertical.`, async () => {
+        const res = await fetch(`/api/rules-engine/ui/verticals/${vertId}/campaigns`, { method: 'DELETE' });
+        if (!res.ok) { window.showError?.('Failed to clear.'); return; }
+        window.showSuccess?.(`Cleared all campaigns from "${vertName}".`);
+        loadVerticals();
+      });
     }
   });
 

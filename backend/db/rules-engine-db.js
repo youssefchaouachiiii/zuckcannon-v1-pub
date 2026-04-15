@@ -277,6 +277,12 @@ export const RulesEngineDB = {
       [verticalName]
     );
   },
+  async clearCampaignsByVertical(verticalName) {
+    return db.runAsync(
+      `DELETE FROM campaign_labels WHERE label_type='vertical' AND label_value=?`,
+      [verticalName]
+    );
+  },
   async deleteVertical(id) {
     return db.runAsync('DELETE FROM verticals WHERE id = ?', [id]);
   },
