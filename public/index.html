@@ -2913,6 +2913,7 @@
           <button class="re-tab-btn" data-tab="verticals">Verticals</button>
           <button class="re-tab-btn" data-tab="coverage">Coverage</button>
           <button class="re-tab-btn" data-tab="activity-log">Activity Log</button>
+          <button class="re-tab-btn" data-tab="tags">Tags</button>
         </div>
         <span class="close" id="rules-engine-panel-close">&times;</span>
       </div>
@@ -3109,6 +3110,28 @@
               </tr>
             </thead>
             <tbody id="logs-body"><tr><td colspan="6" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <!-- TAGS TAB -->
+        <div id="re-tab-tags" class="re-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;">Tags</h3>
+          </div>
+          <p style="font-size:13px;color:#666;margin-bottom:16px;">Assign tags to campaigns. Rules assigned to a tag apply to all tagged campaigns.</p>
+          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">
+            <input type="text" id="tag-campaign-id" placeholder="Campaign ID" style="padding:6px 8px;width:200px;" />
+            <input type="text" id="tag-value" placeholder="Tag name (e.g. high-spend)" style="padding:6px 8px;width:200px;" />
+            <button onclick="addTag()" class="btn-primary">Add Tag</button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #eee;text-align:left;">
+                <th style="padding:8px;">Campaign ID</th>
+                <th style="padding:8px;">Tag</th>
+                <th style="padding:8px;"></th>
+              </tr>
+            </thead>
+            <tbody id="tags-body"><tr><td colspan="3" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>

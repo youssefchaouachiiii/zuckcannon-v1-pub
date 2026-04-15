@@ -183,3 +183,27 @@ rulesEngineUiRouter.get('/coverage', async (req, res) => {
     res.json(orphans);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// --- Tags ---
+rulesEngineUiRouter.get('/tags', async (req, res) => {
+  try {
+    const tags = await RulesEngineDB.getAllTags();
+    res.json(tags);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+rulesEngineUiRouter.post('/tags', async (req, res) => {
+  try {
+    const { campaign_id, tag } = req.body;
+    await RulesEngineDB.addTag(campaign_id, tag);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+rulesEngineUiRouter.delete('/tags', async (req, res) => {
+  try {
+    const { campaign_id, tag } = req.body;
+    await RulesEngineDB.removeTag(campaign_id, tag);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});

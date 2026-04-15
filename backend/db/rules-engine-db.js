@@ -148,6 +148,23 @@ export const RulesEngineDB = {
     return db.runAsync('DELETE FROM rules WHERE id = ?', [id]);
   },
 
+  // --- Tags ---
+  async getAllTags() {
+    return db.allAsync(`SELECT campaign_id, label_value as tag FROM campaign_labels WHERE label_type='tag' ORDER BY created_at DESC`);
+  },
+  async addTag(campaignId, tag) {
+    return db.runAsync(
+      `INSERT OR IGNORE INTO campaign_labels (campaign_id, label_type, label_value) VALUES (?, 'tag', ?)`,
+      [campaignId, tag]
+    );
+  },
+  async removeTag(campaignId, tag) {
+    return db.runAsync(
+      `DELETE FROM campaign_labels WHERE campaign_id=? AND label_type='tag' AND label_value=?`,
+      [campaignId, tag]
+    );
+  },
+
   // --- Assignments ---
   async addAssignment(ruleId, entityType, entityId) {
     return db.runAsync(

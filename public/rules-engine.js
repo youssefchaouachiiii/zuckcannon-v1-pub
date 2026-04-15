@@ -91,6 +91,7 @@ function switchReTab(tabName) {
     document.getElementById('log-date-filter').value = new Date().toISOString().split('T')[0];
     loadLogs();
   }
+  else if (tabName === 'tags') loadTags();
 }
 
 // ── Rules ─────────────────────────────────────────────────────────────
@@ -495,6 +496,18 @@ function initRulesEnginePanel() {
     }
   });
 
+  // Event delegation for tags remove
+  document.getElementById('tags-body').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action="remove-tag"]');
+    if (!btn) return;
+    const res = await fetch('/api/rules-engine/ui/tags', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: btn.dataset.cid, tag: btn.dataset.tag }),
+    });
+    if (!res.ok) { window.showError?.('Failed to remove tag'); return; }
+    loadTags();
+  });
+
   // Event delegation for coverage quick-assign
   document.getElementById('coverage-body').addEventListener('click', async (e) => {
     if (e.target.classList.contains('quick-assign-btn')) {
@@ -555,6 +568,40 @@ window.addCondition = addCondition;
 window.applyTemplate = applyTemplate;
 window.saveRule = saveRule;
 window.closeRuleEditor = closeRuleEditor;
+// ── Tags ──────────────────────────────────────────────────────────────
+async function loadTags() {
+  const res = await fetch('/api/rules-engine/ui/tags');
+  const tags = res.ok ? await res.json() : [];
+  const tbody = document.getElementById('tags-body');
+  if (!tags.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 8px;color:#888;">No tags yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tags.map(t => `
+    <tr>
+      <td style="padding:8px;">${escapeHtml(t.campaign_id)}</td>
+      <td style="padding:8px;"><span style="background:#e8f4fd;padding:2px 8px;border-radius:12px;font-size:12px;">${escapeHtml(t.tag)}</span></td>
+      <td style="padding:8px;"><button class="btn-danger btn-sm" data-action="remove-tag" data-cid="${escapeHtml(t.campaign_id)}" data-tag="${escapeHtml(t.tag)}">Remove</button></td>
+    </tr>
+  `).join('');
+}
+
+async function addTag() {
+  const campaignId = document.getElementById('tag-campaign-id').value.trim();
+  const tag = document.getElementById('tag-value').value.trim();
+  if (!campaignId || !tag) return;
+  const res = await fetch('/api/rules-engine/ui/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ campaign_id: campaignId, tag }),
+  });
+  if (!res.ok) { window.showError?.('Failed to add tag'); return; }
+  document.getElementById('tag-campaign-id').value = '';
+  document.getElementById('tag-value').value = '';
+  loadTags();
+}
+window.addTag = addTag;
+
 window.editRule = editRule;
 window.saveSchedule = saveSchedule;
 window.closeScheduleEditor = closeScheduleEditor;
