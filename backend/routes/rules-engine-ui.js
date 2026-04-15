@@ -11,6 +11,14 @@ rulesEngineUiRouter.get('/rules', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+rulesEngineUiRouter.get('/rules/:id', async (req, res) => {
+  try {
+    const rule = await RulesEngineDB.getRuleById(parseInt(req.params.id));
+    if (!rule) return res.status(404).json({ error: 'Not found' });
+    res.json(rule);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.post('/rules', async (req, res) => {
   try {
     const rule = await RulesEngineDB.createRule({
