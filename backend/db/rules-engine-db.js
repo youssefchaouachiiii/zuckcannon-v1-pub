@@ -36,8 +36,10 @@ async function initializeDatabase() {
     cooldown_hours INTEGER DEFAULT 4,
     is_active INTEGER DEFAULT 1,
     is_dry_run INTEGER DEFAULT 0,
+    combinator TEXT DEFAULT 'AND',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  await db.runAsync(`ALTER TABLE rules ADD COLUMN combinator TEXT DEFAULT 'AND'`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rule_assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,10 +119,10 @@ export const RulesEngineDB = {
   // --- Rules ---
   async createRule(data) {
     const { lastID } = await db.runAsync(
-      `INSERT INTO rules (name, scope, conditions_json, action, action_params_json, cooldown_hours, is_active, is_dry_run)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rules (name, scope, conditions_json, action, action_params_json, cooldown_hours, is_active, is_dry_run, combinator)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [data.name, data.scope, data.conditions_json, data.action, data.action_params_json,
-       data.cooldown_hours, data.is_active, data.is_dry_run]
+       data.cooldown_hours, data.is_active, data.is_dry_run, data.combinator || 'AND']
     );
     return this.getRuleById(lastID);
   },
@@ -136,9 +138,9 @@ export const RulesEngineDB = {
   async updateRule(id, data) {
     await db.runAsync(
       `UPDATE rules SET name=?, scope=?, conditions_json=?, action=?, action_params_json=?,
-       cooldown_hours=?, is_active=?, is_dry_run=? WHERE id=?`,
+       cooldown_hours=?, is_active=?, is_dry_run=?, combinator=? WHERE id=?`,
       [data.name, data.scope, data.conditions_json, data.action, data.action_params_json,
-       data.cooldown_hours, data.is_active, data.is_dry_run, id]
+       data.cooldown_hours, data.is_active, data.is_dry_run, data.combinator || 'AND', id]
     );
     return this.getRuleById(id);
   },

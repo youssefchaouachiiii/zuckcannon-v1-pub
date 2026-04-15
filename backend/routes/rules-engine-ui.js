@@ -22,6 +22,7 @@ rulesEngineUiRouter.post('/rules', async (req, res) => {
       cooldown_hours: req.body.cooldown_hours ?? 4,
       is_active: req.body.is_active ?? 1,
       is_dry_run: req.body.is_dry_run ?? 0,
+      combinator: req.body.combinator || 'AND',
     });
     res.status(201).json(rule);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -38,6 +39,7 @@ rulesEngineUiRouter.put('/rules/:id', async (req, res) => {
       cooldown_hours: req.body.cooldown_hours ?? 4,
       is_active: req.body.is_active ?? 1,
       is_dry_run: req.body.is_dry_run ?? 0,
+      combinator: req.body.combinator || 'AND',
     });
     res.json(rule);
   } catch (err) { res.status(500).json({ error: err.message }); }

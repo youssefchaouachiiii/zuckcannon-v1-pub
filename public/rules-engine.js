@@ -59,6 +59,7 @@ const METRICS = [
   { value: 'roas', label: 'ROAS' },
   { value: 'roi', label: 'ROI (%)' },
   { value: 'conversions', label: 'Conversions' },
+  { value: 'burst_multiplier', label: 'Burst Multiplier' },
 ];
 
 const OPERATORS = [
@@ -151,7 +152,7 @@ function addCondition() {
   addConditionRow({ metric: 'spend_today', operator: 'gt', value: '', lookback: 'today' });
 }
 
-function addConditionRow(c) {
+function addConditionRow(c = {}) {
   const builder = document.getElementById('conditions-builder');
   const div = document.createElement('div');
   div.className = 'condition-row';
@@ -163,7 +164,13 @@ function addConditionRow(c) {
     <select class="cond-operator" style="padding:4px 6px;font-size:13px;">
       ${OPERATORS.map(o => `<option value="${o.value}"${c.operator===o.value?' selected':''}>${o.label}</option>`).join('')}
     </select>
-    <input type="number" class="cond-value" value="${c.value}" step="any" style="width:80px;padding:4px 6px;font-size:13px;" />
+    <input type="number" class="cond-value" value="${c.value ?? ''}" step="any" style="width:80px;padding:4px 6px;font-size:13px;" />
+    <select class="cond-lookback" style="padding:4px 6px;font-size:13px;">
+      <option value="today"${(c.lookback||'today')==='today'?' selected':''}>Today</option>
+      <option value="last_3d"${c.lookback==='last_3d'?' selected':''}>Last 3d</option>
+      <option value="last_7d"${c.lookback==='last_7d'?' selected':''}>Last 7d</option>
+      <option value="last_30m"${c.lookback==='last_30m'?' selected':''}>Last 30m</option>
+    </select>
     <button onclick="this.parentElement.remove()" class="btn-danger btn-sm">×</button>
   `;
   builder.appendChild(div);
@@ -174,7 +181,7 @@ function collectConditions() {
     metric: row.querySelector('.cond-metric').value,
     operator: row.querySelector('.cond-operator').value,
     value: parseFloat(row.querySelector('.cond-value').value),
-    lookback: 'today',
+    lookback: row.querySelector('.cond-lookback')?.value || 'today',
   }));
 }
 
@@ -183,6 +190,7 @@ async function saveRule() {
     name: document.getElementById('rule-name').value.trim(),
     scope: document.getElementById('rule-scope').value,
     conditions: collectConditions(),
+    combinator: document.querySelector('input[name="rule-combinator"]:checked')?.value || 'AND',
     action: document.getElementById('rule-action').value,
     action_params: document.getElementById('rule-action').value === 'scale_budget'
       ? { scale_pct: parseInt(document.getElementById('scale-pct').value), cap: parseInt(document.getElementById('scale-cap').value) }
@@ -210,6 +218,8 @@ async function editRule(id) {
   document.getElementById('rule-dry-run').checked = !!rule.is_dry_run;
   document.getElementById('conditions-builder').innerHTML = '';
   JSON.parse(rule.conditions_json).forEach(c => addConditionRow(c));
+  const combinator = rule.combinator || 'AND';
+  document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === combinator; });
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'Edit Rule';
 }

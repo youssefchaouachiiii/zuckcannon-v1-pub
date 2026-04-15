@@ -2951,6 +2951,10 @@
               <label style="display:block;font-size:13px;margin-bottom:4px;">Conditions</label>
               <div id="conditions-builder"></div>
               <button onclick="addCondition()" class="btn-secondary btn-sm" style="margin-top:6px;">+ Add Condition</button>
+              <div style="margin-top:8px;font-size:13px;">
+                <label style="margin-right:12px;"><input type="radio" name="rule-combinator" value="AND" checked /> AND (all must match)</label>
+                <label><input type="radio" name="rule-combinator" value="OR" /> OR (any must match)</label>
+              </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
               <div>
