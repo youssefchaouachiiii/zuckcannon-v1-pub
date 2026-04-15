@@ -131,22 +131,11 @@
     {
       "id": "node-check-pause-pending",
       "name": "Check Pause Pending?",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [2440, 100],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending/check",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "rule_id", "value": "={{ $json.rule.id }}" },
-            { "name": "entity_id", "value": "={{ $json.entityId }}" }
-          ]
-        },
-        "options": { "onError": "continueRegularOutput" }
+        "jsCode": "const d = $input.item.json;\nconst resp = await fetch(`${$env.ZUCKCANNON_URL}/api/rules-engine/pause-pending/check?rule_id=${d.rule.id}&entity_id=${encodeURIComponent(d.entityId)}`, { headers: { 'x-n8n-secret': $env.ZUCKCANNON_SECRET } });\nconst result = await resp.json();\nreturn [{ json: { ...d, pending: result.pending } }];"
       }
     },
     {
@@ -166,22 +155,11 @@
     {
       "id": "node-check-exemption",
       "name": "Check Exemption",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [2880, 100],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions/check",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "rule_id", "value": "={{ $('Evaluate Rules').first().json.rule.id }}" },
-            { "name": "entity_id", "value": "={{ $('Evaluate Rules').first().json.entityId }}" }
-          ]
-        },
-        "options": {}
+        "jsCode": "const d = $input.item.json;\nconst resp = await fetch(`${$env.ZUCKCANNON_URL}/api/rules-engine/exemptions/check?rule_id=${d.rule.id}&entity_id=${encodeURIComponent(d.entityId)}`, { headers: { 'x-n8n-secret': $env.ZUCKCANNON_SECRET } });\nconst result = await resp.json();\nreturn [{ json: { ...d, exempt: result.exempt } }];"
       }
     },
     {
@@ -207,7 +185,7 @@
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [{ "id": "cond-dry-run", "leftValue": "={{ $('Evaluate Rules').first().json.rule.is_dry_run }}", "rightValue": 0, "operator": { "type": "number", "operation": "equals" } }],
+          "conditions": [{ "id": "cond-dry-run", "leftValue": "={{ $json.rule.is_dry_run }}", "rightValue": 0, "operator": { "type": "number", "operation": "equals" } }],
           "combinator": "and"
         }
       }
@@ -215,20 +193,11 @@
     {
       "id": "node-check-learning",
       "name": "Check Learning Phase",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [3540, 0],
       "parameters": {
-        "method": "GET",
-        "url": "=https://graph.facebook.com/v25.0/{{ $('Evaluate Rules').first().json.entityId }}",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "fields", "value": "learning_stage_info" },
-            { "name": "access_token", "value": "={{ $('Evaluate Rules').first().json.token }}" }
-          ]
-        },
-        "options": { "onError": "continueRegularOutput" }
+        "jsCode": "const d = $input.item.json;\ntry {\n  const resp = await fetch(`https://graph.facebook.com/v25.0/${d.entityId}?fields=learning_stage_info&access_token=${encodeURIComponent(d.token)}`);\n  const result = await resp.json();\n  return [{ json: { ...d, learning_stage_info: result.learning_stage_info || null } }];\n} catch(e) {\n  return [{ json: { ...d, learning_stage_info: null } }];\n}"
       }
     },
     {
@@ -252,7 +221,7 @@
       "typeVersion": 2,
       "position": [3980, 0],
       "parameters": {
-        "jsCode": "const { rule, entityId, entityName, metrics, token } = $('Evaluate Rules').first().json;\n\nlet body = {};\nif (rule.action === 'pause') body = { status: 'PAUSED', access_token: token };\nelse if (rule.action === 'enable') body = { status: 'ACTIVE', access_token: token };\n// scale_budget: handled by Fetch Current Budget → Compute Scale Budget → Call FB API Scale\n\nreturn [{ json: { entityId, entityName, body, rule, metrics, token } }];"
+        "jsCode": "const { rule, entityId, entityName, metrics, token } = $input.item.json;\n\nlet body = {};\nif (rule.action === 'pause') body = { status: 'PAUSED', access_token: token };\nelse if (rule.action === 'enable') body = { status: 'ACTIVE', access_token: token };\n// scale_budget: handled by Fetch Current Budget → Compute Scale Budget → Call FB API Scale\n\nreturn [{ json: { entityId, entityName, body, rule, metrics, token } }];"
       }
     },
     {
@@ -264,7 +233,7 @@
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [{ "id": "cond-scale", "leftValue": "={{ $('Evaluate Rules').first().json.rule.action }}", "rightValue": "scale_budget", "operator": { "type": "string", "operation": "equals" } }],
+          "conditions": [{ "id": "cond-scale", "leftValue": "={{ $json.rule.action }}", "rightValue": "scale_budget", "operator": { "type": "string", "operation": "equals" } }],
           "combinator": "and"
         }
       }
@@ -272,21 +241,11 @@
     {
       "id": "node-call-fb-api",
       "name": "Call FB API",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [4420, 200],
       "parameters": {
-        "method": "POST",
-        "url": "=https://graph.facebook.com/v25.0/{{ $json.entityId }}",
-        "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "status", "value": "={{ $json.body.status }}" },
-            { "name": "access_token", "value": "={{ $json.token }}" }
-          ]
-        },
-        "options": {}
+        "jsCode": "const d = $input.item.json;\nconst body = `access_token=${encodeURIComponent(d.token)}&status=${encodeURIComponent(d.body.status)}`;\nconst resp = await fetch(`https://graph.facebook.com/v25.0/${d.entityId}`, {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n  body\n});\nconst result = await resp.json();\nreturn [{ json: { ...d, fbResult: result } }];"
       }
     },
     {
@@ -302,27 +261,18 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ rule_id: $('Evaluate Rules').first().json.rule.id, entity_id: $('Evaluate Rules').first().json.entityId }) }}",
+        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_id: $json.entityId }) }}",
         "options": {}
       }
     },
     {
       "id": "node-fetch-budget",
       "name": "Fetch Current Budget",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [4420, -200],
       "parameters": {
-        "method": "GET",
-        "url": "=https://graph.facebook.com/v25.0/{{ $('Evaluate Rules').first().json.entityId }}",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "fields", "value": "daily_budget" },
-            { "name": "access_token", "value": "={{ $('Evaluate Rules').first().json.token }}" }
-          ]
-        },
-        "options": {}
+        "jsCode": "const d = $input.item.json;\nconst resp = await fetch(`https://graph.facebook.com/v25.0/${d.entityId}?fields=daily_budget&access_token=${encodeURIComponent(d.token)}`);\nconst result = await resp.json();\nreturn [{ json: { ...d, daily_budget: result.daily_budget } }];"
       }
     },
     {
@@ -332,27 +282,17 @@
       "typeVersion": 2,
       "position": [4640, -200],
       "parameters": {
-        "jsCode": "const { entityId, entityName, rule, metrics, token } = $('Evaluate Rules').first().json;\nconst currentBudgetCents = parseInt($input.item.json.daily_budget || 0);\nconst scaledCents = Math.round(currentBudgetCents * 1.2);\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = Math.min(scaledCents, maxCents);\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents } }];"
+        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentBudgetCents = parseInt(daily_budget || 0);\nconst scaledCents = Math.round(currentBudgetCents * 1.2);\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = Math.min(scaledCents, maxCents);\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents } }];"
       }
     },
     {
       "id": "node-call-fb-scale",
       "name": "Call FB API Scale",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [4860, -200],
       "parameters": {
-        "method": "POST",
-        "url": "=https://graph.facebook.com/v25.0/{{ $json.entityId }}",
-        "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "daily_budget", "value": "={{ $json.newBudgetCents }}" },
-            { "name": "access_token", "value": "={{ $json.token }}" }
-          ]
-        },
-        "options": {}
+        "jsCode": "const d = $input.item.json;\nconst body = `access_token=${encodeURIComponent(d.token)}&daily_budget=${d.newBudgetCents}`;\nconst resp = await fetch(`https://graph.facebook.com/v25.0/${d.entityId}`, {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n  body\n});\nconst result = await resp.json();\nreturn [{ json: { ...d, fbResult: result } }];"
       }
     },
     {
@@ -366,7 +306,7 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\uded1 *{{ $('Evaluate Rules').first().json.rule.name }}*\\n`{{ $('Evaluate Rules').first().json.entityName || $('Evaluate Rules').first().json.entityId }}`  {{ $('Evaluate Rules').first().json.rule.action.toUpperCase() }}D\\nSpend: ${{ $('Evaluate Rules').first().json.metrics.spend_today.toFixed(2) }}\\n{{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET\",\n  \"parse_mode\": \"Markdown\",\n  \"reply_markup\": \"{\\\"inline_keyboard\\\":[[{\\\"text\\\":\\\"\\u2705 Re-enable\\\",\\\"callback_data\\\":\\\"reenable:{{ $('Evaluate Rules').first().json.rule.id }}:{{ $('Evaluate Rules').first().json.entityId }}\\\"},{\\\"text\\\":\\\"\\ud83d\\udca4 Snooze 6h\\\",\\\"callback_data\\\":\\\"snooze:{{ $('Evaluate Rules').first().json.rule.id }}:{{ $('Evaluate Rules').first().json.entityId }}\\\"}]]}\"\n}",
+        "body": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '\\ud83d\\uded1 *' + $json.rule.name + '*\\n`' + ($json.entityName || $json.entityId) + '`  ' + $json.rule.action.toUpperCase() + 'D\\nSpend: $' + $json.metrics.spend_today.toFixed(2) + '\\n' + new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ET', parse_mode: 'Markdown', reply_markup: JSON.stringify({inline_keyboard: [[{text: '\\u2705 Re-enable', callback_data: 'reenable:' + $json.rule.id + ':' + $json.entityId},{text: '\\ud83d\\udca4 Snooze 6h', callback_data: 'snooze:' + $json.rule.id + ':' + $json.entityId}]]}) }) }}",
         "options": {}
       }
     },
@@ -382,9 +322,9 @@
       "parameters": {
         "fromEmail": "={{ $credentials.user }}",
         "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
-        "subject": "=\ud83d\udea8 [Rules Engine] {{ $('Evaluate Rules').first().json.rule.name }} fired on {{ $('Evaluate Rules').first().json.entityName || $('Evaluate Rules').first().json.entityId }}",
+        "subject": "=\ud83d\udea8 [Rules Engine] {{ $json.rule.name }} fired on {{ $json.entityName || $json.entityId }}",
         "emailType": "text",
-        "message": "=Rule: {{ $('Evaluate Rules').first().json.rule.name }}\nEntity: {{ $('Evaluate Rules').first().json.entityName || $('Evaluate Rules').first().json.entityId }}\nAction: {{ $('Evaluate Rules').first().json.rule.action.toUpperCase() }}\nSpend: ${{ $('Evaluate Rules').first().json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}"
+        "message": "=Rule: {{ $json.rule.name }}\nEntity: {{ $json.entityName || $json.entityId }}\nAction: {{ $json.rule.action.toUpperCase() }}\nSpend: ${{ $json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}"
       }
     },
     {
@@ -400,7 +340,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ ({ rule_id: $('Evaluate Rules').first().json.rule.id, entity_type: $('Evaluate Rules').first().json.rule.scope, entity_id: $('Evaluate Rules').first().json.entityId, entity_name: $('Evaluate Rules').first().json.entityName || $('Evaluate Rules').first().json.entityId, action_taken: $('Evaluate Rules').first().json.rule.action + 'd', trigger_data_json: JSON.stringify($('Evaluate Rules').first().json.metrics), is_dry_run: 0 }) }}",
+        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_type: $json.rule.scope, entity_id: $json.entityId, entity_name: $json.entityName || $json.entityId, action_taken: $json.rule.action + 'd', trigger_data_json: JSON.stringify($json.metrics), is_dry_run: 0 }) }}",
         "options": {}
       }
     },
@@ -417,7 +357,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ ({ rule_id: $('Evaluate Rules').first().json.rule.id, entity_type: $('Evaluate Rules').first().json.rule.scope, entity_id: $('Evaluate Rules').first().json.entityId, entity_name: $('Evaluate Rules').first().json.entityName || $('Evaluate Rules').first().json.entityId, action_taken: 'would_have_' + $('Evaluate Rules').first().json.rule.action + 'd', trigger_data_json: JSON.stringify($('Evaluate Rules').first().json.metrics), is_dry_run: 1 }) }}",
+        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_type: $json.rule.scope, entity_id: $json.entityId, entity_name: $json.entityName || $json.entityId, action_taken: 'would_have_' + $json.rule.action + 'd', trigger_data_json: JSON.stringify($json.metrics), is_dry_run: 1 }) }}",
         "options": {}
       }
     },
@@ -434,7 +374,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ ({ rule_id: $('Evaluate Rules').first().json.rule.id, entity_id: $('Evaluate Rules').first().json.entityId, type: 'cooldown', cooldown_hours: $('Evaluate Rules').first().json.rule.cooldown_hours || 4 }) }}",
+        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_id: $json.entityId, type: 'cooldown', cooldown_hours: $json.rule.cooldown_hours || 4 }) }}",
         "options": {}
       }
     }
