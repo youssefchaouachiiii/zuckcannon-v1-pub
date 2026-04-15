@@ -177,8 +177,8 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "rule_id", "value": "={{ $json.rule.id }}" },
-            { "name": "entity_id", "value": "={{ $json.entityId }}" }
+            { "name": "rule_id", "value": "={{ $('Evaluate Rules').item.json.rule.id }}" },
+            { "name": "entity_id", "value": "={{ $('Evaluate Rules').item.json.entityId }}" }
           ]
         },
         "options": {}
@@ -400,7 +400,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 0\n}",
+        "body": "={{ ({ rule_id: $('Evaluate Rules').item.json.rule.id, entity_type: $('Evaluate Rules').item.json.rule.scope, entity_id: $('Evaluate Rules').item.json.entityId, entity_name: $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId, action_taken: $('Evaluate Rules').item.json.rule.action + 'd', trigger_data_json: JSON.stringify($('Evaluate Rules').item.json.metrics), is_dry_run: 0 }) }}",
         "options": {}
       }
     },
@@ -417,7 +417,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"would_have_{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 1\n}",
+        "body": "={{ ({ rule_id: $('Evaluate Rules').item.json.rule.id, entity_type: $('Evaluate Rules').item.json.rule.scope, entity_id: $('Evaluate Rules').item.json.entityId, entity_name: $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId, action_taken: 'would_have_' + $('Evaluate Rules').item.json.rule.action + 'd', trigger_data_json: JSON.stringify($('Evaluate Rules').item.json.metrics), is_dry_run: 1 }) }}",
         "options": {}
       }
     },
@@ -434,7 +434,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"type\": \"cooldown\",\n  \"cooldown_hours\": {{ $('Evaluate Rules').item.json.rule.cooldown_hours || 4 }}\n}",
+        "body": "={{ ({ rule_id: $('Evaluate Rules').item.json.rule.id, entity_id: $('Evaluate Rules').item.json.entityId, type: 'cooldown', cooldown_hours: $('Evaluate Rules').item.json.rule.cooldown_hours || 4 }) }}",
         "options": {}
       }
     }
