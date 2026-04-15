@@ -23,6 +23,7 @@ beforeEach(() => {
   RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([]);
   RulesEngineDB.getAssignmentsForRule = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([]);
+  FacebookAuthDB.getExpiringTokens = jest.fn().mockResolvedValue([]);
 });
 
 describe('GET /api/rules-engine/health', () => {
@@ -136,5 +137,20 @@ describe('DELETE /api/rules-engine/pause-pending', () => {
       .send({ rule_id: 1, entity_id: 'camp_1' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+  });
+});
+
+describe('GET /api/rules-engine/token-health', () => {
+  test('returns expiring tokens', async () => {
+    FacebookAuthDB.getExpiringTokens = jest.fn().mockResolvedValue([
+      { id: 1, business_name: 'Test Biz', business_manager_id: 'bm_1', expires_at: '2026-04-22T00:00:00Z' }
+    ]);
+    const res = await request(app).get('/api/rules-engine/token-health');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.expiring_soon).toEqual([
+      { id: 1, business_name: 'Test Biz', business_manager_id: 'bm_1', expires_at: '2026-04-22T00:00:00Z' }
+    ]);
+    expect(FacebookAuthDB.getExpiringTokens).toHaveBeenCalledWith(7);
   });
 });

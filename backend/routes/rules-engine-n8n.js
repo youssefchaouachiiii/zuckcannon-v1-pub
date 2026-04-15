@@ -136,3 +136,12 @@ rulesEngineN8nRouter.delete('/pause-pending', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+rulesEngineN8nRouter.get('/token-health', async (req, res) => {
+  try {
+    const expiring = await FacebookAuthDB.getExpiringTokens(7);
+    res.json({ ok: true, expiring_soon: expiring });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

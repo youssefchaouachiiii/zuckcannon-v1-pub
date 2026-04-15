@@ -303,6 +303,16 @@ export const FacebookAuthDB = {
     );
   },
 
+  async getExpiringTokens(daysAhead = 7) {
+    const threshold = new Date(Date.now() + daysAhead * 86400000).toISOString();
+    return db.allAsync(
+      `SELECT id, business_name, business_manager_id, expires_at
+       FROM system_user_tokens
+       WHERE expires_at IS NOT NULL AND expires_at <= ?`,
+      [threshold]
+    );
+  },
+
   // Delete all user's Facebook data
   async deleteAllUserData(userId) {
     await Promise.all([
