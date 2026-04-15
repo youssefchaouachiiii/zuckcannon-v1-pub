@@ -444,16 +444,16 @@
     "Get Active Rules": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Split Rules": { "main": [[], [{ "node": "Build FB Batch", "type": "main", "index": 0 }]] },
     "Build FB Batch": { "main": [[{ "node": "Has Data?", "type": "main", "index": 0 }]] },
-    "Has Data?": { "main": [[{ "node": "FB Batch API", "type": "main", "index": 0 }], []] },
+    "Has Data?": { "main": [[{ "node": "FB Batch API", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "FB Batch API": { "main": [[{ "node": "Save Snapshots", "type": "main", "index": 0 }]] },
     "Save Snapshots": { "main": [[{ "node": "Compute Burst", "type": "main", "index": 0 }]] },
     "Compute Burst": { "main": [[{ "node": "Evaluate Rules", "type": "main", "index": 0 }]] },
     "Evaluate Rules": { "main": [[{ "node": "Has Trigger?", "type": "main", "index": 0 }]] },
-    "Has Trigger?": { "main": [[{ "node": "Check Pause Pending?", "type": "main", "index": 0 }], []] },
+    "Has Trigger?": { "main": [[{ "node": "Check Pause Pending?", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Check Pause Pending?": { "main": [[{ "node": "Not Pending?", "type": "main", "index": 0 }]] },
-    "Not Pending?": { "main": [[{ "node": "Check Exemption", "type": "main", "index": 0 }], []] },
+    "Not Pending?": { "main": [[{ "node": "Check Exemption", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Check Exemption": { "main": [[{ "node": "Not Exempt?", "type": "main", "index": 0 }]] },
-    "Not Exempt?": { "main": [[{ "node": "Is Dry Run?", "type": "main", "index": 0 }], []] },
+    "Not Exempt?": { "main": [[{ "node": "Is Dry Run?", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Is Dry Run?": {
       "main": [
         [{ "node": "Check Learning Phase", "type": "main", "index": 0 }],
@@ -461,7 +461,7 @@
       ]
     },
     "Check Learning Phase": { "main": [[{ "node": "Not In Learning?", "type": "main", "index": 0 }]] },
-    "Not In Learning?": { "main": [[{ "node": "Build FB Action", "type": "main", "index": 0 }], []] },
+    "Not In Learning?": { "main": [[{ "node": "Build FB Action", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Build FB Action": { "main": [[{ "node": "Is Scale Budget?", "type": "main", "index": 0 }]] },
     "Is Scale Budget?": {
       "main": [
@@ -476,7 +476,9 @@
     "Call FB API Scale": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
     "Telegram Alert": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
     "Email Alert": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
-    "Log Action": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] }
+    "Log Action": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] },
+    "Log Dry Run": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] },
+    "Set Cooldown": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1", "errorWorkflow": "" },
