@@ -442,7 +442,7 @@
   "connections": {
     "Every 2 Minutes": { "main": [[{ "node": "Get Active Rules", "type": "main", "index": 0 }]] },
     "Get Active Rules": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] },
-    "Split Rules": { "main": [[{ "node": "Build FB Batch", "type": "main", "index": 0 }]] },
+    "Split Rules": { "main": [[], [{ "node": "Build FB Batch", "type": "main", "index": 0 }]] },
     "Build FB Batch": { "main": [[{ "node": "Has Data?", "type": "main", "index": 0 }]] },
     "Has Data?": { "main": [[{ "node": "FB Batch API", "type": "main", "index": 0 }], []] },
     "FB Batch API": { "main": [[{ "node": "Save Snapshots", "type": "main", "index": 0 }]] },
