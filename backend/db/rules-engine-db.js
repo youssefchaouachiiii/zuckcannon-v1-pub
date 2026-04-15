@@ -259,6 +259,12 @@ export const RulesEngineDB = {
     );
     return db.getAsync('SELECT * FROM verticals WHERE id = ?', [lastID]);
   },
+  async upsertVertical(name) {
+    return db.runAsync(
+      'INSERT OR IGNORE INTO verticals (name) VALUES (?)',
+      [name]
+    );
+  },
   async listVerticals() {
     return db.allAsync('SELECT * FROM verticals ORDER BY name ASC');
   },

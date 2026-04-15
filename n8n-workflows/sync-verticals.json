@@ -1,0 +1,84 @@
+{
+  "name": "Sync Verticals from Airtable",
+  "nodes": [
+    {
+      "id": "node-trigger",
+      "name": "Daily 06:00 ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 6 * * *" }]
+        },
+        "triggerAtTimezone": "America/New_York"
+      }
+    },
+    {
+      "id": "node-fetch-airtable",
+      "name": "Fetch Verticals from Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "g8X0PZu8dIVZ4LyX",
+          "name": "Airtable Personal Access Token account"
+        }
+      },
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appzFVylsknTr2MdF",
+          "mode": "list",
+          "cachedResultName": "Master Testing sheet",
+          "cachedResultUrl": "https://airtable.com/appzFVylsknTr2MdF"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblyO73fWZFx4K1rh",
+          "mode": "list",
+          "cachedResultName": "Verticals",
+          "cachedResultUrl": "https://airtable.com/appzFVylsknTr2MdF/tblyO73fWZFx4K1rh"
+        },
+        "options": {
+          "fields": ["Name"]
+        }
+      }
+    },
+    {
+      "id": "node-upsert-vertical",
+      "name": "Upsert Vertical",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/verticals/upsert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ name: $json.fields.Name }) }}",
+        "options": { "onError": "continueRegularOutput" }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 06:00 ET": {
+      "main": [[{ "node": "Fetch Verticals from Airtable", "type": "main", "index": 0 }]]
+    },
+    "Fetch Verticals from Airtable": {
+      "main": [[{ "node": "Upsert Vertical", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": true }
+}

@@ -149,3 +149,12 @@ rulesEngineN8nRouter.get('/token-health', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+rulesEngineN8nRouter.post('/verticals/upsert', async (req, res) => {
+  try {
+    await RulesEngineDB.upsertVertical(req.body.name);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
