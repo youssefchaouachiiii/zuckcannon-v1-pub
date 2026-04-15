@@ -265,8 +265,17 @@ export const RulesEngineDB = {
       [name]
     );
   },
+  async getVerticalById(id) {
+    return db.getAsync('SELECT * FROM verticals WHERE id = ?', [id]);
+  },
   async listVerticals() {
     return db.allAsync('SELECT * FROM verticals ORDER BY name ASC');
+  },
+  async getCampaignsByVertical(verticalName) {
+    return db.allAsync(
+      `SELECT campaign_id FROM campaign_labels WHERE label_type='vertical' AND label_value=?`,
+      [verticalName]
+    );
   },
   async deleteVertical(id) {
     return db.runAsync('DELETE FROM verticals WHERE id = ?', [id]);

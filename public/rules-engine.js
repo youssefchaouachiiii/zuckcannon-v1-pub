@@ -324,8 +324,14 @@ async function loadVerticals() {
       <tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:8px;">${escapeHtml(v.name)}</td>
         <td style="padding:8px;">${v.default_schedule_id ? `Schedule #${escapeHtml(String(v.default_schedule_id))}` : 'None'}</td>
-        <td style="padding:8px;">
+        <td style="padding:8px;white-space:nowrap;">
+          <button class="btn-secondary btn-sm view-vert-campaigns-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}" style="margin-right:6px;">View Campaigns</button>
           <button class="btn-danger btn-sm delete-vertical-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}">Delete</button>
+        </td>
+      </tr>
+      <tr id="vert-campaigns-${v.id}" style="display:none;background:#f9f9f9;">
+        <td colspan="3" style="padding:8px 16px;">
+          <div id="vert-campaigns-inner-${v.id}" style="font-size:13px;color:#555;">Loading...</div>
         </td>
       </tr>
     `).join('');
@@ -352,6 +358,35 @@ function confirmDeleteVertical(id, name) {
 }
 
 function showAddVertical() { document.getElementById('vertical-editor').style.display = 'block'; }
+
+async function toggleVerticalCampaigns(id, name, btn) {
+  const row = document.getElementById(`vert-campaigns-${id}`);
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    btn.textContent = 'View Campaigns';
+    return;
+  }
+  row.style.display = '';
+  btn.textContent = 'Hide';
+  const inner = document.getElementById(`vert-campaigns-inner-${id}`);
+  inner.textContent = 'Loading...';
+  try {
+    const res = await fetch(`/api/rules-engine/ui/verticals/${id}/campaigns`);
+    if (!res.ok) throw new Error('Server error');
+    const data = await res.json();
+    if (data.campaigns.length === 0) {
+      inner.innerHTML = '<em>No campaigns assigned yet.</em>';
+      return;
+    }
+    inner.innerHTML = `
+      <strong>${data.count} campaign(s) in "${escapeHtml(data.vertical)}"</strong>
+      <ul style="margin:6px 0 0 0;padding:0 0 0 16px;max-height:200px;overflow-y:auto;">
+        ${data.campaigns.map(c => `<li style="margin:2px 0;">${escapeHtml(c.name || c.id)}<span style="color:#aaa;font-size:11px;margin-left:6px;">${c.name ? escapeHtml(c.id) : '(not in cache)'}</span></li>`).join('')}
+      </ul>`;
+  } catch (err) {
+    inner.textContent = 'Failed to load campaigns.';
+  }
+}
 
 async function bulkAssignByPattern() {
   const pattern = document.getElementById('bulk-pattern').value.trim();
@@ -489,10 +524,13 @@ function initRulesEnginePanel() {
     }
   });
 
-  // Event delegation for verticals delete
+  // Event delegation for verticals
   document.getElementById('verticals-body').addEventListener('click', (e) => {
     if (e.target.classList.contains('delete-vertical-btn')) {
       confirmDeleteVertical(parseInt(e.target.dataset.vertId), e.target.dataset.vertName);
+    }
+    if (e.target.classList.contains('view-vert-campaigns-btn')) {
+      toggleVerticalCampaigns(parseInt(e.target.dataset.vertId), e.target.dataset.vertName, e.target);
     }
   });
 

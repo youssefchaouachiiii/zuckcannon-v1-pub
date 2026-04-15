@@ -140,6 +140,25 @@ rulesEngineUiRouter.post('/verticals', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+rulesEngineUiRouter.get('/verticals/:id/campaigns', async (req, res) => {
+  try {
+    const vertical = await RulesEngineDB.getVerticalById(parseInt(req.params.id));
+    if (!vertical) return res.status(404).json({ error: 'Not found' });
+    const rows = await RulesEngineDB.getCampaignsByVertical(vertical.name);
+    const campaignIds = new Set(rows.map(r => r.campaign_id));
+    const allCached = await FacebookCacheDB.getCampaigns();
+    const campaigns = allCached
+      .filter(c => campaignIds.has(c.id))
+      .map(c => ({ id: c.id, name: c.name, account_id: c.account_id }));
+    // include any ids not in cache (assigned but cache stale)
+    const foundIds = new Set(campaigns.map(c => c.id));
+    for (const id of campaignIds) {
+      if (!foundIds.has(id)) campaigns.push({ id, name: null, account_id: null });
+    }
+    res.json({ vertical: vertical.name, count: campaigns.length, campaigns });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.delete('/verticals/:id', async (req, res) => {
   try {
     await RulesEngineDB.deleteVertical(parseInt(req.params.id));
