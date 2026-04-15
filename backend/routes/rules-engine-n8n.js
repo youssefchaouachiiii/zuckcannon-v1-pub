@@ -14,16 +14,20 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
   try {
     const rules = await RulesEngineDB.listActiveRules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
-    const token = systemUserTokens[0]?.access_token || null;
+    const defaultToken = systemUserTokens[0]?.access_token || null;
 
     const resolved = await Promise.all(
-      rules.map(async (rule) => ({
-        ...rule,
-        conditions: JSON.parse(rule.conditions_json),
-        action_params: rule.action_params_json ? JSON.parse(rule.action_params_json) : null,
-        entities: await resolveRuleEntities(rule.id),
-        token,
-      }))
+      rules.map(async (rule) => {
+        const entityIds = await resolveRuleEntities(rule.id);
+        // Each entity gets a token; future: match per ad-account BM
+        const entities = entityIds.map(entityId => ({ entityId, token: defaultToken }));
+        return {
+          ...rule,
+          conditions: JSON.parse(rule.conditions_json),
+          action_params: rule.action_params_json ? JSON.parse(rule.action_params_json) : null,
+          entities,
+        };
+      })
     );
 
     res.json(resolved);

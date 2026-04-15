@@ -50,8 +50,11 @@ describe('GET /api/rules-engine/active-rules', () => {
 
     const res = await request(app).get('/api/rules-engine/active-rules');
     expect(res.status).toBe(200);
-    expect(res.body[0].entities).toEqual(['camp_123', 'camp_456']);
-    expect(res.body[0].token).toBe('SYS_TOKEN');
+    expect(res.body[0].entities).toEqual([
+      { entityId: 'camp_123', token: 'SYS_TOKEN' },
+      { entityId: 'camp_456', token: 'SYS_TOKEN' },
+    ]);
+    expect(res.body[0].token).toBeUndefined();
   });
 });
 
