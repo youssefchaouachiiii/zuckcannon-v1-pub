@@ -225,10 +225,77 @@ async function editRule(id) {
   document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === combinator; });
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'Edit Rule';
+  // show tabs for edit mode
+  document.getElementById('rule-editor-tabs').style.display = 'block';
+  switchRuleTab('configure');
+  // pre-load dropdowns for assign tab
+  loadVerticals().then(() => {
+    const sel = document.getElementById('assign-vertical-select');
+    if (sel) {
+      const verts = [...document.getElementById('bulk-vertical-select').options];
+      sel.innerHTML = '<option value="">Select vertical...</option>' + verts.slice(1).map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.text)}</option>`).join('');
+    }
+  });
+  fetch('/api/rules-engine/ui/campaigns/cached').then(r => r.json()).then(camps => {
+    const sel = document.getElementById('assign-campaign-select');
+    if (sel) sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  });
+}
+
+function switchRuleTab(tab) {
+  document.getElementById('rule-tab-configure').style.display = tab === 'configure' ? '' : 'none';
+  document.getElementById('rule-tab-assign').style.display = tab === 'assign' ? '' : 'none';
+  document.querySelectorAll('.rule-tab-btn').forEach(btn => {
+    const active = btn.dataset.rtab === tab;
+    btn.style.borderBottomColor = active ? '#3b82f6' : 'transparent';
+    btn.style.fontWeight = active ? '600' : 'normal';
+  });
+  if (tab === 'assign' && editingRuleId) loadRuleAssignments(editingRuleId);
+}
+
+async function loadRuleAssignments(ruleId) {
+  const el = document.getElementById('assignments-list');
+  el.textContent = 'Loading...';
+  const res = await fetch(`/api/rules-engine/ui/rules/${ruleId}/assignments`);
+  const rows = res.ok ? await res.json() : [];
+  if (!rows.length) { el.innerHTML = '<em style="color:#aaa;">No assignments yet.</em>'; return; }
+  el.innerHTML = rows.map(a => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;">
+      <span><span style="background:#e8f4fd;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:6px;">${escapeHtml(a.entity_type)}</span>${escapeHtml(a.entity_id)}</span>
+      <button class="btn-danger btn-sm" onclick="removeRuleAssignment(${ruleId},'${escapeHtml(a.entity_type)}','${escapeHtml(a.entity_id)}')">Remove</button>
+    </div>
+  `).join('');
+}
+
+async function addRuleAssignment(entityType) {
+  if (!editingRuleId) return;
+  let entityId;
+  if (entityType === 'vertical') entityId = document.getElementById('assign-vertical-select').value;
+  else if (entityType === 'tag') entityId = document.getElementById('assign-tag-input').value.trim();
+  else if (entityType === 'campaign') entityId = document.getElementById('assign-campaign-select').value;
+  if (!entityId) { window.showError?.('Select a value first.'); return; }
+  const res = await fetch(`/api/rules-engine/ui/rules/${editingRuleId}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments: [{ entity_type: entityType, entity_id: entityId }] }),
+  });
+  if (!res.ok) { window.showError?.('Failed to assign.'); return; }
+  if (entityType === 'tag') document.getElementById('assign-tag-input').value = '';
+  loadRuleAssignments(editingRuleId);
+}
+
+async function removeRuleAssignment(ruleId, entityType, entityId) {
+  const res = await fetch(`/api/rules-engine/ui/rules/${ruleId}/assign`, {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity_type: entityType, entity_id: entityId }),
+  });
+  if (!res.ok) { window.showError?.('Failed to remove.'); return; }
+  loadRuleAssignments(ruleId);
 }
 
 function closeRuleEditor() {
   document.getElementById('rule-editor').style.display = 'none';
+  document.getElementById('rule-editor-tabs').style.display = 'none';
+  switchRuleTab('configure');
   editingRuleId = null;
 }
 
@@ -497,8 +564,14 @@ function initRulesEnginePanel() {
     editingRuleId = null;
     document.getElementById('rule-editor').style.display = 'block';
     document.getElementById('rule-editor-title').textContent = 'New Rule';
+    document.getElementById('rule-editor-tabs').style.display = 'none';
     document.getElementById('conditions-builder').innerHTML = '';
     document.getElementById('rule-name').value = '';
+  });
+
+  // Rule editor tab switching
+  document.getElementById('rule-editor-tabs').addEventListener('click', (e) => {
+    if (e.target.classList.contains('rule-tab-btn')) switchRuleTab(e.target.dataset.rtab);
   });
 
   // New schedule button
@@ -658,6 +731,8 @@ async function addTag() {
 }
 window.addTag = addTag;
 
+window.addRuleAssignment = addRuleAssignment;
+window.removeRuleAssignment = removeRuleAssignment;
 window.editRule = editRule;
 window.saveSchedule = saveSchedule;
 window.closeScheduleEditor = closeScheduleEditor;

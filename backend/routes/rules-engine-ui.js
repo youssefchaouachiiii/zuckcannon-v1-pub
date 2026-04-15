@@ -60,6 +60,13 @@ rulesEngineUiRouter.delete('/rules/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+rulesEngineUiRouter.get('/rules/:id/assignments', async (req, res) => {
+  try {
+    const rows = await RulesEngineDB.getAssignmentsForRule(parseInt(req.params.id));
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.post('/rules/:id/assign', async (req, res) => {
   try {
     for (const a of req.body.assignments) {

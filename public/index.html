@@ -2933,6 +2933,11 @@
           </div>
           <div id="rule-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
             <h4 id="rule-editor-title" style="margin:0 0 12px 0;">New Rule</h4>
+            <div id="rule-editor-tabs" style="display:none;margin-bottom:12px;border-bottom:1px solid #ddd;">
+              <button class="rule-tab-btn active" data-rtab="configure" style="padding:6px 14px;border:none;background:none;cursor:pointer;font-size:13px;border-bottom:2px solid #3b82f6;margin-bottom:-1px;">Configure</button>
+              <button class="rule-tab-btn" data-rtab="assign" style="padding:6px 14px;border:none;background:none;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px;">Assign</button>
+            </div>
+            <div id="rule-tab-configure">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
               <div>
                 <label style="display:block;font-size:13px;margin-bottom:4px;">Name</label>
@@ -2984,6 +2989,38 @@
               <button onclick="saveRule()" class="btn-primary">Save Rule</button>
               <button onclick="closeRuleEditor()" class="btn-secondary">Cancel</button>
             </div>
+            </div><!-- end rule-tab-configure -->
+
+            <!-- ASSIGN TAB -->
+            <div id="rule-tab-assign" style="display:none;">
+              <div style="margin-bottom:16px;">
+                <h5 style="margin:0 0 8px 0;font-size:13px;">Current Assignments</h5>
+                <div id="assignments-list" style="font-size:13px;color:#555;">Loading...</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <div style="background:#fff;border:1px solid #eee;border-radius:4px;padding:10px;">
+                  <strong style="font-size:13px;">By Vertical</strong>
+                  <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+                    <select id="assign-vertical-select" style="padding:6px 8px;flex:1;max-width:220px;font-size:13px;"><option value="">Select vertical...</option></select>
+                    <button onclick="addRuleAssignment('vertical')" class="btn-primary btn-sm">Assign</button>
+                  </div>
+                </div>
+                <div style="background:#fff;border:1px solid #eee;border-radius:4px;padding:10px;">
+                  <strong style="font-size:13px;">By Tag</strong>
+                  <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+                    <input type="text" id="assign-tag-input" placeholder="e.g. high-spend" style="padding:6px 8px;flex:1;max-width:220px;font-size:13px;" />
+                    <button onclick="addRuleAssignment('tag')" class="btn-primary btn-sm">Assign</button>
+                  </div>
+                </div>
+                <div style="background:#fff;border:1px solid #eee;border-radius:4px;padding:10px;">
+                  <strong style="font-size:13px;">Manual (Campaign)</strong>
+                  <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+                    <select id="assign-campaign-select" style="padding:6px 8px;flex:1;max-width:300px;font-size:13px;"><option value="">Select campaign...</option></select>
+                    <button onclick="addRuleAssignment('campaign')" class="btn-primary btn-sm">Assign</button>
+                  </div>
+                </div>
+              </div>
+            </div><!-- end rule-tab-assign -->
           </div>
           <div style="background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:12px;margin-bottom:16px;">
             <h4 style="margin:0 0 10px 0;">Templates</h4>
