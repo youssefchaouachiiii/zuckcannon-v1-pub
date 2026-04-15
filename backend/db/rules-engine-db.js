@@ -94,6 +94,21 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(rule_id, entity_id)
   )`);
+
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS spend_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    spend REAL NOT NULL,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS pause_pending (
+    rule_id INTEGER NOT NULL,
+    entity_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (rule_id, entity_id)
+  )`);
 }
 
 await initializeDatabase();
@@ -284,6 +299,46 @@ export const RulesEngineDB = {
   async listAllScheduledCampaignIds() {
     const rows = await db.allAsync('SELECT DISTINCT campaign_id FROM schedule_assignments');
     return new Set(rows.map(r => r.campaign_id));
+  },
+
+  // --- Spend Snapshots ---
+  async saveSpendSnapshot(entityId, entityType, spend) {
+    return db.runAsync(
+      `INSERT INTO spend_snapshots (entity_id, entity_type, spend) VALUES (?, ?, ?)`,
+      [entityId, entityType, spend]
+    );
+  },
+  async getSpendSnapshots(entityId, minutes = 30) {
+    const since = new Date(Date.now() - minutes * 60000).toISOString();
+    return db.allAsync(
+      `SELECT * FROM spend_snapshots WHERE entity_id=? AND recorded_at >= ? ORDER BY recorded_at ASC`,
+      [entityId, since]
+    );
+  },
+  async pruneSpendSnapshots(daysOld = 7) {
+    const cutoff = new Date(Date.now() - daysOld * 86400000).toISOString();
+    return db.runAsync(`DELETE FROM spend_snapshots WHERE recorded_at < ?`, [cutoff]);
+  },
+
+  // --- Pause Pending ---
+  async setPausePending(ruleId, entityId) {
+    return db.runAsync(
+      `INSERT OR REPLACE INTO pause_pending (rule_id, entity_id) VALUES (?, ?)`,
+      [ruleId, entityId]
+    );
+  },
+  async isPausePending(ruleId, entityId) {
+    const row = await db.getAsync(
+      `SELECT 1 FROM pause_pending WHERE rule_id=? AND entity_id=?`,
+      [ruleId, entityId]
+    );
+    return !!row;
+  },
+  async clearPausePending(ruleId, entityId) {
+    return db.runAsync(
+      `DELETE FROM pause_pending WHERE rule_id=? AND entity_id=?`,
+      [ruleId, entityId]
+    );
   },
 };
 

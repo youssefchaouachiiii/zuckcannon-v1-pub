@@ -59,3 +59,21 @@ describe('RulesEngineDB - exemptions', () => {
     await RulesEngineDB.clearExemption(1, 'entity_456');
   });
 });
+
+describe('RulesEngineDB - snapshots + pause-pending', () => {
+  it('saves and retrieves spend snapshots', async () => {
+    await RulesEngineDB.saveSpendSnapshot('camp_1', 'campaign', 42.5);
+    const snaps = await RulesEngineDB.getSpendSnapshots('camp_1', 60);
+    expect(snaps.length).toBeGreaterThanOrEqual(1);
+    expect(snaps.find(s => s.spend === 42.5)).toBeTruthy();
+  });
+
+  it('sets and checks pause-pending', async () => {
+    await RulesEngineDB.setPausePending(1, 'camp_pp_test');
+    const pending = await RulesEngineDB.isPausePending(1, 'camp_pp_test');
+    expect(pending).toBe(true);
+    await RulesEngineDB.clearPausePending(1, 'camp_pp_test');
+    const cleared = await RulesEngineDB.isPausePending(1, 'camp_pp_test');
+    expect(cleared).toBe(false);
+  });
+});
