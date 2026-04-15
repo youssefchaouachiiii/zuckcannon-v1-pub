@@ -185,6 +185,54 @@
       "credentials": {
         "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
       }
+    },
+    {
+      "id": "node-check-token-expiry",
+      "name": "Check Token Expiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2880, 100],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/token-health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-tokens-expiring",
+      "name": "Tokens Expiring?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3100, 100],
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.expiring_soon?.length }}",
+            "rightValue": 0,
+            "operator": { "type": "number", "operation": "gt" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-alert-expiring",
+      "name": "Alert Expiring Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3320, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: `⚠️ *Token Expiring Soon*\\n${$('Check Token Expiry').item.json.expiring_soon.map(t => `${t.business_name}: expires ${t.expires_at}`).join('\\n')}`, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -226,6 +274,18 @@
     },
     "Apply Schedule": {
       "main": [[{ "node": "Log Schedule Action", "type": "main", "index": 0 }]]
+    },
+    "Log Schedule Action": {
+      "main": [[{ "node": "Check Token Expiry", "type": "main", "index": 0 }]]
+    },
+    "Check Token Expiry": {
+      "main": [[{ "node": "Tokens Expiring?", "type": "main", "index": 0 }]]
+    },
+    "Tokens Expiring?": {
+      "main": [
+        [{ "node": "Alert Expiring Token", "type": "main", "index": 0 }],
+        []
+      ]
     }
   },
   "active": false,

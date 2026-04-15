@@ -64,11 +64,32 @@
       }
     },
     {
+      "id": "node-email-digest",
+      "name": "Email Digest",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 300],
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURE_IN_N8N",
+          "name": "SMTP (configure in n8n)"
+        }
+      },
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
+        "subject": "=📊 Daily Digest — {{ $('Aggregate Stats').item.json.date }}",
+        "emailFormat": "html",
+        "html": "=<h2>Daily Digest — {{ $('Aggregate Stats').item.json.date }}</h2>\n<table style=\"border-collapse:collapse;font-family:sans-serif;\">\n  <tr><td style=\"padding:6px 12px;\"><b>Rules Fired</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.rulesFired }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Paused</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.paused }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Scaled</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.scaled }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Dry Run Only</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.dryRun }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Total Events</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.total }}</td></tr>\n</table>",
+        "options": { "allowUnauthorizedCerts": false }
+      }
+    },
+    {
       "id": "node-get-tokens",
       "name": "Get Tokens",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 300],
+      "position": [1340, 300],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/tokens",
@@ -85,7 +106,7 @@
       "name": "Check Token Expiry",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 300],
+      "position": [1560, 300],
       "parameters": {
         "jsCode": "const tokens = $input.all().map(i => i.json);\nconst warnings = tokens.filter(t => {\n  if (!t.expires_at) return false;\n  const daysLeft = (new Date(t.expires_at) - new Date()) / 86400000;\n  return daysLeft <= 7;\n});\nreturn warnings.length > 0\n  ? warnings.map(t => ({ json: t }))\n  : [{ json: { noWarnings: true } }];"
       }
@@ -95,7 +116,7 @@
       "name": "Token Warning?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1560, 300],
+      "position": [1780, 300],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
@@ -116,7 +137,7 @@
       "name": "Token Warning Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1780, 200],
+      "position": [2000, 200],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
@@ -138,6 +159,9 @@
       "main": [[{ "node": "Send Digest", "type": "main", "index": 0 }]]
     },
     "Send Digest": {
+      "main": [[{ "node": "Email Digest", "type": "main", "index": 0 }]]
+    },
+    "Email Digest": {
       "main": [[{ "node": "Get Tokens", "type": "main", "index": 0 }]]
     },
     "Get Tokens": {
@@ -155,5 +179,5 @@
   },
   "active": false,
   "settings": { "executionOrder": "v1" },
-  "meta": { "templateCredsSetupCompleted": true }
+  "meta": { "templateCredsSetupCompleted": false }
 }
