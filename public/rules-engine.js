@@ -86,7 +86,7 @@ function switchReTab(tabName) {
   if (tabName === 'rules') { renderTemplates(); loadRules(); }
   else if (tabName === 'schedules') loadSchedules();
   else if (tabName === 'verticals') loadVerticals();
-  else if (tabName === 'coverage') loadCoverage();
+  else if (tabName === 'coverage') loadVerticals().then(loadCoverage);
   else if (tabName === 'activity-log') {
     document.getElementById('log-date-filter').value = new Date().toISOString().split('T')[0];
     loadLogs();
