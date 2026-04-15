@@ -79,3 +79,62 @@ describe('POST /api/rules-engine/exemptions', () => {
     );
   });
 });
+
+describe('POST /api/rules-engine/snapshots', () => {
+  test('saves snapshot', async () => {
+    RulesEngineDB.saveSpendSnapshot = jest.fn().mockResolvedValue({});
+    RulesEngineDB.pruneSpendSnapshots = jest.fn().mockResolvedValue({});
+    const res = await request(app)
+      .post('/api/rules-engine/snapshots')
+      .send({ entity_id: 'camp_1', entity_type: 'campaign', spend: 55.0 });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(RulesEngineDB.saveSpendSnapshot).toHaveBeenCalledWith('camp_1', 'campaign', 55.0);
+  });
+});
+
+describe('GET /api/rules-engine/snapshots/:entityId', () => {
+  test('returns snapshots array', async () => {
+    RulesEngineDB.getSpendSnapshots = jest.fn().mockResolvedValue([
+      { id: 1, entity_id: 'camp_1', entity_type: 'campaign', spend: 55.0, recorded_at: '2026-04-15T10:00:00Z' }
+    ]);
+    const res = await request(app)
+      .get('/api/rules-engine/snapshots/camp_1?minutes=60');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body[0].spend).toBe(55.0);
+  });
+});
+
+describe('POST /api/rules-engine/pause-pending', () => {
+  test('sets pause-pending', async () => {
+    RulesEngineDB.setPausePending = jest.fn().mockResolvedValue({});
+    const res = await request(app)
+      .post('/api/rules-engine/pause-pending')
+      .send({ rule_id: 1, entity_id: 'camp_1' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(RulesEngineDB.setPausePending).toHaveBeenCalledWith(1, 'camp_1');
+  });
+});
+
+describe('GET /api/rules-engine/pause-pending/check', () => {
+  test('returns pending true when set', async () => {
+    RulesEngineDB.isPausePending = jest.fn().mockResolvedValue(true);
+    const res = await request(app)
+      .get('/api/rules-engine/pause-pending/check?rule_id=1&entity_id=camp_1');
+    expect(res.status).toBe(200);
+    expect(res.body.pending).toBe(true);
+  });
+});
+
+describe('DELETE /api/rules-engine/pause-pending', () => {
+  test('clears pause-pending', async () => {
+    RulesEngineDB.clearPausePending = jest.fn().mockResolvedValue({});
+    const res = await request(app)
+      .delete('/api/rules-engine/pause-pending')
+      .send({ rule_id: 1, entity_id: 'camp_1' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+});

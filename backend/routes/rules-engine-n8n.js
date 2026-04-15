@@ -85,3 +85,54 @@ rulesEngineN8nRouter.get('/tokens', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+rulesEngineN8nRouter.post('/snapshots', async (req, res) => {
+  try {
+    const { entity_id, entity_type, spend } = req.body;
+    await RulesEngineDB.saveSpendSnapshot(entity_id, entity_type, spend);
+    await RulesEngineDB.pruneSpendSnapshots(7);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/snapshots/:entityId', async (req, res) => {
+  try {
+    const minutes = parseInt(req.query.minutes) || 30;
+    const snaps = await RulesEngineDB.getSpendSnapshots(req.params.entityId, minutes);
+    res.json(snaps);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/pause-pending', async (req, res) => {
+  try {
+    const { rule_id, entity_id } = req.body;
+    await RulesEngineDB.setPausePending(rule_id, entity_id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/pause-pending/check', async (req, res) => {
+  try {
+    const { rule_id, entity_id } = req.query;
+    const pending = await RulesEngineDB.isPausePending(parseInt(rule_id), entity_id);
+    res.json({ pending });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.delete('/pause-pending', async (req, res) => {
+  try {
+    const { rule_id, entity_id } = req.body;
+    await RulesEngineDB.clearPausePending(rule_id, entity_id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
