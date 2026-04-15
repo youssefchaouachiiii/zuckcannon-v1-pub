@@ -1,5 +1,21 @@
 // public/rules-engine.js
 
+// ── Tom Select helper ─────────────────────────────────────────────────
+const _tomSelects = {};
+function makeTomSelect(id, placeholder = 'Search...') {
+  if (_tomSelects[id]) { _tomSelects[id].destroy(); }
+  const el = document.getElementById(id);
+  if (!el || typeof TomSelect === 'undefined') return;
+  _tomSelects[id] = new TomSelect(el, {
+    placeholder,
+    allowEmptyOption: true,
+    maxOptions: 500,
+  });
+}
+function refreshTomSelect(id) {
+  if (_tomSelects[id]) { _tomSelects[id].sync(); }
+}
+
 // ── XSS helper ────────────────────────────────────────────────────────
 function escapeHtml(str) {
   if (str == null) return '';
@@ -234,11 +250,15 @@ async function editRule(id) {
     if (sel) {
       const verts = [...document.getElementById('bulk-vertical-select').options];
       sel.innerHTML = '<option value="">Select vertical...</option>' + verts.slice(1).map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.text)}</option>`).join('');
+      makeTomSelect('assign-vertical-select', 'Select vertical...');
     }
   });
   fetch('/api/rules-engine/ui/campaigns/cached').then(r => r.json()).then(camps => {
     const sel = document.getElementById('assign-campaign-select');
-    if (sel) sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+    if (sel) {
+      sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+      makeTomSelect('assign-campaign-select', 'Search campaign...');
+    }
   });
 }
 
@@ -385,8 +405,12 @@ async function loadVerticals() {
     const verticals = await res.json();
     const options = '<option value="">Select vertical</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
     document.getElementById('bulk-vertical-select').innerHTML = options;
+    makeTomSelect('bulk-vertical-select', 'Select vertical...');
     const covSel = document.getElementById('coverage-vertical-select');
-    if (covSel) covSel.innerHTML = '<option value="">Assign to vertical...</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
+    if (covSel) {
+      covSel.innerHTML = '<option value="">Assign to vertical...</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
+      makeTomSelect('coverage-vertical-select', 'Assign to vertical...');
+    }
     if (verticals.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 8px;color:#888;">No verticals yet.</td></tr>';
       return;
@@ -700,6 +724,7 @@ async function loadTags() {
   camps.forEach(c => { campMap[c.id] = c.name; });
   sel.innerHTML = '<option value="">Select campaign...</option>' +
     camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  makeTomSelect('tag-campaign-select', 'Search campaign...');
 
   const tbody = document.getElementById('tags-body');
   if (!tags.length) {
