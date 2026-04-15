@@ -1,0 +1,142 @@
+{
+  "name": "Telegram Quick Actions",
+  "nodes": [
+    {
+      "id": "node-tg-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "CONFIGURE_IN_N8N",
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_IN_N8N",
+          "name": "CONFIGURE_IN_N8N"
+        }
+      },
+      "parameters": {
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "node-parse-callback",
+      "name": "Parse Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\n// e.g. \"reenable:42:23456789\" or \"snooze:42:23456789\"\nconst [action, ruleId, entityId] = data.split(':');\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, chatId, callbackQueryId } }];"
+      }
+    },
+    {
+      "id": "node-route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "reenable",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-fb-reenable",
+      "name": "Re-enable Entity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "status", "value": "ACTIVE" },
+            { "name": "access_token", "value": "={{ $env.FB_SYSTEM_USER_TOKEN }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-snooze",
+      "name": "Set Snooze Exemption",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"rule_id\": {{ $('Parse Callback').item.json.ruleId }},\n  \"entity_id\": \"{{ $('Parse Callback').item.json.entityId }}\",\n  \"type\": \"snooze\",\n  \"cooldown_hours\": 6\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-confirm-msg",
+      "name": "Confirm Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_IN_N8N",
+          "name": "CONFIGURE_IN_N8N"
+        }
+      },
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse Callback').item.json.chatId }}",
+        "text": "=✅ Re-enabled `{{ $('Parse Callback').item.json.entityId }}`",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Parse Callback", "type": "main", "index": 0 }]]
+    },
+    "Parse Callback": {
+      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+    },
+    "Route Action": {
+      "main": [
+        [{ "node": "Re-enable Entity", "type": "main", "index": 0 }],
+        [{ "node": "Set Snooze Exemption", "type": "main", "index": 0 }]
+      ]
+    },
+
+    "Re-enable Entity": {
+      "main": [[{ "node": "Confirm Message", "type": "main", "index": 0 }]]
+    },
+    "Set Snooze Exemption": {
+      "main": [[{ "node": "Confirm Message", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

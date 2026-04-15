@@ -8,14 +8,7 @@
       "typeVersion": 1.2,
       "position": [240, 300],
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 2
-            }
-          ]
-        }
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 2 }] }
       }
     },
     {
@@ -28,11 +21,7 @@
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/active-rules",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "options": {}
       }
     },
@@ -42,10 +31,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [680, 300],
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
-      }
+      "parameters": { "batchSize": 1, "options": {} }
     },
     {
       "id": "node-build-batch",
@@ -54,7 +40,7 @@
       "typeVersion": 2,
       "position": [900, 300],
       "parameters": {
-        "jsCode": "const rule = $input.item.json;\nconst entities = rule.entities || [];\nconst token = rule.token;\n\nif (!token) {\n  return [{ json: { skip: true, reason: 'No token', rule } }];\n}\n\nif (entities.length === 0) {\n  return [{ json: { skip: true, reason: 'No entities', rule } }];\n}\n\nconst batch = entities.map(entityId => ({\n  method: 'GET',\n  relative_url: `${entityId}/insights?fields=spend,actions,action_values,purchase_roas,cost_per_action_type&date_preset=today`,\n}));\n\nreturn [{ json: { rule, token, batch, entities } }];"
+        "jsCode": "const rule = $input.item.json;\nconst entities = rule.entities || [];\n\nif (entities.length === 0) return [{ json: { skip: true, reason: 'No entities', rule } }];\n\nconst token = entities[0]?.token || null;\nif (!token) return [{ json: { skip: true, reason: 'No token', rule } }];\n\nconst conditions = rule.conditions || [];\nconst needsMultiDay = conditions.some(c => c.lookback === 'last_3d' || c.lookback === 'last_7d');\n\nconst batch = [\n  ...entities.map(e => ({ method: 'GET', relative_url: `${e.entityId}?fields=effective_status,name` })),\n  ...entities.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?fields=spend,actions,action_values,purchase_roas,cost_per_action_type&date_preset=today` })),\n  ...(needsMultiDay ? entities.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?fields=spend,actions,action_values,purchase_roas,cost_per_action_type&date_preset=last_3_days` })) : []),\n];\n\nreturn [{ json: { rule, entities, batch, token, needsMultiDay } }];"
       }
     },
     {
@@ -66,14 +52,7 @@
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-skip",
-              "leftValue": "={{ $json.skip }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "notEquals" }
-            }
-          ],
+          "conditions": [{ "id": "cond-skip", "leftValue": "={{ $json.skip }}", "rightValue": true, "operator": { "type": "boolean", "operation": "notEquals" } }],
           "combinator": "and"
         }
       }
@@ -99,13 +78,40 @@
       }
     },
     {
+      "id": "node-save-snapshots",
+      "name": "Save Snapshots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/snapshots",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($('Build FB Batch').item.json.entities.map(e => ({ entity_id: e.entityId, entity_type: $('Build FB Batch').item.json.rule.scope, spend: 0 }))) }}",
+        "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-compute-burst",
+      "name": "Compute Burst",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 200],
+      "parameters": {
+        "jsCode": "const batchData = $input.item.json;\nreturn [{ json: { ...batchData, _burstReady: true } }];"
+      }
+    },
+    {
       "id": "node-evaluate-rules",
       "name": "Evaluate Rules",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 200],
+      "position": [2000, 200],
       "parameters": {
-        "jsCode": "const { rule, entities, token } = $('Build FB Batch').item.json;\nconst batchResponses = $input.item.json;\n\nconst responses = Array.isArray(batchResponses) ? batchResponses : [batchResponses];\n\nconst triggered = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const resp = responses[i];\n  if (!resp || resp.code !== 200) continue;\n\n  let body;\n  try { body = JSON.parse(resp.body); } catch { continue; }\n\n  const insights = body?.data?.[0];\n  if (!insights) continue;\n\n  const entityId = entities[i];\n\n  const spend = parseFloat(insights.spend || 0);\n  const conversions = parseFloat(\n    insights.actions?.find(a => a.action_type === 'purchase')?.value || 0\n  );\n  const cpa = conversions > 0 ? spend / conversions : 0;\n  const roas = parseFloat(insights.purchase_roas?.[0]?.value || 0);\n  const purchaseValue = parseFloat(\n    insights.action_values?.find(a => a.action_type === 'purchase')?.value || 0\n  );\n  const roi = spend > 0 ? (purchaseValue - spend) / spend : 0;\n\n  const metrics = { spend_today: spend, conversions, cpa, roas, roi };\n\n  const conditions = rule.conditions || [];\n  const allMet = conditions.length > 0 && conditions.every(c => {\n    const val = metrics[c.metric];\n    if (val === undefined || val === null) return false;\n    switch (c.operator) {\n      case 'gt':  return val > c.value;\n      case 'lt':  return val < c.value;\n      case 'gte': return val >= c.value;\n      case 'lte': return val <= c.value;\n      case 'eq':  return val === c.value;\n      default:    return false;\n    }\n  });\n\n  if (allMet) {\n    triggered.push({ json: { rule, entityId, metrics, token } });\n  }\n}\n\nreturn triggered.length > 0 ? triggered : [{ json: { noTrigger: true } }];"
+        "jsCode": "const { rule, entities, token, needsMultiDay } = $('Build FB Batch').item.json;\nconst responses = Array.isArray($input.item.json) ? $input.item.json : [$input.item.json];\nconst n = entities.length;\n\nfunction parseInsights(resp) {\n  if (!resp || resp.code !== 200) return null;\n  let body; try { body = JSON.parse(resp.body); } catch { return null; }\n  const d = body?.data?.[0];\n  if (!d) return null;\n  const spend = parseFloat(d.spend || 0);\n  const conversions = parseFloat(d.actions?.find(a => a.action_type === 'purchase')?.value || 0);\n  const cpa = conversions > 0 ? spend / conversions : 0;\n  const roas = parseFloat(d.purchase_roas?.[0]?.value || 0);\n  const purchaseValue = parseFloat(d.action_values?.find(a => a.action_type === 'purchase')?.value || 0);\n  const roi = spend > 0 ? (purchaseValue - spend) / spend : 0;\n  return { spend_today: spend, conversions, cpa, roas, roi };\n}\n\nconst conditions = rule.conditions || [];\nconst combinator = rule.combinator || 'AND';\nconst triggered = [];\n\nfor (let i = 0; i < n; i++) {\n  const entity = entities[i];\n  const entityId = entity.entityId;\n  const entityToken = entity.token || token;\n\n  const statusResp = responses[i];\n  let entityName = entityId;\n  if (statusResp?.code === 200) {\n    let sb; try { sb = JSON.parse(statusResp.body); } catch {}\n    entityName = sb?.name || entityId;\n    if (sb?.effective_status === 'PAUSED' && rule.action !== 'enable') continue;\n  }\n\n  const todayInsights = parseInsights(responses[n + i]);\n  const multiInsights = needsMultiDay ? parseInsights(responses[2 * n + i]) : todayInsights;\n  if (!todayInsights) continue;\n\n  const evaluate = (c) => {\n    const src = (c.lookback === 'last_3d' || c.lookback === 'last_7d') ? multiInsights : todayInsights;\n    const val = src?.[c.metric];\n    if (val === undefined || val === null) return false;\n    switch (c.operator) {\n      case 'gt':  return val > c.value;\n      case 'lt':  return val < c.value;\n      case 'gte': return val >= c.value;\n      case 'lte': return val <= c.value;\n      case 'eq':  return val === c.value;\n      default:    return false;\n    }\n  };\n\n  const allMet = combinator === 'OR' ? conditions.some(evaluate) : conditions.every(evaluate);\n  if (allMet) {\n    triggered.push({ json: { rule, entityId, entityName, metrics: todayInsights, token: entityToken } });\n  }\n}\n\n// Account cap: aggregate total spend across all entities\nif (rule.scope === 'account' && conditions.length > 0) {\n  const totalSpend = triggered.reduce((sum, t) => sum + (t.json.metrics.spend_today || 0), 0);\n  const condition = conditions[0];\n  if (condition && totalSpend > condition.value) {\n    return [{ json: { rule, entityId: 'ALL', entityName: 'All Campaigns', metrics: { spend_today: totalSpend }, token, isAccountCap: true } }];\n  }\n  return [{ json: { noTrigger: true } }];\n}\n\nreturn triggered.length > 0 ? triggered : [{ json: { noTrigger: true } }];"
       }
     },
     {
@@ -113,18 +119,46 @@
       "name": "Has Trigger?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1780, 200],
+      "position": [2220, 200],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-no-trigger",
-              "leftValue": "={{ $json.noTrigger }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "notEquals" }
-            }
-          ],
+          "conditions": [{ "id": "cond-no-trigger", "leftValue": "={{ $json.noTrigger }}", "rightValue": true, "operator": { "type": "boolean", "operation": "notEquals" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-check-pause-pending",
+      "name": "Check Pause Pending?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 100],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending/check",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "rule_id", "value": "={{ $json.rule.id }}" },
+            { "name": "entity_id", "value": "={{ $json.entityId }}" }
+          ]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-not-pending",
+      "name": "Not Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "cond-pending", "leftValue": "={{ $json.pending }}", "rightValue": false, "operator": { "type": "boolean", "operation": "equals" } }],
           "combinator": "and"
         }
       }
@@ -134,16 +168,12 @@
       "name": "Check Exemption",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2000, 100],
+      "position": [2880, 100],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions/check",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -159,18 +189,11 @@
       "name": "Not Exempt?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2220, 100],
+      "position": [3100, 100],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-exempt",
-              "leftValue": "={{ $json.exempt }}",
-              "rightValue": false,
-              "operator": { "type": "boolean", "operation": "equals" }
-            }
-          ],
+          "conditions": [{ "id": "cond-exempt", "leftValue": "={{ $json.exempt }}", "rightValue": false, "operator": { "type": "boolean", "operation": "equals" } }],
           "combinator": "and"
         }
       }
@@ -180,18 +203,44 @@
       "name": "Is Dry Run?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2440, 100],
+      "position": [3320, 100],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-dry-run",
-              "leftValue": "={{ $('Evaluate Rules').item.json.rule.is_dry_run }}",
-              "rightValue": 0,
-              "operator": { "type": "number", "operation": "equals" }
-            }
-          ],
+          "conditions": [{ "id": "cond-dry-run", "leftValue": "={{ $('Evaluate Rules').item.json.rule.is_dry_run }}", "rightValue": 0, "operator": { "type": "number", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-check-learning",
+      "name": "Check Learning Phase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3540, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Evaluate Rules').item.json.entityId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "learning_stage_info" },
+            { "name": "access_token", "value": "={{ $('Evaluate Rules').item.json.token }}" }
+          ]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-not-learning",
+      "name": "Not In Learning?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3760, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "cond-learning", "leftValue": "={{ $json.learning_stage_info?.status }}", "rightValue": "LEARNING", "operator": { "type": "string", "operation": "notEquals" } }],
           "combinator": "and"
         }
       }
@@ -201,9 +250,23 @@
       "name": "Build FB Action",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2660, 0],
+      "position": [3980, 0],
       "parameters": {
-        "jsCode": "const { rule, entityId, metrics, token } = $('Evaluate Rules').item.json;\n\nlet body = {};\n\nif (rule.action === 'pause') {\n  body = { status: 'PAUSED', access_token: token };\n} else if (rule.action === 'enable') {\n  body = { status: 'ACTIVE', access_token: token };\n} else if (rule.action === 'scale_budget') {\n  const cap = rule.action_params?.cap || 500;\n  body = { daily_budget: cap * 100, access_token: token };\n}\n\nreturn [{ json: { entityId, body, rule, metrics, token } }];"
+        "jsCode": "const { rule, entityId, entityName, metrics, token } = $('Evaluate Rules').item.json;\n\nlet body = {};\nif (rule.action === 'pause') body = { status: 'PAUSED', access_token: token };\nelse if (rule.action === 'enable') body = { status: 'ACTIVE', access_token: token };\n// scale_budget: handled by Fetch Current Budget → Compute Scale Budget → Call FB API Scale\n\nreturn [{ json: { entityId, entityName, body, rule, metrics, token } }];"
+      }
+    },
+    {
+      "id": "node-is-scale-budget",
+      "name": "Is Scale Budget?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [4200, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "cond-scale", "leftValue": "={{ $('Evaluate Rules').item.json.rule.action }}", "rightValue": "scale_budget", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
       }
     },
     {
@@ -211,7 +274,7 @@
       "name": "Call FB API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2880, 0],
+      "position": [4420, 200],
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
@@ -227,18 +290,101 @@
       }
     },
     {
+      "id": "node-set-pause-pending",
+      "name": "Set Pause Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4640, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ rule_id: $('Evaluate Rules').item.json.rule.id, entity_id: $('Evaluate Rules').item.json.entityId }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "node-fetch-budget",
+      "name": "Fetch Current Budget",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4420, -200],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Evaluate Rules').item.json.entityId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "daily_budget" },
+            { "name": "access_token", "value": "={{ $('Evaluate Rules').item.json.token }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-compute-scale",
+      "name": "Compute Scale Budget",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4640, -200],
+      "parameters": {
+        "jsCode": "const { entityId, entityName, rule, metrics, token } = $('Evaluate Rules').item.json;\nconst currentBudgetCents = parseInt($input.item.json.daily_budget || 0);\nconst scaledCents = Math.round(currentBudgetCents * 1.2);\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = Math.min(scaledCents, maxCents);\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents } }];"
+      }
+    },
+    {
+      "id": "node-call-fb-scale",
+      "name": "Call FB API Scale",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4860, -200],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "daily_budget", "value": "={{ $json.newBudgetCents }}" },
+            { "name": "access_token", "value": "={{ $json.token }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
       "id": "node-telegram-alert",
       "name": "Telegram Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3100, 0],
+      "position": [5080, 0],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\uded1 *{{ $('Evaluate Rules').item.json.rule.name }}*\\n`{{ $('Evaluate Rules').item.json.entityId }}`  {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}D\\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\\n{{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\uded1 *{{ $('Evaluate Rules').item.json.rule.name }}*\\n`{{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}`  {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}D\\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\\n{{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET\",\n  \"parse_mode\": \"Markdown\",\n  \"reply_markup\": \"{\\\"inline_keyboard\\\":[[{\\\"text\\\":\\\"\\u2705 Re-enable\\\",\\\"callback_data\\\":\\\"reenable:{{ $('Evaluate Rules').item.json.rule.id }}:{{ $('Evaluate Rules').item.json.entityId }}\\\"},{\\\"text\\\":\\\"\\ud83d\\udca4 Snooze 6h\\\",\\\"callback_data\\\":\\\"snooze:{{ $('Evaluate Rules').item.json.rule.id }}:{{ $('Evaluate Rules').item.json.entityId }}\\\"}]]}\"\n}",
         "options": {}
+      }
+    },
+    {
+      "id": "node-email-alert",
+      "name": "Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [5300, 0],
+      "credentials": {
+        "smtp": { "id": "CONFIGURE_IN_N8N", "name": "SMTP / Gmail (configure in n8n)" }
+      },
+      "parameters": {
+        "fromEmail": "={{ $credentials.user }}",
+        "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
+        "subject": "=\ud83d\udea8 [Rules Engine] {{ $('Evaluate Rules').item.json.rule.name }} fired on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
+        "emailType": "text",
+        "message": "=Rule: {{ $('Evaluate Rules').item.json.rule.name }}\nEntity: {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\nAction: {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}"
       }
     },
     {
@@ -246,19 +392,15 @@
       "name": "Log Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3320, 0],
+      "position": [5520, 0],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 0\n}",
+        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 0\n}",
         "options": {}
       }
     },
@@ -267,19 +409,15 @@
       "name": "Log Dry Run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2660, 200],
+      "position": [3540, 200],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"would_have_{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 1\n}",
+        "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_type\": \"{{ $('Evaluate Rules').item.json.rule.scope }}\",\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"entity_name\": \"{{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\",\n  \"action_taken\": \"would_have_{{ $('Evaluate Rules').item.json.rule.action }}d\",\n  \"trigger_data_json\": {{ JSON.stringify(JSON.stringify($('Evaluate Rules').item.json.metrics)) }},\n  \"is_dry_run\": 1\n}",
         "options": {}
       }
     },
@@ -288,16 +426,12 @@
       "name": "Set Cooldown",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3540, 0],
+      "position": [5740, 0],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
         "body": "={\n  \"rule_id\": {{ $('Evaluate Rules').item.json.rule.id }},\n  \"entity_id\": \"{{ $('Evaluate Rules').item.json.entityId }}\",\n  \"type\": \"cooldown\",\n  \"cooldown_hours\": {{ $('Evaluate Rules').item.json.rule.cooldown_hours || 4 }}\n}",
@@ -306,70 +440,45 @@
     }
   ],
   "connections": {
-    "Every 2 Minutes": {
-      "main": [[{ "node": "Get Active Rules", "type": "main", "index": 0 }]]
-    },
-    "Get Active Rules": {
-      "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]]
-    },
-    "Split Rules": {
-      "main": [[{ "node": "Build FB Batch", "type": "main", "index": 0 }]]
-    },
-    "Build FB Batch": {
-      "main": [[{ "node": "Has Data?", "type": "main", "index": 0 }]]
-    },
-    "Has Data?": {
-      "main": [
-        [{ "node": "FB Batch API", "type": "main", "index": 0 }],
-        []
-      ]
-    },
-    "FB Batch API": {
-      "main": [[{ "node": "Evaluate Rules", "type": "main", "index": 0 }]]
-    },
-    "Evaluate Rules": {
-      "main": [[{ "node": "Has Trigger?", "type": "main", "index": 0 }]]
-    },
-    "Has Trigger?": {
-      "main": [
-        [{ "node": "Check Exemption", "type": "main", "index": 0 }],
-        []
-      ]
-    },
-    "Check Exemption": {
-      "main": [[{ "node": "Not Exempt?", "type": "main", "index": 0 }]]
-    },
-    "Not Exempt?": {
-      "main": [
-        [{ "node": "Is Dry Run?", "type": "main", "index": 0 }],
-        []
-      ]
-    },
+    "Every 2 Minutes": { "main": [[{ "node": "Get Active Rules", "type": "main", "index": 0 }]] },
+    "Get Active Rules": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] },
+    "Split Rules": { "main": [[{ "node": "Build FB Batch", "type": "main", "index": 0 }]] },
+    "Build FB Batch": { "main": [[{ "node": "Has Data?", "type": "main", "index": 0 }]] },
+    "Has Data?": { "main": [[{ "node": "FB Batch API", "type": "main", "index": 0 }], []] },
+    "FB Batch API": { "main": [[{ "node": "Save Snapshots", "type": "main", "index": 0 }]] },
+    "Save Snapshots": { "main": [[{ "node": "Compute Burst", "type": "main", "index": 0 }]] },
+    "Compute Burst": { "main": [[{ "node": "Evaluate Rules", "type": "main", "index": 0 }]] },
+    "Evaluate Rules": { "main": [[{ "node": "Has Trigger?", "type": "main", "index": 0 }]] },
+    "Has Trigger?": { "main": [[{ "node": "Check Pause Pending?", "type": "main", "index": 0 }], []] },
+    "Check Pause Pending?": { "main": [[{ "node": "Not Pending?", "type": "main", "index": 0 }]] },
+    "Not Pending?": { "main": [[{ "node": "Check Exemption", "type": "main", "index": 0 }], []] },
+    "Check Exemption": { "main": [[{ "node": "Not Exempt?", "type": "main", "index": 0 }]] },
+    "Not Exempt?": { "main": [[{ "node": "Is Dry Run?", "type": "main", "index": 0 }], []] },
     "Is Dry Run?": {
       "main": [
-        [{ "node": "Build FB Action", "type": "main", "index": 0 }],
+        [{ "node": "Check Learning Phase", "type": "main", "index": 0 }],
         [{ "node": "Log Dry Run", "type": "main", "index": 0 }]
       ]
     },
-    "Build FB Action": {
-      "main": [[{ "node": "Call FB API", "type": "main", "index": 0 }]]
+    "Check Learning Phase": { "main": [[{ "node": "Not In Learning?", "type": "main", "index": 0 }]] },
+    "Not In Learning?": { "main": [[{ "node": "Build FB Action", "type": "main", "index": 0 }], []] },
+    "Build FB Action": { "main": [[{ "node": "Is Scale Budget?", "type": "main", "index": 0 }]] },
+    "Is Scale Budget?": {
+      "main": [
+        [{ "node": "Fetch Current Budget", "type": "main", "index": 0 }],
+        [{ "node": "Call FB API", "type": "main", "index": 0 }]
+      ]
     },
-    "Call FB API": {
-      "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]]
-    },
-    "Telegram Alert": {
-      "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]]
-    },
-    "Log Action": {
-      "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]]
-    }
+    "Fetch Current Budget": { "main": [[{ "node": "Compute Scale Budget", "type": "main", "index": 0 }]] },
+    "Compute Scale Budget": { "main": [[{ "node": "Call FB API Scale", "type": "main", "index": 0 }]] },
+    "Call FB API": { "main": [[{ "node": "Set Pause Pending", "type": "main", "index": 0 }]] },
+    "Set Pause Pending": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
+    "Call FB API Scale": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
+    "Telegram Alert": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
+    "Email Alert": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
+    "Log Action": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": ""
-  },
-  "meta": {
-    "templateCredsSetupCompleted": true
-  }
+  "settings": { "executionOrder": "v1", "errorWorkflow": "" },
+  "meta": { "templateCredsSetupCompleted": true }
 }
