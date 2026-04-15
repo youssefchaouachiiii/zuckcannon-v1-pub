@@ -3080,7 +3080,10 @@
         <div id="re-tab-coverage" class="re-tab-content" style="display:none;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="margin:0;">Coverage</h3>
-            <button onclick="loadCoverage()" class="btn-secondary">Refresh</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="coverage-vertical-select" style="padding:6px 8px;font-size:13px;"><option value="">Assign to vertical...</option></select>
+              <button onclick="loadCoverage()" class="btn-secondary">Refresh</button>
+            </div>
           </div>
           <p style="color:#666;font-size:13px;margin-bottom:16px;">Campaigns not fully covered by rules or schedules.</p>
           <table style="width:100%;border-collapse:collapse;font-size:13px;">

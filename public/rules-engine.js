@@ -314,8 +314,10 @@ async function loadVerticals() {
     const res = await fetch('/api/rules-engine/ui/verticals');
     if (!res.ok) throw new Error('Server error');
     const verticals = await res.json();
-    const sel = document.getElementById('bulk-vertical-select');
-    sel.innerHTML = '<option value="">Select vertical</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
+    const options = '<option value="">Select vertical</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
+    document.getElementById('bulk-vertical-select').innerHTML = options;
+    const covSel = document.getElementById('coverage-vertical-select');
+    if (covSel) covSel.innerHTML = '<option value="">Assign to vertical...</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
     if (verticals.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 8px;color:#888;">No verticals yet.</td></tr>';
       return;
@@ -549,8 +551,8 @@ function initRulesEnginePanel() {
   // Event delegation for coverage quick-assign
   document.getElementById('coverage-body').addEventListener('click', async (e) => {
     if (e.target.classList.contains('quick-assign-btn')) {
-      const vertical = document.getElementById('bulk-vertical-select')?.value;
-      if (!vertical) { if (typeof showError === 'function') showError('Go to Verticals tab first and create a vertical.'); return; }
+      const vertical = document.getElementById('coverage-vertical-select')?.value;
+      if (!vertical) { if (typeof showError === 'function') showError('Select a vertical from the dropdown above first.'); return; }
       const res = await fetch('/api/rules-engine/ui/campaigns/labels/bulk', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pattern: e.target.dataset.campId, label_type: 'vertical', label_value: vertical }),
