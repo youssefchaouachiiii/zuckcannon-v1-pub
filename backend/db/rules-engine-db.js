@@ -290,10 +290,11 @@ export const RulesEngineDB = {
        data.action_taken, data.trigger_data_json, data.is_dry_run ?? 0]
     );
   },
-  async getLogs({ date, rule_id, limit = 200 } = {}) {
+  async getLogs({ date_from, date_to, rule_id, limit = 500 } = {}) {
     let sql = 'SELECT * FROM rule_logs WHERE 1=1';
     const params = [];
-    if (date) { sql += ' AND DATE(created_at) = ?'; params.push(date); }
+    if (date_from) { sql += ' AND DATE(created_at) >= ?'; params.push(date_from); }
+    if (date_to) { sql += ' AND DATE(created_at) <= ?'; params.push(date_to); }
     if (rule_id) { sql += ' AND rule_id = ?'; params.push(rule_id); }
     sql += ' ORDER BY created_at DESC LIMIT ?';
     params.push(limit);

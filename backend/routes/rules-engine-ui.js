@@ -166,6 +166,14 @@ rulesEngineUiRouter.delete('/verticals/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// List cached campaigns (for dropdowns)
+rulesEngineUiRouter.get('/campaigns/cached', async (req, res) => {
+  try {
+    const campaigns = await FacebookCacheDB.getCampaigns();
+    res.json(campaigns.map(c => ({ id: c.id, name: c.name, account_id: c.account_id })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Bulk assign campaigns to vertical/tag by name pattern
 rulesEngineUiRouter.post('/campaigns/labels/bulk', async (req, res) => {
   try {
@@ -184,9 +192,10 @@ rulesEngineUiRouter.post('/campaigns/labels/bulk', async (req, res) => {
 rulesEngineUiRouter.get('/logs', async (req, res) => {
   try {
     const logs = await RulesEngineDB.getLogs({
-      date: req.query.date,
+      date_from: req.query.date_from,
+      date_to: req.query.date_to,
       rule_id: req.query.rule_id ? parseInt(req.query.rule_id) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit) : 200,
+      limit: req.query.limit ? parseInt(req.query.limit) : 500,
     });
     res.json(logs);
   } catch (err) { res.status(500).json({ error: err.message }); }

@@ -88,7 +88,9 @@ function switchReTab(tabName) {
   else if (tabName === 'verticals') loadVerticals();
   else if (tabName === 'coverage') loadVerticals().then(loadCoverage);
   else if (tabName === 'activity-log') {
-    document.getElementById('log-date-filter').value = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('log-date-from').value = today;
+    document.getElementById('log-date-to').value = today;
     loadLogs();
   }
   else if (tabName === 'tags') loadTags();
@@ -435,10 +437,12 @@ async function loadLogs() {
   const tbody = document.getElementById('logs-body');
   tbody.innerHTML = '<tr><td colspan="6" style="padding:12px 8px;color:#888;">Loading...</td></tr>';
   try {
-    const date = document.getElementById('log-date-filter').value;
+    const dateFrom = document.getElementById('log-date-from').value;
+    const dateTo = document.getElementById('log-date-to').value;
     const dryRunOnly = document.getElementById('log-dryrun-filter').checked;
-    let url = '/api/rules-engine/ui/logs?limit=200';
-    if (date) url += `&date=${date}`;
+    let url = '/api/rules-engine/ui/logs?limit=500';
+    if (dateFrom) url += `&date_from=${dateFrom}`;
+    if (dateTo) url += `&date_to=${dateTo}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Server error');
     let logs = await res.json();
@@ -610,8 +614,20 @@ window.saveRule = saveRule;
 window.closeRuleEditor = closeRuleEditor;
 // ── Tags ──────────────────────────────────────────────────────────────
 async function loadTags() {
-  const res = await fetch('/api/rules-engine/ui/tags');
-  const tags = res.ok ? await res.json() : [];
+  const [tagsRes, campsRes] = await Promise.all([
+    fetch('/api/rules-engine/ui/tags'),
+    fetch('/api/rules-engine/ui/campaigns/cached'),
+  ]);
+  const tags = tagsRes.ok ? await tagsRes.json() : [];
+  const camps = campsRes.ok ? await campsRes.json() : [];
+
+  // Populate campaign dropdown
+  const sel = document.getElementById('tag-campaign-select');
+  const campMap = {};
+  camps.forEach(c => { campMap[c.id] = c.name; });
+  sel.innerHTML = '<option value="">Select campaign...</option>' +
+    camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+
   const tbody = document.getElementById('tags-body');
   if (!tags.length) {
     tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 8px;color:#888;">No tags yet.</td></tr>';
@@ -619,7 +635,7 @@ async function loadTags() {
   }
   tbody.innerHTML = tags.map(t => `
     <tr>
-      <td style="padding:8px;">${escapeHtml(t.campaign_id)}</td>
+      <td style="padding:8px;">${escapeHtml(campMap[t.campaign_id] || t.campaign_id)}<br><span style="color:#aaa;font-size:11px;">${escapeHtml(t.campaign_id)}</span></td>
       <td style="padding:8px;"><span style="background:#e8f4fd;padding:2px 8px;border-radius:12px;font-size:12px;">${escapeHtml(t.tag)}</span></td>
       <td style="padding:8px;"><button class="btn-danger btn-sm" data-action="remove-tag" data-cid="${escapeHtml(t.campaign_id)}" data-tag="${escapeHtml(t.tag)}">Remove</button></td>
     </tr>
@@ -627,7 +643,7 @@ async function loadTags() {
 }
 
 async function addTag() {
-  const campaignId = document.getElementById('tag-campaign-id').value.trim();
+  const campaignId = document.getElementById('tag-campaign-select').value;
   const tag = document.getElementById('tag-value').value.trim();
   if (!campaignId || !tag) return;
   const res = await fetch('/api/rules-engine/ui/tags', {
@@ -636,7 +652,7 @@ async function addTag() {
     body: JSON.stringify({ campaign_id: campaignId, tag }),
   });
   if (!res.ok) { window.showError?.('Failed to add tag'); return; }
-  document.getElementById('tag-campaign-id').value = '';
+  document.getElementById('tag-campaign-select').value = '';
   document.getElementById('tag-value').value = '';
   loadTags();
 }

@@ -3099,8 +3099,9 @@
         <!-- ACTIVITY LOG TAB -->
         <div id="re-tab-activity-log" class="re-tab-content" style="display:none;">
           <h3 style="margin:0 0 16px 0;">Activity Log</h3>
-          <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
-            <input type="date" id="log-date-filter" style="padding:6px 8px;" />
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+            <label style="font-size:13px;">From <input type="date" id="log-date-from" style="padding:6px 8px;margin-left:4px;" /></label>
+            <label style="font-size:13px;">To <input type="date" id="log-date-to" style="padding:6px 8px;margin-left:4px;" /></label>
             <label style="font-size:13px;"><input type="checkbox" id="log-dryrun-filter" style="margin-right:4px;" /> Dry Run only</label>
             <button onclick="loadLogs()" class="btn-secondary">Filter</button>
           </div>
@@ -3121,15 +3122,15 @@
             <h3 style="margin:0;">Tags</h3>
           </div>
           <p style="font-size:13px;color:#666;margin-bottom:16px;">Assign tags to campaigns. Rules assigned to a tag apply to all tagged campaigns.</p>
-          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">
-            <input type="text" id="tag-campaign-id" placeholder="Campaign ID" style="padding:6px 8px;width:200px;" />
+          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
+            <select id="tag-campaign-select" style="padding:6px 8px;min-width:260px;max-width:400px;"><option value="">Select campaign...</option></select>
             <input type="text" id="tag-value" placeholder="Tag name (e.g. high-spend)" style="padding:6px 8px;width:200px;" />
             <button onclick="addTag()" class="btn-primary">Add Tag</button>
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead>
               <tr style="border-bottom:2px solid #eee;text-align:left;">
-                <th style="padding:8px;">Campaign ID</th>
+                <th style="padding:8px;">Campaign</th>
                 <th style="padding:8px;">Tag</th>
                 <th style="padding:8px;"></th>
               </tr>
