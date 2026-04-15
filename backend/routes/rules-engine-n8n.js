@@ -69,6 +69,16 @@ rulesEngineN8nRouter.post('/log', async (req, res) => {
   }
 });
 
+rulesEngineN8nRouter.get('/exemptions/check', async (req, res) => {
+  try {
+    const { rule_id, entity_id } = req.query;
+    const exempt = await RulesEngineDB.isExempt(parseInt(rule_id), entity_id);
+    res.json({ exempt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 rulesEngineN8nRouter.post('/exemptions', async (req, res) => {
   const { rule_id, entity_id, type, cooldown_hours } = req.body;
   const hours = cooldown_hours || 4;
