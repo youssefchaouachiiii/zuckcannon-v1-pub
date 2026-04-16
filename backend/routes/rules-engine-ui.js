@@ -31,6 +31,7 @@ rulesEngineUiRouter.post('/rules', async (req, res) => {
       is_active: req.body.is_active ?? 1,
       is_dry_run: req.body.is_dry_run ?? 0,
       combinator: req.body.combinator || 'AND',
+      alert_level: req.body.alert_level || 'warning',
     });
     res.status(201).json(rule);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -48,6 +49,7 @@ rulesEngineUiRouter.put('/rules/:id', async (req, res) => {
       is_active: req.body.is_active ?? 1,
       is_dry_run: req.body.is_dry_run ?? 0,
       combinator: req.body.combinator || 'AND',
+      alert_level: req.body.alert_level || 'warning',
     });
     res.json(rule);
   } catch (err) { res.status(500).json({ error: err.message }); }
