@@ -127,11 +127,35 @@ rulesEngineUiRouter.delete('/schedules/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+rulesEngineUiRouter.get('/schedules/:id/campaigns', async (req, res) => {
+  try {
+    const rows = await RulesEngineDB.getCampaignsForSchedule(parseInt(req.params.id));
+    const campaignIds = new Set(rows.map(r => r.campaign_id));
+    const allCached = await FacebookCacheDB.getCampaigns();
+    const campaigns = allCached
+      .filter(c => campaignIds.has(c.id))
+      .map(c => ({ id: c.id, name: c.name, account_id: c.account_id }));
+    const foundIds = new Set(campaigns.map(c => c.id));
+    for (const id of campaignIds) {
+      if (!foundIds.has(id)) campaigns.push({ id, name: null, account_id: null });
+    }
+    res.json({ count: campaigns.length, campaigns });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.post('/schedules/:id/assign', async (req, res) => {
   try {
     for (const cid of req.body.campaign_ids) {
       await RulesEngineDB.addScheduleAssignment(parseInt(req.params.id), cid);
     }
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+rulesEngineUiRouter.delete('/schedules/:id/assign', async (req, res) => {
+  try {
+    const { campaign_id } = req.body;
+    await RulesEngineDB.removeScheduleAssignment(parseInt(req.params.id), campaign_id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

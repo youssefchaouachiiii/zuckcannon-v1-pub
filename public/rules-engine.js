@@ -373,6 +373,9 @@ function confirmDeleteRule(id, name) {
 }
 
 // ── Schedules ─────────────────────────────────────────────────────────
+let editingScheduleId = null;
+let assigningScheduleId = null;
+
 async function loadSchedules() {
   const tbody = document.getElementById('schedules-body');
   try {
@@ -380,23 +383,45 @@ async function loadSchedules() {
     if (!res.ok) throw new Error('Server error');
     const schedules = await res.json();
     if (schedules.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:12px 8px;color:#888;">No schedules yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:12px 8px;color:#888;">No schedules yet.</td></tr>';
       return;
     }
-    tbody.innerHTML = schedules.map(s => {
+    // Fetch campaign counts in parallel
+    const counts = await Promise.all(schedules.map(s =>
+      fetch(`/api/rules-engine/ui/schedules/${s.id}/campaigns`).then(r => r.json()).then(d => d.count || 0).catch(() => 0)
+    ));
+    tbody.innerHTML = schedules.map((s, i) => {
       const days = JSON.parse(s.days_json).map(d => DAY_NAMES[d]).join(', ');
       return `<tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:8px;">${escapeHtml(s.name)}</td>
         <td style="padding:8px;">${escapeHtml(days)}</td>
         <td style="padding:8px;">${escapeHtml(s.start_time)} – ${escapeHtml(s.end_time)} ET</td>
-        <td style="padding:8px;">
+        <td style="padding:8px;"><button class="btn-secondary btn-sm sched-assign-btn" data-sched-id="${s.id}" data-sched-name="${escapeHtml(s.name)}">${counts[i]} campaign(s)</button></td>
+        <td style="padding:8px;white-space:nowrap;">
+          <button class="btn-sm edit-schedule-btn" data-sched-id="${s.id}">Edit</button>
           <button class="btn-danger btn-sm delete-schedule-btn" data-sched-id="${s.id}" data-sched-name="${escapeHtml(s.name)}">Delete</button>
         </td>
       </tr>`;
     }).join('');
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px 8px;color:#dc3545;">Failed to load.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:12px 8px;color:#dc3545;">Failed to load.</td></tr>';
   }
+}
+
+async function editSchedule(id) {
+  const res = await fetch('/api/rules-engine/ui/schedules');
+  if (!res.ok) return;
+  const schedules = await res.json();
+  const s = schedules.find(x => x.id === id);
+  if (!s) return;
+  editingScheduleId = id;
+  document.getElementById('schedule-editor-title').textContent = 'Edit Schedule';
+  document.getElementById('schedule-name').value = s.name;
+  const days = JSON.parse(s.days_json);
+  document.querySelectorAll('.day-picker input').forEach(el => { el.checked = days.includes(parseInt(el.value)); });
+  document.getElementById('schedule-start').value = s.start_time;
+  document.getElementById('schedule-end').value = s.end_time;
+  document.getElementById('schedule-editor').style.display = 'block';
 }
 
 async function saveSchedule() {
@@ -407,8 +432,10 @@ async function saveSchedule() {
     end_time: document.getElementById('schedule-end').value,
     timezone: 'America/New_York', is_active: 1,
   };
-  const res = await fetch('/api/rules-engine/ui/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) { if (typeof showError === 'function') showError('Failed to save schedule. Try again.'); return; }
+  const url = editingScheduleId ? `/api/rules-engine/ui/schedules/${editingScheduleId}` : '/api/rules-engine/ui/schedules';
+  const method = editingScheduleId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) { window.showError?.('Failed to save schedule.'); return; }
   closeScheduleEditor();
   await loadSchedules();
 }
@@ -416,12 +443,72 @@ async function saveSchedule() {
 function confirmDeleteSchedule(id, name) {
   showConfirmDelete(`Delete schedule "${name}"? This cannot be undone.`, async () => {
     const res = await fetch(`/api/rules-engine/ui/schedules/${id}`, { method: 'DELETE' });
-    if (!res.ok) { if (typeof showError === 'function') showError('Failed to delete schedule. Try again.'); return; }
+    if (!res.ok) { window.showError?.('Failed to delete schedule.'); return; }
     await loadSchedules();
   });
 }
 
-function closeScheduleEditor() { document.getElementById('schedule-editor').style.display = 'none'; }
+function closeScheduleEditor() {
+  document.getElementById('schedule-editor').style.display = 'none';
+  document.getElementById('schedule-editor-title').textContent = 'New Schedule';
+  editingScheduleId = null;
+}
+
+async function openScheduleAssign(id, name) {
+  assigningScheduleId = id;
+  document.getElementById('schedule-assign-name').textContent = name;
+  document.getElementById('schedule-assign-panel').style.display = 'block';
+  // Load campaign dropdown
+  const campsRes = await fetch('/api/rules-engine/ui/campaigns/cached');
+  const camps = campsRes.ok ? await campsRes.json() : [];
+  const sel = document.getElementById('schedule-campaign-select');
+  sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  makeTomSelect('schedule-campaign-select', 'Search campaign...');
+  await loadScheduleCampaigns(id);
+}
+
+async function loadScheduleCampaigns(schedId) {
+  const el = document.getElementById('schedule-campaigns-list');
+  el.textContent = 'Loading...';
+  const res = await fetch(`/api/rules-engine/ui/schedules/${schedId}/campaigns`);
+  const data = res.ok ? await res.json() : { campaigns: [] };
+  if (!data.campaigns.length) { el.innerHTML = '<em style="color:#aaa;">No campaigns assigned.</em>'; return; }
+  el.innerHTML = data.campaigns.map(c => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;">
+      <span>${escapeHtml(c.name || c.id)}<span style="color:#aaa;font-size:11px;margin-left:6px;">${c.name ? escapeHtml(c.id) : '(not in cache)'}</span></span>
+      <button class="btn-danger btn-sm" onclick="unassignCampaignFromSchedule('${escapeHtml(c.id)}')">Remove</button>
+    </div>
+  `).join('');
+}
+
+async function assignCampaignToSchedule() {
+  if (!assigningScheduleId) return;
+  const cid = document.getElementById('schedule-campaign-select').value;
+  if (!cid) { window.showError?.('Select a campaign first.'); return; }
+  const res = await fetch(`/api/rules-engine/ui/schedules/${assigningScheduleId}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ campaign_ids: [cid] }),
+  });
+  if (!res.ok) { window.showError?.('Failed to assign.'); return; }
+  await loadScheduleCampaigns(assigningScheduleId);
+  await loadSchedules();
+}
+
+async function unassignCampaignFromSchedule(campaignId) {
+  if (!assigningScheduleId) return;
+  const res = await fetch(`/api/rules-engine/ui/schedules/${assigningScheduleId}/assign`, {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ campaign_id: campaignId }),
+  });
+  if (!res.ok) { window.showError?.('Failed to remove.'); return; }
+  await loadScheduleCampaigns(assigningScheduleId);
+  await loadSchedules();
+}
+
+function closeScheduleAssign() {
+  document.getElementById('schedule-assign-panel').style.display = 'none';
+  assigningScheduleId = null;
+}
 
 // ── Verticals ─────────────────────────────────────────────────────────
 async function loadVerticals() {
@@ -628,7 +715,13 @@ function initRulesEnginePanel() {
 
   // New schedule button
   document.getElementById('new-schedule-btn').addEventListener('click', () => {
+    editingScheduleId = null;
     document.getElementById('schedule-editor').style.display = 'block';
+    document.getElementById('schedule-editor-title').textContent = 'New Schedule';
+    document.getElementById('schedule-name').value = '';
+    document.getElementById('schedule-start').value = '';
+    document.getElementById('schedule-end').value = '';
+    document.querySelectorAll('.day-picker input').forEach(cb => cb.checked = false);
   });
 
   // Event delegation for rules table (edit + delete)
@@ -648,8 +741,14 @@ function initRulesEnginePanel() {
     }
   });
 
-  // Event delegation for schedules delete
+  // Event delegation for schedules (edit + assign + delete)
   document.getElementById('schedules-body').addEventListener('click', (e) => {
+    if (e.target.classList.contains('edit-schedule-btn')) {
+      editSchedule(parseInt(e.target.dataset.schedId));
+    }
+    if (e.target.classList.contains('sched-assign-btn')) {
+      openScheduleAssign(parseInt(e.target.dataset.schedId), e.target.dataset.schedName);
+    }
     if (e.target.classList.contains('delete-schedule-btn')) {
       confirmDeleteSchedule(parseInt(e.target.dataset.schedId), e.target.dataset.schedName);
     }
@@ -796,6 +895,11 @@ window.addTag = addTag;
 window.addRuleAssignment = addRuleAssignment;
 window.removeRuleAssignment = removeRuleAssignment;
 window.editRule = editRule;
+window.editSchedule = editSchedule;
+window.openScheduleAssign = openScheduleAssign;
+window.assignCampaignToSchedule = assignCampaignToSchedule;
+window.unassignCampaignFromSchedule = unassignCampaignFromSchedule;
+window.closeScheduleAssign = closeScheduleAssign;
 window.saveSchedule = saveSchedule;
 window.closeScheduleEditor = closeScheduleEditor;
 window.saveVertical = saveVertical;

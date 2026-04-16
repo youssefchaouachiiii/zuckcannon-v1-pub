@@ -3053,7 +3053,7 @@
             <button id="new-schedule-btn" class="btn-primary">+ New Schedule</button>
           </div>
           <div id="schedule-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
-            <h4 style="margin:0 0 12px 0;">New Schedule</h4>
+            <h4 id="schedule-editor-title" style="margin:0 0 12px 0;">New Schedule</h4>
             <div style="margin-bottom:10px;">
               <label style="display:block;font-size:13px;margin-bottom:4px;">Name</label>
               <input type="text" id="schedule-name" placeholder="e.g. Business Hours" style="width:300px;padding:6px 8px;" />
@@ -3085,11 +3085,23 @@
             <thead>
               <tr style="border-bottom:2px solid #eee;text-align:left;">
                 <th style="padding:8px;">Name</th><th style="padding:8px;">Days</th>
-                <th style="padding:8px;">Hours (ET)</th><th style="padding:8px;"></th>
+                <th style="padding:8px;">Hours (ET)</th><th style="padding:8px;">Campaigns</th><th style="padding:8px;"></th>
               </tr>
             </thead>
-            <tbody id="schedules-body"><tr><td colspan="4" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+            <tbody id="schedules-body"><tr><td colspan="5" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
           </table>
+          <!-- Schedule campaign assignment (shown when editing) -->
+          <div id="schedule-assign-panel" style="display:none;background:#f0f7ff;border:1px solid #d0e3f7;border-radius:6px;padding:16px;margin-top:16px;">
+            <h4 style="margin:0 0 12px 0;">Assign Campaigns to: <span id="schedule-assign-name"></span></h4>
+            <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+              <select id="schedule-campaign-select" style="flex:1;padding:6px 8px;font-size:13px;">
+                <option value="">Select campaign...</option>
+              </select>
+              <button onclick="assignCampaignToSchedule()" class="btn-primary btn-sm">Assign</button>
+            </div>
+            <div id="schedule-campaigns-list" style="font-size:13px;"></div>
+            <button onclick="closeScheduleAssign()" class="btn-secondary btn-sm" style="margin-top:10px;">Close</button>
+          </div>
         </div>
         <!-- VERTICALS TAB -->
         <div id="re-tab-verticals" class="re-tab-content" style="display:none;">
