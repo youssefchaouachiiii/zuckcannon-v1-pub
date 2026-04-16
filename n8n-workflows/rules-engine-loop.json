@@ -78,11 +78,21 @@
       }
     },
     {
+      "id": "node-prepare-snapshots",
+      "name": "Prepare Snapshots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 200],
+      "parameters": {
+        "jsCode": "const { entities, rule } = $('Build FB Batch').item.json;\nconst snapshots = entities.map(e => ({ entity_id: e.entityId, entity_type: rule.scope, spend: 0 }));\nreturn [{ json: { snapshots, _passthrough: $input.item.json } }];"
+      }
+    },
+    {
       "id": "node-save-snapshots",
       "name": "Save Snapshots",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 200],
+      "position": [1760, 200],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/snapshots",
@@ -90,8 +100,19 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify($('Build FB Batch').item.json.entities.map(e => ({ entity_id: e.entityId, entity_type: $('Build FB Batch').item.json.rule.scope, spend: 0 }))) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.snapshots }}",
         "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-restore-after-snapshots",
+      "name": "Restore After Snapshots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1960, 200],
+      "parameters": {
+        "jsCode": "const d = $('Prepare Snapshots').item.json._passthrough;\nreturn [{ json: d }];"
       }
     },
     {
@@ -99,7 +120,7 @@
       "name": "Compute Burst",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1780, 200],
+      "position": [2140, 200],
       "parameters": {
         "jsCode": "const batchData = $input.item.json;\nreturn [{ json: { ...batchData, _burstReady: true } }];"
       }
@@ -663,8 +684,10 @@
     "Split Rules": { "main": [[], [{ "node": "Build FB Batch", "type": "main", "index": 0 }]] },
     "Build FB Batch": { "main": [[{ "node": "Has Data?", "type": "main", "index": 0 }]] },
     "Has Data?": { "main": [[{ "node": "FB Batch API", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
-    "FB Batch API": { "main": [[{ "node": "Save Snapshots", "type": "main", "index": 0 }]] },
-    "Save Snapshots": { "main": [[{ "node": "Compute Burst", "type": "main", "index": 0 }]] },
+    "FB Batch API": { "main": [[{ "node": "Prepare Snapshots", "type": "main", "index": 0 }]] },
+    "Prepare Snapshots": { "main": [[{ "node": "Save Snapshots", "type": "main", "index": 0 }]] },
+    "Save Snapshots": { "main": [[{ "node": "Restore After Snapshots", "type": "main", "index": 0 }]] },
+    "Restore After Snapshots": { "main": [[{ "node": "Compute Burst", "type": "main", "index": 0 }]] },
     "Compute Burst": { "main": [[{ "node": "Evaluate Rules", "type": "main", "index": 0 }]] },
     "Evaluate Rules": { "main": [[{ "node": "Has Trigger?", "type": "main", "index": 0 }]] },
     "Has Trigger?": { "main": [[{ "node": "Check Pause Pending?", "type": "main", "index": 0 }], [{ "node": "Split Rules", "type": "main", "index": 0 }]] },
