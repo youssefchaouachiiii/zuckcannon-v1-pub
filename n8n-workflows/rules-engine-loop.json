@@ -465,17 +465,28 @@
       }
     },
     {
+      "id": "node-prepare-telegram",
+      "name": "Prepare Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5560, 0],
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst text = '\ud83d\uded1 *' + d.rule.name + '*\\n`' + (d.entityName || d.entityId) + '`  ' + d.rule.action.toUpperCase() + 'D\\nSpend: $' + d.metrics.spend_today.toFixed(2) + '\\n' + new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ET';\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '\u2705 Re-enable', callback_data: 'reenable:' + d.rule.id + ':' + d.entityId }, { text: '\ud83d\udca4 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
+      }
+    },
+    {
       "id": "node-telegram-alert",
       "name": "Telegram Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [5560, 0],
+      "position": [5760, 0],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '\\ud83d\\uded1 *' + $json.rule.name + '*\\n`' + ($json.entityName || $json.entityId) + '`  ' + $json.rule.action.toUpperCase() + 'D\\nSpend: $' + $json.metrics.spend_today.toFixed(2) + '\\n' + new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ET', parse_mode: 'Markdown', reply_markup: JSON.stringify({inline_keyboard: [[{text: '\\u2705 Re-enable', callback_data: 'reenable:' + $json.rule.id + ':' + $json.entityId},{text: '\\ud83d\\udca4 Snooze 6h', callback_data: 'snooze:' + $json.rule.id + ':' + $json.entityId}]]}) }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
         "options": { "onError": "continueRegularOutput" }
       }
     },
@@ -603,12 +614,13 @@
     "Restore Budget": { "main": [[{ "node": "Compute Scale Budget", "type": "main", "index": 0 }]] },
     "Compute Scale Budget": { "main": [[{ "node": "Call FB API Scale", "type": "main", "index": 0 }]] },
     "Call FB API Scale": { "main": [[{ "node": "Restore After Scale", "type": "main", "index": 0 }]] },
-    "Restore After Scale": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
+    "Restore After Scale": { "main": [[{ "node": "Prepare Telegram", "type": "main", "index": 0 }]] },
     "Call FB API": { "main": [[{ "node": "Restore After FB API", "type": "main", "index": 0 }]] },
     "Restore After FB API": { "main": [[{ "node": "Prepare Pause Pending", "type": "main", "index": 0 }]] },
     "Prepare Pause Pending": { "main": [[{ "node": "Set Pause Pending", "type": "main", "index": 0 }]] },
     "Set Pause Pending": { "main": [[{ "node": "Restore After Set Pause", "type": "main", "index": 0 }]] },
-    "Restore After Set Pause": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
+    "Restore After Set Pause": { "main": [[{ "node": "Prepare Telegram", "type": "main", "index": 0 }]] },
+    "Prepare Telegram": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
     "Telegram Alert": { "main": [[{ "node": "Restore Before Email", "type": "main", "index": 0 }]] },
     "Restore Before Email": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
     "Email Alert": { "main": [[{ "node": "Prepare Action Log", "type": "main", "index": 0 }]] },
