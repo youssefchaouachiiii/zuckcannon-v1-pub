@@ -103,7 +103,7 @@
       "position": [1560, 100],
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
+        "url": "=https://graph.facebook.com/v25.0/{{ $json.entityId }}",
         "sendBody": true,
         "contentType": "form-urlencoded",
         "bodyParameters": {

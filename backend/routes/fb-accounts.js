@@ -24,7 +24,7 @@ fbAccountsRouter.post('/tokens/verify', async (req, res) => {
 
   try {
     const meResponse = await axios.get(
-      `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${access_token}`
+      `https://graph.facebook.com/v25.0/me?fields=id,name&access_token=${access_token}`
     );
     const { id: businessManagerId, name: businessName } = meResponse.data;
 
@@ -32,7 +32,7 @@ fbAccountsRouter.post('/tokens/verify', async (req, res) => {
     let expiresAt = null;
     try {
       const debugResp = await axios.get(
-        `https://graph.facebook.com/v21.0/debug_token?input_token=${access_token}&access_token=${access_token}`
+        `https://graph.facebook.com/v25.0/debug_token?input_token=${access_token}&access_token=${access_token}`
       );
       const expiresAtUnix = debugResp.data?.data?.expires_at;
       if (expiresAtUnix && expiresAtUnix > 0) {
