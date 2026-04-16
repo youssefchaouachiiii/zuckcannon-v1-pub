@@ -255,7 +255,8 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify($json) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
         "options": {}
       }
     },
@@ -517,7 +518,8 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify($json) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
         "options": {}
       }
     },
