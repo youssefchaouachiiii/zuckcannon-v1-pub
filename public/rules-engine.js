@@ -216,6 +216,7 @@ async function saveRule() {
       : null,
     cooldown_hours: parseInt(document.getElementById('rule-cooldown').value),
     is_dry_run: document.getElementById('rule-dry-run').checked ? 1 : 0,
+    alert_level: document.getElementById('rule-alert-level').value,
     is_active: 1,
   };
   const url = editingRuleId ? `/api/rules-engine/ui/rules/${editingRuleId}` : '/api/rules-engine/ui/rules';
@@ -235,6 +236,7 @@ async function editRule(id) {
   document.getElementById('rule-action').value = rule.action;
   document.getElementById('rule-cooldown').value = rule.cooldown_hours;
   document.getElementById('rule-dry-run').checked = !!rule.is_dry_run;
+  document.getElementById('rule-alert-level').value = rule.alert_level || 'warning';
   document.getElementById('conditions-builder').innerHTML = '';
   JSON.parse(rule.conditions_json).forEach(c => addConditionRow(c));
   const combinator = rule.combinator || 'AND';

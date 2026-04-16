@@ -2984,6 +2984,14 @@
               </div>
             </div>
             <div style="margin-bottom:12px;">
+              <label style="display:block;font-size:13px;margin-bottom:4px;">Alert Level</label>
+              <select id="rule-alert-level" style="width:100%;padding:6px 8px;font-size:13px;">
+                <option value="info">Info — Telegram only</option>
+                <option value="warning" selected>Warning — Telegram always, Email optional</option>
+                <option value="critical">Critical — Telegram + Email always</option>
+              </select>
+            </div>
+            <div style="margin-bottom:12px;">
               <label><input type="checkbox" id="rule-dry-run" style="margin-right:6px;" /> Dry Run (evaluate but don't act)</label>
             </div>
             <div style="display:flex;gap:8px;">

@@ -491,30 +491,39 @@
       }
     },
     {
-      "id": "node-restore-before-email",
-      "name": "Restore Before Email",
-      "type": "n8n-nodes-base.code",
+      "id": "node-is-critical",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [5760, 0],
+      "position": [5980, 0],
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: d }];"
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-critical",
+              "leftValue": "={{ $('Evaluate Rules').item.json.rule.alert_level }}",
+              "rightValue": "critical",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
       }
     },
     {
       "id": "node-email-alert",
       "name": "Email Alert",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [5960, 0],
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [6200, -100],
       "credentials": {
-        "smtp": { "id": "CONFIGURE_IN_N8N", "name": "SMTP / Gmail (configure in n8n)" }
+        "gmailOAuth2": { "id": "gBEVUYvaXvzCfV8P", "name": "info@sigmagrowthpartners.com account" }
       },
       "parameters": {
-        "fromEmail": "={{ $credentials.user }}",
-        "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
-        "subject": "=\ud83d\udea8 [Rules Engine] {{ $json.rule.name }} fired on {{ $json.entityName || $json.entityId }}",
-        "emailType": "text",
-        "message": "=Rule: {{ $json.rule.name }}\nEntity: {{ $json.entityName || $json.entityId }}\nAction: {{ $json.rule.action.toUpperCase() }}\nSpend: ${{ $json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}",
+        "sendTo": "={{ $env.ALERT_EMAIL_TO }}",
+        "subject": "=\ud83d\udea8 [Rules Engine] {{ $('Evaluate Rules').item.json.rule.name }} fired on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
+        "message": "=Rule: {{ $('Evaluate Rules').item.json.rule.name }}\nEntity: {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\nAction: {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}",
         "options": { "onError": "continueRegularOutput" }
       }
     },
@@ -621,8 +630,13 @@
     "Set Pause Pending": { "main": [[{ "node": "Restore After Set Pause", "type": "main", "index": 0 }]] },
     "Restore After Set Pause": { "main": [[{ "node": "Prepare Telegram", "type": "main", "index": 0 }]] },
     "Prepare Telegram": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
-    "Telegram Alert": { "main": [[{ "node": "Restore Before Email", "type": "main", "index": 0 }]] },
-    "Restore Before Email": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
+    "Telegram Alert": { "main": [[{ "node": "Is Critical?", "type": "main", "index": 0 }]] },
+    "Is Critical?": {
+      "main": [
+        [{ "node": "Email Alert", "type": "main", "index": 0 }],
+        [{ "node": "Prepare Action Log", "type": "main", "index": 0 }]
+      ]
+    },
     "Email Alert": { "main": [[{ "node": "Prepare Action Log", "type": "main", "index": 0 }]] },
     "Prepare Action Log": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
     "Log Action": { "main": [[{ "node": "Prepare Cooldown", "type": "main", "index": 0 }]] },

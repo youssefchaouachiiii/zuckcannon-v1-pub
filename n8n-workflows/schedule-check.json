@@ -254,7 +254,7 @@
       "main": [[{ "node": "Split Schedules", "type": "main", "index": 0 }]]
     },
     "Split Schedules": {
-      "main": [[{ "node": "Evaluate Time Window", "type": "main", "index": 0 }]]
+      "main": [[], [{ "node": "Evaluate Time Window", "type": "main", "index": 0 }]]
     },
     "Evaluate Time Window": {
       "main": [[{ "node": "Split Campaigns", "type": "main", "index": 0 }]]
