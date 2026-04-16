@@ -124,6 +124,29 @@ rulesEngineN8nRouter.get('/snapshots/:entityId', async (req, res) => {
   }
 });
 
+rulesEngineN8nRouter.post('/snapshots/burst-check', async (req, res) => {
+  try {
+    const { entity_ids, minutes = 30 } = req.body;
+    const results = {};
+    for (const entityId of (entity_ids || [])) {
+      const recentSnaps = await RulesEngineDB.getSpendSnapshots(entityId, minutes);
+      const baselineSnaps = await RulesEngineDB.getSpendSnapshots(entityId, 7 * 24 * 60);
+      const spend_recent = recentSnaps.reduce((sum, s) => sum + s.spend, 0);
+      const totalBaseline = baselineSnaps.reduce((sum, s) => sum + s.spend, 0);
+      const periods = (7 * 24 * 60) / minutes;
+      const avg_period = periods > 0 ? totalBaseline / periods : 0;
+      results[entityId] = {
+        burst_multiplier: avg_period > 0 ? spend_recent / avg_period : 0,
+        spend_recent,
+        avg_period,
+      };
+    }
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 rulesEngineN8nRouter.post('/pause-pending', async (req, res) => {
   try {
     const { rule_id, entity_id } = req.body;
