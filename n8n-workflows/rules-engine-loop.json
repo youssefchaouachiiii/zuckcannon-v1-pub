@@ -427,11 +427,21 @@
       }
     },
     {
+      "id": "node-prepare-pause-pending",
+      "name": "Prepare Pause Pending",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4980, 200],
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nreturn [{ json: { rule_id: d.rule.id, entity_id: d.entityId } }];"
+      }
+    },
+    {
       "id": "node-set-pause-pending",
       "name": "Set Pause Pending",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [4980, 200],
+      "position": [5080, 200],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending",
@@ -439,7 +449,8 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_id: $json.entityId }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
         "options": {}
       }
     },
@@ -492,7 +503,8 @@
         "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
         "subject": "=\ud83d\udea8 [Rules Engine] {{ $json.rule.name }} fired on {{ $json.entityName || $json.entityId }}",
         "emailType": "text",
-        "message": "=Rule: {{ $json.rule.name }}\nEntity: {{ $json.entityName || $json.entityId }}\nAction: {{ $json.rule.action.toUpperCase() }}\nSpend: ${{ $json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}"
+        "message": "=Rule: {{ $json.rule.name }}\nEntity: {{ $json.entityName || $json.entityId }}\nAction: {{ $json.rule.action.toUpperCase() }}\nSpend: ${{ $json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}",
+        "options": { "onError": "continueRegularOutput" }
       }
     },
     {
@@ -525,12 +537,12 @@
     },
     {
       "id": "node-restore-before-cooldown",
-      "name": "Restore Before Cooldown",
+      "name": "Prepare Cooldown",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [6560, 0],
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: d }];"
+        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: { rule_id: d.rule.id, entity_id: d.entityId, type: 'cooldown', cooldown_hours: d.rule.cooldown_hours || 4 } }];"
       }
     },
     {
@@ -546,7 +558,8 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_id: $json.entityId, type: 'cooldown', cooldown_hours: $json.rule.cooldown_hours || 4 }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
         "options": {}
       }
     }
@@ -592,15 +605,16 @@
     "Call FB API Scale": { "main": [[{ "node": "Restore After Scale", "type": "main", "index": 0 }]] },
     "Restore After Scale": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
     "Call FB API": { "main": [[{ "node": "Restore After FB API", "type": "main", "index": 0 }]] },
-    "Restore After FB API": { "main": [[{ "node": "Set Pause Pending", "type": "main", "index": 0 }]] },
+    "Restore After FB API": { "main": [[{ "node": "Prepare Pause Pending", "type": "main", "index": 0 }]] },
+    "Prepare Pause Pending": { "main": [[{ "node": "Set Pause Pending", "type": "main", "index": 0 }]] },
     "Set Pause Pending": { "main": [[{ "node": "Restore After Set Pause", "type": "main", "index": 0 }]] },
     "Restore After Set Pause": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
     "Telegram Alert": { "main": [[{ "node": "Restore Before Email", "type": "main", "index": 0 }]] },
     "Restore Before Email": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
     "Email Alert": { "main": [[{ "node": "Prepare Action Log", "type": "main", "index": 0 }]] },
     "Prepare Action Log": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
-    "Log Action": { "main": [[{ "node": "Restore Before Cooldown", "type": "main", "index": 0 }]] },
-    "Restore Before Cooldown": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] },
+    "Log Action": { "main": [[{ "node": "Prepare Cooldown", "type": "main", "index": 0 }]] },
+    "Prepare Cooldown": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] },
     "Set Cooldown": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] }
   },
   "active": false,
