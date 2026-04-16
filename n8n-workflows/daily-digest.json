@@ -19,7 +19,7 @@
       "name": "Get Today's Logs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 300],
+      "position": [460, 200],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/logs",
@@ -39,13 +39,30 @@
       }
     },
     {
+      "id": "node-get-coverage",
+      "name": "Get Coverage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 400],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/ui/coverage",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
       "id": "node-aggregate",
       "name": "Aggregate Stats",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [680, 300],
       "parameters": {
-        "jsCode": "const logs = $input.all().map(i => i.json);\n\nconst rulesFired = logs.filter(l => !l.is_dry_run).length;\nconst paused = logs.filter(l => l.action_taken === 'paused').length;\nconst scaled = logs.filter(l => l.action_taken === 'scaled').length;\nconst dryRun = logs.filter(l => l.is_dry_run).length;\nconst date = new Date().toLocaleDateString('en-US', {\n  timeZone: 'America/New_York',\n  month: 'short', day: 'numeric', year: 'numeric'\n});\n\nreturn [{ json: { date, rulesFired, paused, scaled, dryRun, total: logs.length } }];"
+        "jsCode": "const logs = $('Get Today\\'s Logs').all().map(i => i.json);\nconst coverage = $('Get Coverage').all().map(i => i.json);\n\nconst rulesFired = logs.filter(l => !l.is_dry_run).length;\nconst paused = logs.filter(l => l.action_taken === 'paused').length;\nconst scaled = logs.filter(l => l.action_taken === 'scaled').length;\nconst dryRun = logs.filter(l => l.is_dry_run).length;\nconst orphans = coverage.length;\nconst date = new Date().toLocaleDateString('en-US', {\n  timeZone: 'America/New_York',\n  month: 'long', day: 'numeric', year: 'numeric'\n});\n\nreturn [{ json: { date, rulesFired, paused, scaled, dryRun, orphans, total: logs.length } }];"
       }
     },
     {
@@ -59,29 +76,26 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\udcca *Daily Digest \\u2014 {{ $json.date }}*\\n\\nRules Fired: {{ $json.rulesFired }}\\nPaused: {{ $json.paused }}  |  Scaled: {{ $json.scaled }}\\nDry Run Only: {{ $json.dryRun }}\\n\\nSystem: \\u2705 OK\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '📊 *Daily Digest — ' + $json.date + '*\\n\\nRules Fired: ' + $json.rulesFired + '  |  Paused: ' + $json.paused + '  |  Scaled: ' + $json.scaled + '\\nOrphans: ' + $json.orphans + '  |  System: ✅ OK', parse_mode: 'Markdown' }) }}",
         "options": {}
       }
     },
     {
       "id": "node-email-digest",
       "name": "Email Digest",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
       "position": [1120, 300],
       "credentials": {
-        "smtp": {
-          "id": "CONFIGURE_IN_N8N",
-          "name": "SMTP (configure in n8n)"
-        }
+        "gmailOAuth2": { "id": "gBEVUYvaXvzCfV8P", "name": "info@sigmagrowthpartners.com account" }
       },
       "parameters": {
-        "fromEmail": "={{ $env.SMTP_USER }}",
-        "toEmail": "={{ $env.ALERT_EMAIL_TO }}",
+        "sendTo": "={{ $env.ALERT_EMAIL_TO }}",
         "subject": "=📊 Daily Digest — {{ $('Aggregate Stats').item.json.date }}",
-        "emailFormat": "html",
-        "html": "=<h2>Daily Digest — {{ $('Aggregate Stats').item.json.date }}</h2>\n<table style=\"border-collapse:collapse;font-family:sans-serif;\">\n  <tr><td style=\"padding:6px 12px;\"><b>Rules Fired</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.rulesFired }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Paused</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.paused }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Scaled</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.scaled }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Dry Run Only</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.dryRun }}</td></tr>\n  <tr><td style=\"padding:6px 12px;\"><b>Total Events</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.total }}</td></tr>\n</table>",
-        "options": { "allowUnauthorizedCerts": false }
+        "emailType": "html",
+        "message": "=<h2>📊 Daily Digest — {{ $('Aggregate Stats').item.json.date }}</h2><table style=\"border-collapse:collapse;font-family:sans-serif;\"><tr><td style=\"padding:6px 12px;\"><b>Rules Fired</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.rulesFired }}</td></tr><tr><td style=\"padding:6px 12px;\"><b>Paused</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.paused }}</td></tr><tr><td style=\"padding:6px 12px;\"><b>Scaled</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.scaled }}</td></tr><tr><td style=\"padding:6px 12px;\"><b>Dry Run Only</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.dryRun }}</td></tr><tr><td style=\"padding:6px 12px;\"><b>Orphans</b></td><td style=\"padding:6px 12px;\">{{ $('Aggregate Stats').item.json.orphans }}</td></tr><tr><td style=\"padding:6px 12px;\"><b>System</b></td><td style=\"padding:6px 12px;\">✅ OK</td></tr></table>",
+        "options": {}
       }
     },
     {
@@ -143,16 +157,23 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\u26a0\\ufe0f *Token Expiring Soon*\\nBusiness: {{ $json.business_name }}\\nExpires: {{ $json.expires_at }}\\n\\nRenew at Facebook Business Manager \\u2192 System Users\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ *Token Expiring Soon*\\nBusiness: ' + $json.business_name + '\\nExpires: ' + $json.expires_at + '\\n\\nRenew at Facebook Business Manager → System Users', parse_mode: 'Markdown' }) }}",
         "options": {}
       }
     }
   ],
   "connections": {
     "Daily 23:55 ET": {
-      "main": [[{ "node": "Get Today's Logs", "type": "main", "index": 0 }]]
+      "main": [[
+        { "node": "Get Today's Logs", "type": "main", "index": 0 },
+        { "node": "Get Coverage", "type": "main", "index": 0 }
+      ]]
     },
     "Get Today's Logs": {
+      "main": [[{ "node": "Aggregate Stats", "type": "main", "index": 0 }]]
+    },
+    "Get Coverage": {
       "main": [[{ "node": "Aggregate Stats", "type": "main", "index": 0 }]]
     },
     "Aggregate Stats": {

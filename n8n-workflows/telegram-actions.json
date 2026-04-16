@@ -25,7 +25,34 @@
       "typeVersion": 2,
       "position": [460, 300],
       "parameters": {
-        "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\n// e.g. \"reenable:42:23456789\" or \"snooze:42:23456789\"\nconst [action, ruleId, entityId] = data.split(':');\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, chatId, callbackQueryId } }];"
+        "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\nconst [action, ruleId, entityId] = data.split(':');\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, chatId, callbackQueryId } }];"
+      }
+    },
+    {
+      "id": "node-get-token",
+      "name": "Get Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/tokens",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-restore-data",
+      "name": "Restore Callback Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "jsCode": "const cb = $('Parse Callback').item.json;\nconst tokens = $input.all().map(i => i.json);\nconst token = tokens[0]?.access_token || null;\nreturn [{ json: { ...cb, token } }];"
       }
     },
     {
@@ -33,7 +60,7 @@
       "name": "Route Action",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300],
+      "position": [1120, 300],
       "parameters": {
         "conditions": {
           "conditions": [
@@ -53,7 +80,7 @@
       "name": "Re-enable Entity",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 200],
+      "position": [1340, 200],
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
@@ -62,10 +89,31 @@
         "bodyParameters": {
           "parameters": [
             { "name": "status", "value": "ACTIVE" },
-            { "name": "access_token", "value": "={{ $env.FB_SYSTEM_USER_TOKEN }}" }
+            { "name": "access_token", "value": "={{ $json.token }}" }
           ]
         },
         "options": {}
+      }
+    },
+    {
+      "id": "node-clear-pause",
+      "name": "Clear Pause Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 200],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_id: $('Restore Callback Data').item.json.entityId }) }}",
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
       }
     },
     {
@@ -73,40 +121,52 @@
       "name": "Set Snooze Exemption",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 400],
+      "position": [1340, 400],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
-        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"rule_id\": {{ $('Parse Callback').item.json.ruleId }},\n  \"entity_id\": \"{{ $('Parse Callback').item.json.entityId }}\",\n  \"type\": \"snooze\",\n  \"cooldown_hours\": 6\n}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_id: $('Restore Callback Data').item.json.entityId, type: 'snooze', cooldown_hours: 6 }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-confirm-reenable",
+      "name": "Confirm Re-enable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Restore Callback Data').item.json.chatId, text: '✅ Re-enabled `' + $('Restore Callback Data').item.json.entityId + '` — pause pending cleared', parse_mode: 'Markdown' }) }}",
         "options": {}
       }
     },
     {
-      "id": "node-confirm-msg",
-      "name": "Confirm Message",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [1120, 300],
-      "credentials": {
-        "telegramApi": {
-          "id": "CONFIGURE_IN_N8N",
-          "name": "CONFIGURE_IN_N8N"
-        }
-      },
+      "id": "node-confirm-snooze",
+      "name": "Confirm Snooze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 400],
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
-        "chatId": "={{ $('Parse Callback').item.json.chatId }}",
-        "text": "=✅ Re-enabled `{{ $('Parse Callback').item.json.entityId }}`",
-        "additionalFields": {
-          "parse_mode": "Markdown"
-        }
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Restore Callback Data').item.json.chatId, text: '💤 Snoozed rule #' + $('Restore Callback Data').item.json.ruleId + ' for `' + $('Restore Callback Data').item.json.entityId + '` — 6h exemption set', parse_mode: 'Markdown' }) }}",
+        "options": {}
       }
     }
   ],
@@ -115,6 +175,12 @@
       "main": [[{ "node": "Parse Callback", "type": "main", "index": 0 }]]
     },
     "Parse Callback": {
+      "main": [[{ "node": "Get Token", "type": "main", "index": 0 }]]
+    },
+    "Get Token": {
+      "main": [[{ "node": "Restore Callback Data", "type": "main", "index": 0 }]]
+    },
+    "Restore Callback Data": {
       "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
     },
     "Route Action": {
@@ -123,12 +189,14 @@
         [{ "node": "Set Snooze Exemption", "type": "main", "index": 0 }]
       ]
     },
-
     "Re-enable Entity": {
-      "main": [[{ "node": "Confirm Message", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Clear Pause Pending", "type": "main", "index": 0 }]]
+    },
+    "Clear Pause Pending": {
+      "main": [[{ "node": "Confirm Re-enable", "type": "main", "index": 0 }]]
     },
     "Set Snooze Exemption": {
-      "main": [[{ "node": "Confirm Message", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Confirm Snooze", "type": "main", "index": 0 }]]
     }
   },
   "active": false,

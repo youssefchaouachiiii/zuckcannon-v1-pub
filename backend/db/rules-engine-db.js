@@ -112,6 +112,39 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (rule_id, entity_id)
   )`);
+
+  // Seed default schedules (per doc Section 4) on first run
+  const schedCount = await db.getAsync('SELECT COUNT(*) as cnt FROM schedules');
+  if (schedCount.cnt === 0) {
+    const defaults = [
+      { name: 'Business Hours', days: [1,2,3,4,5], start: '08:00', end: '20:00' },
+      { name: 'Extended', days: [1,2,3,4,5], start: '06:00', end: '23:00' },
+      { name: 'Weekdays + Sat', days: [1,2,3,4,5,6], start: '08:00', end: '21:00' },
+      { name: 'Always On', days: [1,2,3,4,5,6,7], start: '00:00', end: '23:59' },
+    ];
+    const schedIds = {};
+    for (const s of defaults) {
+      const { lastID } = await db.runAsync(
+        'INSERT INTO schedules (name, days_json, start_time, end_time, timezone, is_active) VALUES (?, ?, ?, ?, ?, 1)',
+        [s.name, JSON.stringify(s.days), s.start, s.end, 'America/New_York']
+      );
+      schedIds[s.name] = lastID;
+    }
+    // Seed default verticals mapped to schedules (per doc Section 4)
+    const verticals = [
+      { name: 'Cash Offer', sched: 'Business Hours' },
+      { name: 'Home Warranty', sched: 'Business Hours' },
+      { name: 'EDU', sched: 'Extended' },
+      { name: 'Solar', sched: 'Weekdays + Sat' },
+      { name: 'Rewards', sched: 'Always On' },
+    ];
+    for (const v of verticals) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO verticals (name, default_schedule_id) VALUES (?, ?)',
+        [v.name, schedIds[v.sched] || null]
+      );
+    }
+  }
 }
 
 await initializeDatabase();

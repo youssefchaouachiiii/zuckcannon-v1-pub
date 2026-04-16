@@ -67,6 +67,23 @@ const RULE_TEMPLATES = [
     action: 'scale_budget', cooldown_hours: 48,
     action_params: { scale_pct: 20, cap: 500 },
   },
+  {
+    name: 'Burst Spend',
+    conditions: [
+      { metric: 'burst_multiplier', operator: 'gt', value: 3, lookback: 'last_30m' },
+    ],
+    action: 'pause', cooldown_hours: 4,
+    alert_level: 'critical',
+  },
+  {
+    name: 'Account Spend Cap',
+    conditions: [
+      { metric: 'spend_today', operator: 'gt', value: 5000, lookback: 'today' },
+    ],
+    action: 'pause', cooldown_hours: 24,
+    scope: 'account',
+    alert_level: 'critical',
+  },
 ];
 
 const METRICS = [
@@ -158,10 +175,18 @@ function renderTemplates() {
 function applyTemplate(index) {
   const t = RULE_TEMPLATES[index];
   document.getElementById('rule-name').value = t.name;
+  document.getElementById('rule-scope').value = t.scope || 'campaign';
   document.getElementById('rule-action').value = t.action;
   document.getElementById('rule-cooldown').value = t.cooldown_hours;
+  document.getElementById('rule-alert-level').value = t.alert_level || 'warning';
+  document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === 'AND'; });
   document.getElementById('conditions-builder').innerHTML = '';
   t.conditions.forEach(c => addConditionRow(c));
+  document.getElementById('scale-params').style.display = t.action === 'scale_budget' ? 'flex' : 'none';
+  if (t.action_params) {
+    if (t.action_params.scale_pct) document.getElementById('scale-pct').value = t.action_params.scale_pct;
+    if (t.action_params.cap) document.getElementById('scale-cap').value = t.action_params.cap;
+  }
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'New Rule from Template';
   editingRuleId = null;
