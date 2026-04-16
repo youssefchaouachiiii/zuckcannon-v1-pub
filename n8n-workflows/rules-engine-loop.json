@@ -233,11 +233,21 @@
       }
     },
     {
+      "id": "node-prepare-dry-run-log",
+      "name": "Prepare Dry Run Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3720, 200],
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nreturn [{ json: {\n  rule_id: d.rule.id,\n  entity_type: d.rule.scope,\n  entity_id: d.entityId,\n  entity_name: d.entityName || d.entityId,\n  action_taken: 'would_have_' + d.rule.action + 'd',\n  trigger_data_json: JSON.stringify(d.metrics),\n  is_dry_run: 1\n} }];"
+      }
+    },
+    {
       "id": "node-log-dry-run",
       "name": "Log Dry Run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3720, 200],
+      "position": [3900, 200],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
@@ -245,7 +255,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_type: $json.rule.scope, entity_id: $json.entityId, entity_name: $json.entityName || $json.entityId, action_taken: 'would_have_' + $json.rule.action + 'd', trigger_data_json: JSON.stringify($json.metrics), is_dry_run: 1 }) }}",
+        "body": "={{ JSON.stringify($json) }}",
         "options": {}
       }
     },
@@ -486,12 +496,12 @@
     },
     {
       "id": "node-restore-before-log",
-      "name": "Restore Before Log",
+      "name": "Prepare Action Log",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [6160, 0],
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: d }];"
+        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: {\n  rule_id: d.rule.id,\n  entity_type: d.rule.scope,\n  entity_id: d.entityId,\n  entity_name: d.entityName || d.entityId,\n  action_taken: d.rule.action + 'd',\n  trigger_data_json: JSON.stringify(d.metrics),\n  is_dry_run: 0\n} }];"
       }
     },
     {
@@ -507,7 +517,7 @@
         "headerParameters": { "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }] },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ rule_id: $json.rule.id, entity_type: $json.rule.scope, entity_id: $json.entityId, entity_name: $json.entityName || $json.entityId, action_taken: $json.rule.action + 'd', trigger_data_json: JSON.stringify($json.metrics), is_dry_run: 0 }) }}",
+        "body": "={{ JSON.stringify($json) }}",
         "options": {}
       }
     },
@@ -559,9 +569,10 @@
     "Is Dry Run?": {
       "main": [
         [{ "node": "Check Learning Phase", "type": "main", "index": 0 }],
-        [{ "node": "Log Dry Run", "type": "main", "index": 0 }]
+        [{ "node": "Prepare Dry Run Log", "type": "main", "index": 0 }]
       ]
     },
+    "Prepare Dry Run Log": { "main": [[{ "node": "Log Dry Run", "type": "main", "index": 0 }]] },
     "Log Dry Run": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] },
     "Check Learning Phase": { "main": [[{ "node": "Restore Learning", "type": "main", "index": 0 }]] },
     "Restore Learning": { "main": [[{ "node": "Not In Learning?", "type": "main", "index": 0 }]] },
@@ -584,8 +595,8 @@
     "Restore After Set Pause": { "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]] },
     "Telegram Alert": { "main": [[{ "node": "Restore Before Email", "type": "main", "index": 0 }]] },
     "Restore Before Email": { "main": [[{ "node": "Email Alert", "type": "main", "index": 0 }]] },
-    "Email Alert": { "main": [[{ "node": "Restore Before Log", "type": "main", "index": 0 }]] },
-    "Restore Before Log": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
+    "Email Alert": { "main": [[{ "node": "Prepare Action Log", "type": "main", "index": 0 }]] },
+    "Prepare Action Log": { "main": [[{ "node": "Log Action", "type": "main", "index": 0 }]] },
     "Log Action": { "main": [[{ "node": "Restore Before Cooldown", "type": "main", "index": 0 }]] },
     "Restore Before Cooldown": { "main": [[{ "node": "Set Cooldown", "type": "main", "index": 0 }]] },
     "Set Cooldown": { "main": [[{ "node": "Split Rules", "type": "main", "index": 0 }]] }
