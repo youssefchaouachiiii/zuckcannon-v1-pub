@@ -102,6 +102,61 @@
       }
     },
     {
+      "id": "node-check-rule-paused",
+      "name": "Check Rule Paused",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending/check",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "rule_id", "value": "=0" },
+            { "name": "entity_id", "value": "={{ $json.campaignId }}" }
+          ]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-restore-after-rule-check",
+      "name": "Restore Schedule Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 200],
+      "parameters": {
+        "jsCode": "const d = $('Decide Action').item.json;\nreturn [{ json: { ...d, rulePaused: $input.item.json.pending && d.shouldBeActive } }];"
+      }
+    },
+    {
+      "id": "node-not-rule-paused",
+      "name": "Not Rule Paused?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2300, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-not-rule-paused",
+              "leftValue": "={{ $json.rulePaused }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
       "id": "node-check-exemption",
       "name": "Check Rule Exemption",
       "type": "n8n-nodes-base.httpRequest",
@@ -272,6 +327,14 @@
       "main": [[{ "node": "Needs Change?", "type": "main", "index": 0 }]]
     },
     "Needs Change?": {
+      "main": [
+        [{ "node": "Check Rule Paused", "type": "main", "index": 0 }],
+        [{ "node": "Split Schedules", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Rule Paused": { "main": [[{ "node": "Restore Schedule Data", "type": "main", "index": 0 }]] },
+    "Restore Schedule Data": { "main": [[{ "node": "Not Rule Paused?", "type": "main", "index": 0 }]] },
+    "Not Rule Paused?": {
       "main": [
         [{ "node": "Check Rule Exemption", "type": "main", "index": 0 }],
         [{ "node": "Split Schedules", "type": "main", "index": 0 }]

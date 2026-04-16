@@ -368,7 +368,8 @@
       "parameters": {
         "sendTo": "={{ $env.ALERT_EMAIL_TO }}",
         "subject": "=\ud83e\uddea [DRY RUN] {{ $('Evaluate Rules').item.json.rule.name }} would fire on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
-        "message": "=[DRY RUN] Rule: {{ $('Evaluate Rules').item.json.rule.name }}\nEntity: {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\nAction: would {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}",
+        "emailType": "html",
+        "message": "=<b>\ud83e\uddea [DRY RUN]</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> would {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
         "options": { "onError": "continueRegularOutput" }
       }
     },
@@ -635,7 +636,8 @@
       "parameters": {
         "sendTo": "={{ $env.ALERT_EMAIL_TO }}",
         "subject": "=\ud83d\udea8 [Rules Engine] {{ $('Evaluate Rules').item.json.rule.name }} fired on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
-        "message": "=Rule: {{ $('Evaluate Rules').item.json.rule.name }}\nEntity: {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}\nAction: {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}\nSpend: ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}\nTime: {{ new Date().toISOString() }}",
+        "emailType": "html",
+        "message": "=<b>\ud83d\uded1 RULE FIRED</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}D<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
         "options": { "onError": "continueRegularOutput" }
       }
     },
