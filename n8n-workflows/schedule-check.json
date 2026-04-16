@@ -254,7 +254,10 @@
       "main": [[{ "node": "Split Schedules", "type": "main", "index": 0 }]]
     },
     "Split Schedules": {
-      "main": [[], [{ "node": "Evaluate Time Window", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Check Token Expiry", "type": "main", "index": 0 }],
+        [{ "node": "Evaluate Time Window", "type": "main", "index": 0 }]
+      ]
     },
     "Evaluate Time Window": {
       "main": [[{ "node": "Split Campaigns", "type": "main", "index": 0 }]]
@@ -271,7 +274,7 @@
     "Needs Change?": {
       "main": [
         [{ "node": "Check Rule Exemption", "type": "main", "index": 0 }],
-        []
+        [{ "node": "Split Schedules", "type": "main", "index": 0 }]
       ]
     },
     "Check Rule Exemption": {
@@ -280,14 +283,14 @@
     "Rule Override?": {
       "main": [
         [{ "node": "Apply Schedule", "type": "main", "index": 0 }],
-        []
+        [{ "node": "Split Schedules", "type": "main", "index": 0 }]
       ]
     },
     "Apply Schedule": {
       "main": [[{ "node": "Log Schedule Action", "type": "main", "index": 0 }]]
     },
     "Log Schedule Action": {
-      "main": [[{ "node": "Check Token Expiry", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Split Schedules", "type": "main", "index": 0 }]]
     },
     "Check Token Expiry": {
       "main": [[{ "node": "Tokens Expiring?", "type": "main", "index": 0 }]]
