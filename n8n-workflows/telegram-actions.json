@@ -19,11 +19,31 @@
       }
     },
     {
+      "id": "node-is-callback",
+      "name": "Is Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.callback_query }}",
+              "rightValue": "",
+              "operator": { "type": "object", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
       "id": "node-parse-callback",
       "name": "Parse Callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300],
+      "position": [680, 200],
       "parameters": {
         "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\nconst [action, ruleId, entityId] = data.split(':');\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, chatId, callbackQueryId } }];"
       }
@@ -33,7 +53,7 @@
       "name": "Get Token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300],
+      "position": [900, 200],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/tokens",
@@ -50,7 +70,7 @@
       "name": "Restore Callback Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300],
+      "position": [1120, 200],
       "parameters": {
         "jsCode": "const cb = $('Parse Callback').item.json;\nconst tokens = $input.all().map(i => i.json);\nconst token = tokens[0]?.access_token || null;\nreturn [{ json: { ...cb, token } }];"
       }
@@ -60,7 +80,7 @@
       "name": "Route Action",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 300],
+      "position": [1340, 200],
       "parameters": {
         "conditions": {
           "conditions": [
@@ -80,7 +100,7 @@
       "name": "Re-enable Entity",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 200],
+      "position": [1560, 100],
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v21.0/{{ $json.entityId }}",
@@ -100,7 +120,7 @@
       "name": "Clear Pause Pending",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 200],
+      "position": [1780, 100],
       "parameters": {
         "method": "DELETE",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending",
@@ -121,7 +141,7 @@
       "name": "Set Snooze Exemption",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 400],
+      "position": [1560, 300],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions",
@@ -142,7 +162,7 @@
       "name": "Confirm Re-enable",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1780, 200],
+      "position": [2000, 100],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
@@ -158,7 +178,7 @@
       "name": "Confirm Snooze",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 400],
+      "position": [1780, 300],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
@@ -172,7 +192,13 @@
   ],
   "connections": {
     "Telegram Trigger": {
-      "main": [[{ "node": "Parse Callback", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Is Callback?", "type": "main", "index": 0 }]]
+    },
+    "Is Callback?": {
+      "main": [
+        [{ "node": "Parse Callback", "type": "main", "index": 0 }],
+        []
+      ]
     },
     "Parse Callback": {
       "main": [[{ "node": "Get Token", "type": "main", "index": 0 }]]
