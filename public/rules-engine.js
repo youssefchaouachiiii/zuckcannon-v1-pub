@@ -461,9 +461,18 @@ async function openScheduleAssign(id, name) {
   // Load campaign dropdown
   const campsRes = await fetch('/api/rules-engine/ui/campaigns/cached');
   const camps = campsRes.ok ? await campsRes.json() : [];
+  // Destroy existing TomSelect first, then rebuild options
+  if (_tomSelects['schedule-campaign-select']) {
+    _tomSelects['schedule-campaign-select'].destroy();
+    delete _tomSelects['schedule-campaign-select'];
+  }
   const sel = document.getElementById('schedule-campaign-select');
   sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
-  makeTomSelect('schedule-campaign-select', 'Search campaign...');
+  _tomSelects['schedule-campaign-select'] = new TomSelect(sel, {
+    placeholder: 'Search campaign...',
+    allowEmptyOption: true,
+    maxOptions: 500,
+  });
   await loadScheduleCampaigns(id);
 }
 
