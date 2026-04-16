@@ -3094,9 +3094,9 @@
           <div id="schedule-assign-panel" style="display:none;background:#f0f7ff;border:1px solid #d0e3f7;border-radius:6px;padding:16px;margin-top:16px;">
             <h4 style="margin:0 0 12px 0;">Assign Campaigns to: <span id="schedule-assign-name"></span></h4>
             <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
-              <select id="schedule-campaign-select" style="flex:1;padding:6px 8px;font-size:13px;">
-                <option value="">Select campaign...</option>
-              </select>
+              <div style="flex:1;min-width:0;">
+                <select id="schedule-campaign-select" style="width:100%;"></select>
+              </div>
               <button onclick="assignCampaignToSchedule()" class="btn-primary btn-sm">Assign</button>
             </div>
             <div id="schedule-campaigns-list" style="font-size:13px;"></div>

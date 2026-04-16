@@ -467,10 +467,9 @@ async function openScheduleAssign(id, name) {
     delete _tomSelects['schedule-campaign-select'];
   }
   const sel = document.getElementById('schedule-campaign-select');
-  sel.innerHTML = '<option value="">Select campaign...</option>' + camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  sel.innerHTML = camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
   _tomSelects['schedule-campaign-select'] = new TomSelect(sel, {
     placeholder: 'Search campaign...',
-    allowEmptyOption: true,
     maxOptions: 500,
   });
   await loadScheduleCampaigns(id);
