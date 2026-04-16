@@ -27,7 +27,20 @@ fbAccountsRouter.post('/tokens/verify', async (req, res) => {
       `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${access_token}`
     );
     const { id: businessManagerId, name: businessName } = meResponse.data;
-    await FacebookAuthDB.saveSystemUserToken(businessManagerId, businessName, access_token, null);
+
+    // Query debug_token to get actual expiry
+    let expiresAt = null;
+    try {
+      const debugResp = await axios.get(
+        `https://graph.facebook.com/v21.0/debug_token?input_token=${access_token}&access_token=${access_token}`
+      );
+      const expiresAtUnix = debugResp.data?.data?.expires_at;
+      if (expiresAtUnix && expiresAtUnix > 0) {
+        expiresAt = new Date(expiresAtUnix * 1000).toISOString();
+      }
+    } catch {}
+
+    await FacebookAuthDB.saveSystemUserToken(businessManagerId, businessName, access_token, expiresAt);
     res.json({ business_manager_id: businessManagerId, business_name: businessName });
   } catch (err) {
     const message = err?.response?.data?.error?.message || 'Token verification failed';
