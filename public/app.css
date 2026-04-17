@@ -127,31 +127,32 @@ header h1 {
 }
 
 #username-display {
-  font-size: 12px;
-  color: #666;
+  font-size: 13px;
+  color: #000;
+  font-weight: 700;
 }
 
 .logout-btn {
-  background-color: #f0f2f5;
-  color: #333;
-  border: 1px solid #dddfe2;
-  padding: 8px 16px;
-  font-size: 12px;
+  background-color: #dc3545;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
+  border-radius: 4px;
 }
 
 .logout-btn:hover {
-  background-color: #e4e6eb;
-  border-color: #bcc0c4;
+  background-color: #c82333;
 }
 
 .refresh-data-btn {
   background: none;
   border: none;
-  color: #666;
+  color: #e67e22;
   cursor: pointer;
-  padding: 4px;
+  padding: 8px;
   margin-left: 10px;
   display: inline-flex;
   align-items: center;
@@ -163,7 +164,7 @@ header h1 {
 
 .refresh-data-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
-  color: #333;
+  color: #d35400;
 }
 
 .refresh-data-btn:active {
@@ -172,7 +173,7 @@ header h1 {
 
 .refresh-data-btn.refreshing {
   animation: spin 1s linear infinite;
-  color: #1a73e8;
+  color: #e67e22;
 }
 
 @keyframes spin {
@@ -5607,7 +5608,7 @@ input.bulk-adset-name {
   color: white;
   border: none;
   padding: 8px 14px;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   border-radius: 4px;
@@ -5660,11 +5661,15 @@ input.bulk-adset-name {
   border-color: #103dee;
 }
 .rules-engine-btn {
-  padding: 6px 12px;
-  background: #103dee;
+  padding: 8px 14px;
+  background: #28a745;
   color: #fff;
   border: none;
   cursor: pointer;
   font-size: 13px;
   border-radius: 4px;
+  transition: all 0.2s;
+}
+.rules-engine-btn:hover {
+  background-color: #218838;
 }

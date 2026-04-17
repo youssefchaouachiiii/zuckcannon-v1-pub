@@ -46,7 +46,7 @@
       "position": [460, 400],
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/ui/coverage",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/coverage",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
@@ -165,13 +165,10 @@
   ],
   "connections": {
     "Daily 23:55 ET": {
-      "main": [[
-        { "node": "Get Today's Logs", "type": "main", "index": 0 },
-        { "node": "Get Coverage", "type": "main", "index": 0 }
-      ]]
+      "main": [[{ "node": "Get Today's Logs", "type": "main", "index": 0 }]]
     },
     "Get Today's Logs": {
-      "main": [[{ "node": "Aggregate Stats", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Get Coverage", "type": "main", "index": 0 }]]
     },
     "Get Coverage": {
       "main": [[{ "node": "Aggregate Stats", "type": "main", "index": 0 }]]

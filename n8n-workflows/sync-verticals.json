@@ -65,7 +65,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={{ JSON.stringify({ name: $json.fields.Name }) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $json.Name } }}",
         "options": { "onError": "continueRegularOutput" }
       }
     }

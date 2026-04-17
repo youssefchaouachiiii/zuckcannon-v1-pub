@@ -3056,7 +3056,7 @@
             <h4 id="schedule-editor-title" style="margin:0 0 12px 0;">New Schedule</h4>
             <div style="margin-bottom:10px;">
               <label style="display:block;font-size:13px;margin-bottom:4px;">Name</label>
-              <input type="text" id="schedule-name" placeholder="e.g. Business Hours" style="width:300px;padding:6px 8px;" />
+              <input type="text" id="schedule-name" placeholder="e.g. Business Hours" style="width:100%;padding:6px 8px;box-sizing:border-box;" />
             </div>
             <div style="margin-bottom:10px;">
               <label style="display:block;font-size:13px;margin-bottom:6px;">Days</label>
@@ -3119,8 +3119,10 @@
             <h4 style="margin:0 0 10px 0;">Bulk Assign by Name Pattern</h4>
             <p style="font-size:13px;color:#666;margin:0 0 10px 0;">Pull all campaigns from FB cache and assign matching ones to a vertical.</p>
             <div style="display:flex;gap:8px;align-items:center;">
-              <input type="text" id="bulk-pattern" placeholder="Name contains... (e.g. Solar)" style="padding:6px 8px;flex:1;max-width:300px;" />
-              <select id="bulk-vertical-select" style="padding:6px 8px;"><option value="">Select vertical</option></select>
+              <input type="text" id="bulk-pattern" placeholder="Name contains... (e.g. Solar)" style="padding:6px 8px;flex:1;" />
+              <div style="flex:1;min-width:0;">
+                <select id="bulk-vertical-select" style="width:100%;"><option value="">Select vertical</option></select>
+              </div>
               <button onclick="bulkAssignByPattern()" class="btn-secondary">Assign</button>
             </div>
             <div id="bulk-preview" style="margin-top:8px;font-size:13px;color:#28a745;"></div>
@@ -3177,8 +3179,10 @@
             <h3 style="margin:0;">Tags</h3>
           </div>
           <p style="font-size:13px;color:#666;margin-bottom:16px;">Assign tags to campaigns. Rules assigned to a tag apply to all tagged campaigns.</p>
-          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
-            <select id="tag-campaign-select" style="padding:6px 8px;min-width:260px;max-width:400px;"><option value="">Select campaign...</option></select>
+          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">
+            <div style="flex:1;min-width:0;">
+              <select id="tag-campaign-select" style="width:100%;"><option value="">Select campaign...</option></select>
+            </div>
             <input type="text" id="tag-value" placeholder="Tag name (e.g. high-spend)" style="padding:6px 8px;width:200px;" />
             <button onclick="addTag()" class="btn-primary">Add Tag</button>
           </div>
