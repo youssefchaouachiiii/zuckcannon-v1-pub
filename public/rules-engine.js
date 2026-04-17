@@ -645,6 +645,52 @@ async function toggleVerticalCampaigns(id, name, btn) {
   }
 }
 
+async function reloadVerticalCampaigns(id, name) {
+  const row = document.getElementById(`vert-campaigns-${id}`);
+  if (!row || row.style.display === 'none') return;
+  const inner = document.getElementById(`vert-campaigns-inner-${id}`);
+  inner.textContent = 'Loading...';
+  // Re-run the same logic as toggleVerticalCampaigns but skip the toggle
+  const btn = row.previousElementSibling?.querySelector('.view-vert-campaigns-btn');
+  if (btn) btn.textContent = 'Hide';
+  try {
+    const [campRes, cachedRes] = await Promise.all([
+      fetch(`/api/rules-engine/ui/verticals/${id}/campaigns`),
+      fetch('/api/rules-engine/ui/campaigns/cached'),
+    ]);
+    if (!campRes.ok) throw new Error('Server error');
+    const data = await campRes.json();
+    const cached = cachedRes.ok ? await cachedRes.json() : [];
+    const assignedIds = new Set(data.campaigns.map(c => c.id));
+    const available = cached.filter(c => !assignedIds.has(c.id));
+    const listHtml = data.campaigns.length === 0
+      ? '<em>No campaigns assigned yet.</em>'
+      : `<strong>${data.count} campaign(s) in "${escapeHtml(data.vertical)}"</strong>
+         <ul style="margin:6px 0 0 0;padding:0 0 0 16px;max-height:200px;overflow-y:auto;">
+           ${data.campaigns.map(c => `<li style="display:flex;align-items:center;justify-content:space-between;margin:2px 0;">
+             <span>${escapeHtml(c.name || c.id)}<span style="color:#aaa;font-size:11px;margin-left:6px;">${c.name ? escapeHtml(c.id) : '(not in cache)'}</span></span>
+             <button class="btn-danger btn-sm vert-unassign-btn" data-vert-id="${id}" data-vert-name="${escapeHtml(name)}" data-camp-id="${escapeHtml(c.id)}" style="margin-left:8px;">Remove</button>
+           </li>`).join('')}
+         </ul>`;
+    inner.innerHTML = `
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+        <select id="vert-camp-select-${id}" style="flex:1;min-width:0;padding:6px;font-size:13px;">
+          ${available.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+        <button class="btn-primary btn-sm vert-assign-btn" data-vert-id="${id}" data-vert-name="${escapeHtml(name)}">Assign</button>
+      </div>
+      ${listHtml}`;
+    const selId = `vert-camp-select-${id}`;
+    if (_tomSelects[selId]) { _tomSelects[selId].destroy(); delete _tomSelects[selId]; }
+    const selEl = document.getElementById(selId);
+    if (selEl && typeof TomSelect !== 'undefined') {
+      _tomSelects[selId] = new TomSelect(selEl, { placeholder: 'Search campaign...', maxOptions: 500 });
+    }
+  } catch (err) {
+    inner.textContent = 'Failed to load campaigns.';
+  }
+}
+
 async function bulkAssignByPattern() {
   const pattern = document.getElementById('bulk-pattern').value.trim();
   const vertical = document.getElementById('bulk-vertical-select').value;
@@ -850,8 +896,7 @@ function initRulesEnginePanel() {
       });
       if (!res.ok) { window.showError?.('Failed to assign.'); return; }
       window.showSuccess?.('Campaign assigned to ' + vertName);
-      toggleVerticalCampaigns(vertId, vertName, e.target.closest('tr').previousElementSibling.querySelector('.view-vert-campaigns-btn'));
-      toggleVerticalCampaigns(vertId, vertName, e.target.closest('tr').previousElementSibling.querySelector('.view-vert-campaigns-btn'));
+      await reloadVerticalCampaigns(vertId, vertName);
     }
     if (e.target.classList.contains('vert-unassign-btn')) {
       const campId = e.target.dataset.campId;
@@ -863,8 +908,7 @@ function initRulesEnginePanel() {
       });
       if (!res.ok) { window.showError?.('Failed to remove.'); return; }
       window.showSuccess?.('Campaign removed from ' + vertName);
-      const viewBtn = e.target.closest('tr').previousElementSibling?.querySelector('.view-vert-campaigns-btn');
-      if (viewBtn) { toggleVerticalCampaigns(vertId, vertName, viewBtn); toggleVerticalCampaigns(vertId, vertName, viewBtn); }
+      await reloadVerticalCampaigns(vertId, vertName);
     }
     if (e.target.classList.contains('clear-vert-campaigns-btn')) {
       const { vertId, vertName } = e.target.dataset;

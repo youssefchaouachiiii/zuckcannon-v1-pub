@@ -129,15 +129,29 @@ rulesEngineUiRouter.delete('/schedules/:id', async (req, res) => {
 
 rulesEngineUiRouter.get('/schedules/:id/campaigns', async (req, res) => {
   try {
-    const rows = await RulesEngineDB.getCampaignsForSchedule(parseInt(req.params.id));
+    const schedId = parseInt(req.params.id);
+    // Direct assignments
+    const rows = await RulesEngineDB.getCampaignsForSchedule(schedId);
     const campaignIds = new Set(rows.map(r => r.campaign_id));
+    // Also include campaigns from verticals using this schedule as default
+    const verticals = await RulesEngineDB.listVerticals();
+    for (const v of verticals) {
+      if (v.default_schedule_id === schedId) {
+        const vCamps = await RulesEngineDB.getCampaignsByVertical(v.name);
+        vCamps.forEach(r => campaignIds.add(r.campaign_id));
+      }
+    }
     const allCached = await FacebookCacheDB.getCampaigns();
-    const campaigns = allCached
-      .filter(c => campaignIds.has(c.id))
-      .map(c => ({ id: c.id, name: c.name, account_id: c.account_id }));
-    const foundIds = new Set(campaigns.map(c => c.id));
+    const seen = new Set();
+    const campaigns = [];
+    for (const c of allCached) {
+      if (campaignIds.has(c.id) && !seen.has(c.id)) {
+        seen.add(c.id);
+        campaigns.push({ id: c.id, name: c.name, account_id: c.account_id });
+      }
+    }
     for (const id of campaignIds) {
-      if (!foundIds.has(id)) campaigns.push({ id, name: null, account_id: null });
+      if (!seen.has(id)) { seen.add(id); campaigns.push({ id, name: null, account_id: null }); }
     }
     res.json({ count: campaigns.length, campaigns });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -189,13 +203,16 @@ rulesEngineUiRouter.get('/verticals/:id/campaigns', async (req, res) => {
     const rows = await RulesEngineDB.getCampaignsByVertical(vertical.name);
     const campaignIds = new Set(rows.map(r => r.campaign_id));
     const allCached = await FacebookCacheDB.getCampaigns();
-    const campaigns = allCached
-      .filter(c => campaignIds.has(c.id))
-      .map(c => ({ id: c.id, name: c.name, account_id: c.account_id }));
-    // include any ids not in cache (assigned but cache stale)
-    const foundIds = new Set(campaigns.map(c => c.id));
+    const seen = new Set();
+    const campaigns = [];
+    for (const c of allCached) {
+      if (campaignIds.has(c.id) && !seen.has(c.id)) {
+        seen.add(c.id);
+        campaigns.push({ id: c.id, name: c.name, account_id: c.account_id });
+      }
+    }
     for (const id of campaignIds) {
-      if (!foundIds.has(id)) campaigns.push({ id, name: null, account_id: null });
+      if (!seen.has(id)) { seen.add(id); campaigns.push({ id, name: null, account_id: null }); }
     }
     res.json({ vertical: vertical.name, count: campaigns.length, campaigns });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -221,7 +238,14 @@ rulesEngineUiRouter.delete('/verticals/:id', async (req, res) => {
 rulesEngineUiRouter.get('/campaigns/cached', async (req, res) => {
   try {
     const campaigns = await FacebookCacheDB.getCampaigns();
-    res.json(campaigns.map(c => ({ id: c.id, name: c.name, account_id: c.account_id })));
+    const seen = new Set();
+    const unique = [];
+    for (const c of campaigns) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      unique.push({ id: c.id, name: c.name, account_id: c.account_id });
+    }
+    res.json(unique);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -276,14 +300,15 @@ rulesEngineUiRouter.get('/coverage', async (req, res) => {
     const assignments = await RulesEngineDB.listAllAssignedCampaignIds();
     const scheduledCampaigns = await RulesEngineDB.listAllScheduledCampaignIds();
 
-    const orphans = cachedCampaigns.filter(c => {
-      return !assignments.has(c.id) || !scheduledCampaigns.has(c.id);
-    }).map(c => ({
-      ...c,
-      missing_rule: !assignments.has(c.id),
-      missing_schedule: !scheduledCampaigns.has(c.id),
-    }));
-
+    const seen = new Set();
+    const orphans = [];
+    for (const c of cachedCampaigns) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      if (!assignments.has(c.id) || !scheduledCampaigns.has(c.id)) {
+        orphans.push({ ...c, missing_rule: !assignments.has(c.id), missing_schedule: !scheduledCampaigns.has(c.id) });
+      }
+    }
     res.json(orphans);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
