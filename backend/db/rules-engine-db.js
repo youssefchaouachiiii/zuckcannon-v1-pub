@@ -379,7 +379,13 @@ export const RulesEngineDB = {
   },
 
   async listAllScheduledCampaignIds() {
-    const rows = await db.allAsync('SELECT DISTINCT campaign_id FROM schedule_assignments');
+    const rows = await db.allAsync(
+      `SELECT DISTINCT campaign_id FROM schedule_assignments
+       UNION
+       SELECT DISTINCT cl.campaign_id FROM campaign_labels cl
+       JOIN verticals v ON cl.label_value = v.name AND cl.label_type = 'vertical'
+       WHERE v.default_schedule_id IS NOT NULL`
+    );
     return new Set(rows.map(r => r.campaign_id));
   },
 

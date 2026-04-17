@@ -536,11 +536,6 @@ async function loadVerticals() {
     const options = '<option value="">Select vertical</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
     document.getElementById('bulk-vertical-select').innerHTML = options;
     makeTomSelect('bulk-vertical-select', 'Select vertical...');
-    const covSel = document.getElementById('coverage-vertical-select');
-    if (covSel) {
-      covSel.innerHTML = '<option value="">Assign to vertical...</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
-      makeTomSelect('coverage-vertical-select', 'Assign to vertical...');
-    }
     if (verticals.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 8px;color:#888;">No verticals yet.</td></tr>';
       return;
@@ -638,9 +633,14 @@ async function loadCoverage() {
   const tbody = document.getElementById('coverage-body');
   tbody.innerHTML = '<tr><td colspan="4" style="padding:12px 8px;color:#888;">Loading...</td></tr>';
   try {
-    const res = await fetch('/api/rules-engine/ui/coverage');
+    const [res, vertRes] = await Promise.all([
+      fetch('/api/rules-engine/ui/coverage'),
+      fetch('/api/rules-engine/ui/verticals'),
+    ]);
     if (!res.ok) throw new Error('Server error');
     const orphans = await res.json();
+    const verticals = vertRes.ok ? await vertRes.json() : [];
+    const vertOpts = verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
     if (orphans.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" style="padding:12px 8px;color:#28a745;">All campaigns are covered.</td></tr>';
       return;
@@ -650,7 +650,14 @@ async function loadCoverage() {
         <td style="padding:8px;">${escapeHtml(c.name || c.id)}</td>
         <td style="padding:8px;">${c.missing_rule ? '<span style="color:#f59e0b;">No rule</span>' : '<span style="color:#28a745;">OK</span>'}</td>
         <td style="padding:8px;">${c.missing_schedule ? '<span style="color:#f59e0b;">No schedule</span>' : '<span style="color:#28a745;">OK</span>'}</td>
-        <td style="padding:8px;"><button class="btn-sm quick-assign-btn" data-camp-id="${escapeHtml(String(c.id))}">Assign to Vertical</button></td>
+        <td style="padding:8px;">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <select class="coverage-vert-select" style="padding:3px 6px;font-size:12px;">
+              <option value="">Vertical...</option>${vertOpts}
+            </select>
+            <button class="btn-sm quick-assign-btn" data-camp-id="${escapeHtml(String(c.id))}">Assign</button>
+          </div>
+        </td>
       </tr>
     `).join('');
   } catch (err) {
@@ -822,13 +829,15 @@ function initRulesEnginePanel() {
   // Event delegation for coverage quick-assign
   document.getElementById('coverage-body').addEventListener('click', async (e) => {
     if (e.target.classList.contains('quick-assign-btn')) {
-      const vertical = document.getElementById('coverage-vertical-select')?.value;
-      if (!vertical) { if (typeof showError === 'function') showError('Select a vertical from the dropdown above first.'); return; }
+      const row = e.target.closest('tr');
+      const vertical = row.querySelector('.coverage-vert-select')?.value;
+      if (!vertical) { window.showError?.('Select a vertical first.'); return; }
       const res = await fetch('/api/rules-engine/ui/campaigns/labels/bulk', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pattern: e.target.dataset.campId, label_type: 'vertical', label_value: vertical }),
       });
-      if (!res.ok) { if (typeof showError === 'function') showError('Failed to assign campaign to vertical. Try again.'); return; }
+      if (!res.ok) { window.showError?.('Failed to assign.'); return; }
+      window.showSuccess?.('Assigned to ' + vertical);
       await loadCoverage();
     }
   });
