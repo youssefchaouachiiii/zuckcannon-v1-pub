@@ -242,7 +242,7 @@ async function saveRule() {
     cooldown_hours: parseInt(document.getElementById('rule-cooldown').value),
     is_dry_run: document.getElementById('rule-dry-run').checked ? 1 : 0,
     alert_level: document.getElementById('rule-alert-level').value,
-    is_active: 1,
+    is_active: document.getElementById('rule-active').checked ? 1 : 0,
   };
   const url = editingRuleId ? `/api/rules-engine/ui/rules/${editingRuleId}` : '/api/rules-engine/ui/rules';
   const method = editingRuleId ? 'PUT' : 'POST';
@@ -261,6 +261,7 @@ async function editRule(id) {
   document.getElementById('rule-action').value = rule.action;
   document.getElementById('rule-cooldown').value = rule.cooldown_hours;
   document.getElementById('rule-dry-run').checked = !!rule.is_dry_run;
+  document.getElementById('rule-active').checked = rule.is_active !== 0;
   document.getElementById('rule-alert-level').value = rule.alert_level || 'warning';
   document.getElementById('conditions-builder').innerHTML = '';
   JSON.parse(rule.conditions_json).forEach(c => addConditionRow(c));
@@ -303,15 +304,25 @@ function switchRuleTab(tab) {
 async function loadRuleAssignments(ruleId) {
   const el = document.getElementById('assignments-list');
   el.textContent = 'Loading...';
-  const res = await fetch(`/api/rules-engine/ui/rules/${ruleId}/assignments`);
+  const [res, campsRes] = await Promise.all([
+    fetch(`/api/rules-engine/ui/rules/${ruleId}/assignments`),
+    fetch('/api/rules-engine/ui/campaigns/cached'),
+  ]);
   const rows = res.ok ? await res.json() : [];
+  const camps = campsRes.ok ? await campsRes.json() : [];
+  const campMap = {};
+  camps.forEach(c => { campMap[c.id] = c.name; });
   if (!rows.length) { el.innerHTML = '<em style="color:#aaa;">No assignments yet.</em>'; return; }
-  el.innerHTML = rows.map(a => `
+  el.innerHTML = rows.map(a => {
+    const label = a.entity_type === 'campaign' && campMap[a.entity_id]
+      ? `${escapeHtml(campMap[a.entity_id])} <span style="color:#aaa;font-size:11px;">${escapeHtml(a.entity_id)}</span>`
+      : escapeHtml(a.entity_id);
+    return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;">
-      <span><span style="background:#e8f4fd;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:6px;">${escapeHtml(a.entity_type)}</span>${escapeHtml(a.entity_id)}</span>
+      <span><span style="background:#e8f4fd;padding:1px 6px;border-radius:3px;font-size:11px;margin-right:6px;">${escapeHtml(a.entity_type)}</span>${label}</span>
       <button class="btn-danger btn-sm" onclick="removeRuleAssignment(${ruleId},'${escapeHtml(a.entity_type)}','${escapeHtml(a.entity_id)}')">Remove</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function addRuleAssignment(entityType) {
@@ -596,18 +607,39 @@ async function toggleVerticalCampaigns(id, name, btn) {
   const inner = document.getElementById(`vert-campaigns-inner-${id}`);
   inner.textContent = 'Loading...';
   try {
-    const res = await fetch(`/api/rules-engine/ui/verticals/${id}/campaigns`);
-    if (!res.ok) throw new Error('Server error');
-    const data = await res.json();
-    if (data.campaigns.length === 0) {
-      inner.innerHTML = '<em>No campaigns assigned yet.</em>';
-      return;
-    }
+    const [campRes, cachedRes] = await Promise.all([
+      fetch(`/api/rules-engine/ui/verticals/${id}/campaigns`),
+      fetch('/api/rules-engine/ui/campaigns/cached'),
+    ]);
+    if (!campRes.ok) throw new Error('Server error');
+    const data = await campRes.json();
+    const cached = cachedRes.ok ? await cachedRes.json() : [];
+    const assignedIds = new Set(data.campaigns.map(c => c.id));
+    const available = cached.filter(c => !assignedIds.has(c.id));
+    const listHtml = data.campaigns.length === 0
+      ? '<em>No campaigns assigned yet.</em>'
+      : `<strong>${data.count} campaign(s) in "${escapeHtml(data.vertical)}"</strong>
+         <ul style="margin:6px 0 0 0;padding:0 0 0 16px;max-height:200px;overflow-y:auto;">
+           ${data.campaigns.map(c => `<li style="display:flex;align-items:center;justify-content:space-between;margin:2px 0;">
+             <span>${escapeHtml(c.name || c.id)}<span style="color:#aaa;font-size:11px;margin-left:6px;">${c.name ? escapeHtml(c.id) : '(not in cache)'}</span></span>
+             <button class="btn-danger btn-sm vert-unassign-btn" data-vert-id="${id}" data-vert-name="${escapeHtml(name)}" data-camp-id="${escapeHtml(c.id)}" style="margin-left:8px;">Remove</button>
+           </li>`).join('')}
+         </ul>`;
     inner.innerHTML = `
-      <strong>${data.count} campaign(s) in "${escapeHtml(data.vertical)}"</strong>
-      <ul style="margin:6px 0 0 0;padding:0 0 0 16px;max-height:200px;overflow-y:auto;">
-        ${data.campaigns.map(c => `<li style="margin:2px 0;">${escapeHtml(c.name || c.id)}<span style="color:#aaa;font-size:11px;margin-left:6px;">${c.name ? escapeHtml(c.id) : '(not in cache)'}</span></li>`).join('')}
-      </ul>`;
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+        <select id="vert-camp-select-${id}" style="flex:1;min-width:0;padding:6px;font-size:13px;">
+          ${available.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+        <button class="btn-primary btn-sm vert-assign-btn" data-vert-id="${id}" data-vert-name="${escapeHtml(name)}">Assign</button>
+      </div>
+      ${listHtml}`;
+    // Init TomSelect on the dropdown
+    const selId = `vert-camp-select-${id}`;
+    if (_tomSelects[selId]) { _tomSelects[selId].destroy(); delete _tomSelects[selId]; }
+    const selEl = document.getElementById(selId);
+    if (selEl && typeof TomSelect !== 'undefined') {
+      _tomSelects[selId] = new TomSelect(selEl, { placeholder: 'Search campaign...', maxOptions: 500 });
+    }
   } catch (err) {
     inner.textContent = 'Failed to load campaigns.';
   }
@@ -626,6 +658,7 @@ async function bulkAssignByPattern() {
   if (!res.ok) { if (typeof showError === 'function') showError('Failed to bulk assign. Try again.'); preview.textContent = ''; return; }
   const data = await res.json();
   preview.textContent = `Assigned ${data.matched} campaign(s) matching "${pattern}" to "${vertical}"`;
+  await loadVerticals();
 }
 
 // ── Coverage ─────────────────────────────────────────────────────────
@@ -733,6 +766,8 @@ function initRulesEnginePanel() {
     document.getElementById('rule-editor-tabs').style.display = 'none';
     document.getElementById('conditions-builder').innerHTML = '';
     document.getElementById('rule-name').value = '';
+    document.getElementById('rule-active').checked = true;
+    document.getElementById('rule-dry-run').checked = false;
   });
 
   // Rule editor tab switching
@@ -803,6 +838,34 @@ function initRulesEnginePanel() {
     if (e.target.classList.contains('view-vert-campaigns-btn')) {
       toggleVerticalCampaigns(parseInt(e.target.dataset.vertId), e.target.dataset.vertName, e.target);
     }
+    if (e.target.classList.contains('vert-assign-btn')) {
+      const vertId = parseInt(e.target.dataset.vertId);
+      const vertName = e.target.dataset.vertName;
+      const sel = document.getElementById(`vert-camp-select-${vertId}`);
+      const campId = sel?.value;
+      if (!campId) { window.showError?.('Select a campaign first.'); return; }
+      const res = await fetch('/api/rules-engine/ui/campaigns/labels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campId, label_type: 'vertical', label_value: vertName }),
+      });
+      if (!res.ok) { window.showError?.('Failed to assign.'); return; }
+      window.showSuccess?.('Campaign assigned to ' + vertName);
+      toggleVerticalCampaigns(vertId, vertName, e.target.closest('tr').previousElementSibling.querySelector('.view-vert-campaigns-btn'));
+      toggleVerticalCampaigns(vertId, vertName, e.target.closest('tr').previousElementSibling.querySelector('.view-vert-campaigns-btn'));
+    }
+    if (e.target.classList.contains('vert-unassign-btn')) {
+      const campId = e.target.dataset.campId;
+      const vertName = e.target.dataset.vertName;
+      const vertId = parseInt(e.target.dataset.vertId);
+      const res = await fetch('/api/rules-engine/ui/campaigns/labels', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campId, label_type: 'vertical', label_value: vertName }),
+      });
+      if (!res.ok) { window.showError?.('Failed to remove.'); return; }
+      window.showSuccess?.('Campaign removed from ' + vertName);
+      const viewBtn = e.target.closest('tr').previousElementSibling?.querySelector('.view-vert-campaigns-btn');
+      if (viewBtn) { toggleVerticalCampaigns(vertId, vertName, viewBtn); toggleVerticalCampaigns(vertId, vertName, viewBtn); }
+    }
     if (e.target.classList.contains('clear-vert-campaigns-btn')) {
       const { vertId, vertName } = e.target.dataset;
       showConfirmDelete(`Clear all campaign assignments from "${vertName}"? This removes the labels but keeps the vertical.`, async () => {
@@ -832,14 +895,23 @@ function initRulesEnginePanel() {
       const row = e.target.closest('tr');
       const vertical = row.querySelector('.coverage-vert-select')?.value;
       if (!vertical) { window.showError?.('Select a vertical first.'); return; }
-      const res = await fetch('/api/rules-engine/ui/campaigns/labels/bulk', {
+      const res = await fetch('/api/rules-engine/ui/campaigns/labels', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern: e.target.dataset.campId, label_type: 'vertical', label_value: vertical }),
+        body: JSON.stringify({ campaign_id: e.target.dataset.campId, label_type: 'vertical', label_value: vertical }),
       });
       if (!res.ok) { window.showError?.('Failed to assign.'); return; }
       window.showSuccess?.('Assigned to ' + vertical);
       await loadCoverage();
     }
+  });
+
+  // Coverage search filter
+  document.getElementById('coverage-search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('#coverage-body tr').forEach(row => {
+      const name = row.querySelector('td')?.textContent?.toLowerCase() || '';
+      row.style.display = name.includes(q) ? '' : 'none';
+    });
   });
 }
 
@@ -897,13 +969,13 @@ async function loadTags() {
   const tags = tagsRes.ok ? await tagsRes.json() : [];
   const camps = campsRes.ok ? await campsRes.json() : [];
 
-  // Populate campaign dropdown
+  // Populate campaign dropdown (multi-select)
   const sel = document.getElementById('tag-campaign-select');
   const campMap = {};
   camps.forEach(c => { campMap[c.id] = c.name; });
-  sel.innerHTML = '<option value="">Select campaign...</option>' +
-    camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
-  makeTomSelect('tag-campaign-select', 'Search campaign...');
+  if (_tomSelects['tag-campaign-select']) { _tomSelects['tag-campaign-select'].destroy(); delete _tomSelects['tag-campaign-select']; }
+  sel.innerHTML = camps.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  _tomSelects['tag-campaign-select'] = new TomSelect(sel, { placeholder: 'Search campaigns...', maxOptions: 500, plugins: ['remove_button'] });
 
   const tbody = document.getElementById('tags-body');
   if (!tags.length) {
@@ -920,16 +992,22 @@ async function loadTags() {
 }
 
 async function addTag() {
-  const campaignId = document.getElementById('tag-campaign-select').value;
+  const ts = _tomSelects['tag-campaign-select'];
+  const campaignIds = ts ? ts.getValue() : [];
   const tag = document.getElementById('tag-value').value.trim();
-  if (!campaignId || !tag) return;
-  const res = await fetch('/api/rules-engine/ui/tags', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ campaign_id: campaignId, tag }),
-  });
-  if (!res.ok) { window.showError?.('Failed to add tag'); return; }
-  document.getElementById('tag-campaign-select').value = '';
+  if (!campaignIds.length || !tag) { window.showError?.('Select campaign(s) and enter a tag name.'); return; }
+  let ok = true;
+  for (const cid of campaignIds) {
+    const res = await fetch('/api/rules-engine/ui/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: cid, tag }),
+    });
+    if (!res.ok) ok = false;
+  }
+  if (!ok) { window.showError?.('Some tags failed to add.'); }
+  else { window.showSuccess?.(`Tag "${tag}" added to ${campaignIds.length} campaign(s).`); }
+  if (ts) ts.clear();
   document.getElementById('tag-value').value = '';
   loadTags();
 }

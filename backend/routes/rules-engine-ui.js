@@ -225,6 +225,23 @@ rulesEngineUiRouter.get('/campaigns/cached', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Direct assign a single campaign to a label (vertical/tag)
+rulesEngineUiRouter.post('/campaigns/labels', async (req, res) => {
+  try {
+    const { campaign_id, label_type, label_value } = req.body;
+    await RulesEngineDB.addCampaignLabel(campaign_id, label_type, label_value);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+rulesEngineUiRouter.delete('/campaigns/labels', async (req, res) => {
+  try {
+    const { campaign_id, label_type, label_value } = req.body;
+    await RulesEngineDB.removeCampaignLabel(campaign_id, label_type, label_value);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Bulk assign campaigns to vertical/tag by name pattern
 rulesEngineUiRouter.post('/campaigns/labels/bulk', async (req, res) => {
   try {

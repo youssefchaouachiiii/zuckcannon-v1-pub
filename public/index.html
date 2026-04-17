@@ -2994,6 +2994,9 @@
             <div style="margin-bottom:12px;">
               <label><input type="checkbox" id="rule-dry-run" style="margin-right:6px;" /> Dry Run (evaluate but don't act)</label>
             </div>
+            <div style="margin-bottom:12px;">
+              <label><input type="checkbox" id="rule-active" checked style="margin-right:6px;" /> Active</label>
+            </div>
             <div style="display:flex;gap:8px;">
               <button onclick="saveRule()" class="btn-primary">Save Rule</button>
               <button onclick="closeRuleEditor()" class="btn-secondary">Cancel</button>
@@ -3143,6 +3146,7 @@
             <button onclick="loadCoverage()" class="btn-secondary">Refresh</button>
           </div>
           <p style="color:#666;font-size:13px;margin-bottom:16px;">Campaigns not fully covered by rules or schedules.</p>
+          <input type="text" id="coverage-search" placeholder="Search campaign..." style="width:100%;padding:8px 12px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-bottom:12px;box-sizing:border-box;" />
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead>
               <tr style="border-bottom:2px solid #eee;text-align:left;">
@@ -3181,7 +3185,7 @@
           <p style="font-size:13px;color:#666;margin-bottom:16px;">Assign tags to campaigns. Rules assigned to a tag apply to all tagged campaigns.</p>
           <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">
             <div style="flex:1;min-width:0;">
-              <select id="tag-campaign-select" style="width:100%;"><option value="">Select campaign...</option></select>
+              <select id="tag-campaign-select" multiple style="width:100%;"></select>
             </div>
             <input type="text" id="tag-value" placeholder="Tag name (e.g. high-spend)" style="padding:6px 8px;width:200px;" />
             <button onclick="addTag()" class="btn-primary">Add Tag</button>

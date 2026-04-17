@@ -223,6 +223,12 @@ export const RulesEngineDB = {
       [campaignId, labelType, labelValue]
     );
   },
+  async removeCampaignLabel(campaignId, labelType, labelValue) {
+    return db.runAsync(
+      'DELETE FROM campaign_labels WHERE campaign_id=? AND label_type=? AND label_value=?',
+      [campaignId, labelType, labelValue]
+    );
+  },
   async setCampaignLabels(campaignId, labels) {
     await db.runAsync('DELETE FROM campaign_labels WHERE campaign_id = ?', [campaignId]);
     for (const l of labels) {
