@@ -14,7 +14,7 @@ export function normalizeAdAccountId(adAccountId) {
   const normalized = original.replace(/^act_/, "");
 
   if (original !== normalized) {
-    console.log(`Normalized account ID: ${original} -> ${normalized}`);
+    // silently normalize
   }
 
   return normalized;

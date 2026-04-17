@@ -831,7 +831,7 @@ function initRulesEnginePanel() {
   });
 
   // Event delegation for verticals
-  document.getElementById('verticals-body').addEventListener('click', (e) => {
+  document.getElementById('verticals-body').addEventListener('click', async (e) => {
     if (e.target.classList.contains('delete-vertical-btn')) {
       confirmDeleteVertical(parseInt(e.target.dataset.vertId), e.target.dataset.vertName);
     }
