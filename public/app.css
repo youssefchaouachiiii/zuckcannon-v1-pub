@@ -391,7 +391,7 @@ h2 {
 .create-multi-account-campaign-btn {
   background-color: #6f42c1;
   color: white;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   padding: 8px 12px;
   margin-left: 8px;
@@ -405,7 +405,7 @@ h2 {
 .create-multi-account-campaign-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
   color: #6f42c1;
-  border: #6f42c1 1px solid;
+  border-color: #6f42c1;
 }
 
 .create-multi-account-campaign-btn p {
@@ -3379,7 +3379,7 @@ h2 {
 .rules-btn {
   background-color: #007bff;
   color: white;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   padding: 8px 12px;
   margin-left: 8px;
@@ -3393,7 +3393,7 @@ h2 {
 .rules-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
   color: #007bff;
-  border: #007bff 1px solid;
+  border-color: #007bff;
 }
 
 .rules-btn svg {
