@@ -217,6 +217,12 @@ export const RulesEngineDB = {
   },
 
   // --- Campaign labels ---
+  async addCampaignLabel(campaignId, labelType, labelValue) {
+    return db.runAsync(
+      'INSERT OR IGNORE INTO campaign_labels (campaign_id, label_type, label_value) VALUES (?, ?, ?)',
+      [campaignId, labelType, labelValue]
+    );
+  },
   async setCampaignLabels(campaignId, labels) {
     await db.runAsync('DELETE FROM campaign_labels WHERE campaign_id = ?', [campaignId]);
     for (const l of labels) {
