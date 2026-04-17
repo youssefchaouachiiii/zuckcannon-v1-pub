@@ -173,6 +173,15 @@ rulesEngineUiRouter.post('/verticals', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+rulesEngineUiRouter.put('/verticals/:id', async (req, res) => {
+  try {
+    const v = await RulesEngineDB.updateVertical(parseInt(req.params.id), {
+      default_schedule_id: req.body.default_schedule_id,
+    });
+    res.json(v);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.get('/verticals/:id/campaigns', async (req, res) => {
   try {
     const vertical = await RulesEngineDB.getVerticalById(parseInt(req.params.id));

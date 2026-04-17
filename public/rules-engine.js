@@ -522,9 +522,17 @@ function closeScheduleAssign() {
 async function loadVerticals() {
   const tbody = document.getElementById('verticals-body');
   try {
-    const res = await fetch('/api/rules-engine/ui/verticals');
-    if (!res.ok) throw new Error('Server error');
-    const verticals = await res.json();
+    const [vertRes, schedRes] = await Promise.all([
+      fetch('/api/rules-engine/ui/verticals'),
+      fetch('/api/rules-engine/ui/schedules'),
+    ]);
+    if (!vertRes.ok) throw new Error('Server error');
+    const verticals = await vertRes.json();
+    const schedules = schedRes.ok ? await schedRes.json() : [];
+    const schedMap = {};
+    schedules.forEach(s => { schedMap[s.id] = s.name; });
+    const schedOpts = '<option value="">None</option>' + schedules.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+
     const options = '<option value="">Select vertical</option>' + verticals.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
     document.getElementById('bulk-vertical-select').innerHTML = options;
     makeTomSelect('bulk-vertical-select', 'Select vertical...');
@@ -540,7 +548,11 @@ async function loadVerticals() {
     tbody.innerHTML = verticals.map(v => `
       <tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:8px;">${escapeHtml(v.name)}</td>
-        <td style="padding:8px;">${v.default_schedule_id ? `Schedule #${escapeHtml(String(v.default_schedule_id))}` : 'None'}</td>
+        <td style="padding:8px;">
+          <select class="vert-schedule-select" data-vert-id="${v.id}" style="padding:4px 6px;font-size:13px;">
+            ${schedOpts.replace(`value="${v.default_schedule_id}"`, `value="${v.default_schedule_id}" selected`)}
+          </select>
+        </td>
         <td style="padding:8px;white-space:nowrap;">
           <button class="btn-secondary btn-sm view-vert-campaigns-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}" style="margin-right:6px;">View Campaigns</button>
           <button class="btn-secondary btn-sm clear-vert-campaigns-btn" data-vert-id="${v.id}" data-vert-name="${escapeHtml(v.name)}" style="margin-right:6px;">Clear</button>
@@ -759,6 +771,20 @@ function initRulesEnginePanel() {
     }
     if (e.target.classList.contains('delete-schedule-btn')) {
       confirmDeleteSchedule(parseInt(e.target.dataset.schedId), e.target.dataset.schedName);
+    }
+  });
+
+  // Event delegation for vertical schedule dropdown
+  document.getElementById('verticals-body').addEventListener('change', async (e) => {
+    if (e.target.classList.contains('vert-schedule-select')) {
+      const vertId = parseInt(e.target.dataset.vertId);
+      const schedId = e.target.value ? parseInt(e.target.value) : null;
+      const res = await fetch(`/api/rules-engine/ui/verticals/${vertId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_schedule_id: schedId }),
+      });
+      if (!res.ok) { window.showError?.('Failed to update schedule.'); return; }
+      window.showSuccess?.('Default schedule updated.');
     }
   });
 

@@ -317,6 +317,13 @@ export const RulesEngineDB = {
       [verticalName]
     );
   },
+  async updateVertical(id, data) {
+    await db.runAsync(
+      'UPDATE verticals SET default_schedule_id = ? WHERE id = ?',
+      [data.default_schedule_id ?? null, id]
+    );
+    return db.getAsync('SELECT * FROM verticals WHERE id = ?', [id]);
+  },
   async deleteVertical(id) {
     return db.runAsync('DELETE FROM verticals WHERE id = ?', [id]);
   },
