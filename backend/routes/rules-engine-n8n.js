@@ -3,6 +3,7 @@ import express from 'express';
 import { RulesEngineDB } from '../db/rules-engine-db.js';
 import { resolveRuleEntities } from '../utils/rules-engine-resolver.js';
 import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
+import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 
 export const rulesEngineN8nRouter = express.Router();
 
@@ -184,6 +185,36 @@ rulesEngineN8nRouter.get('/token-health', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- Logs (for daily digest) ---
+rulesEngineN8nRouter.get('/logs', async (req, res) => {
+  try {
+    const logs = await RulesEngineDB.getLogs({
+      date_from: req.query.date_from,
+      date_to: req.query.date_to,
+      rule_id: req.query.rule_id ? parseInt(req.query.rule_id) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit) : 500,
+    });
+    res.json(logs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- Coverage (for daily digest) ---
+rulesEngineN8nRouter.get('/coverage', async (req, res) => {
+  try {
+    const cachedCampaigns = await FacebookCacheDB.getCampaigns();
+    const assignments = await RulesEngineDB.listAllAssignedCampaignIds();
+    const scheduledCampaigns = await RulesEngineDB.listAllScheduledCampaignIds();
+    const orphans = cachedCampaigns.filter(c => {
+      return !assignments.has(c.id) || !scheduledCampaigns.has(c.id);
+    }).map(c => ({
+      ...c,
+      missing_rule: !assignments.has(c.id),
+      missing_schedule: !scheduledCampaigns.has(c.id),
+    }));
+    res.json(orphans);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 rulesEngineN8nRouter.post('/verticals/upsert', async (req, res) => {
