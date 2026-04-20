@@ -228,7 +228,8 @@ rulesEngineN8nRouter.delete('/pause-pending', async (req, res) => {
 
 rulesEngineN8nRouter.get('/token-health', async (req, res) => {
   try {
-    const expiring = await FacebookAuthDB.getExpiringTokens(7);
+    const days = parseInt(req.query.days) || 7;
+    const expiring = await FacebookAuthDB.getExpiringTokens(days);
     res.json({ ok: true, expiring_soon: expiring });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -242,6 +243,7 @@ rulesEngineN8nRouter.get('/logs', async (req, res) => {
       date_from: req.query.date_from,
       date_to: req.query.date_to,
       rule_id: req.query.rule_id ? parseInt(req.query.rule_id) : undefined,
+      action_taken: req.query.action_taken || undefined,
       limit: req.query.limit ? parseInt(req.query.limit) : 500,
     });
     res.json(logs);

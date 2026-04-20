@@ -5,6 +5,139 @@ import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 
 export const rulesEngineUiRouter = express.Router();
 
+// --- Rule Templates ---
+const RULE_TEMPLATES = [
+  {
+    id: 'spend_cap',
+    name: 'Spend Cap Kill',
+    description: 'Pause when daily spend exceeds threshold',
+    scope: 'campaign',
+    action: 'pause',
+    cooldown_hours: 4,
+    alert_level: 'warning',
+    combinator: 'AND',
+    conditions: [{ metric: 'spend_today', operator: 'gt', value: 300, lookback: 'today' }],
+    params: { threshold: 300 },
+  },
+  {
+    id: 'roi_kill',
+    name: 'Negative ROI Kill',
+    description: 'Pause when spend is high but ROI is negative',
+    scope: 'campaign',
+    action: 'pause',
+    cooldown_hours: 24,
+    alert_level: 'critical',
+    combinator: 'AND',
+    conditions: [
+      { metric: 'spend_today', operator: 'gt', value: 300, lookback: 'today' },
+      { metric: 'roi', operator: 'lt', value: -15, lookback: 'today' },
+    ],
+    params: { spend_threshold: 300, roi_threshold: -15 },
+  },
+  {
+    id: 'cpa_cap',
+    name: 'CPA Cap',
+    description: 'Pause when CPA exceeds threshold with sufficient spend',
+    scope: 'ad',
+    action: 'pause',
+    cooldown_hours: 24,
+    alert_level: 'warning',
+    combinator: 'AND',
+    conditions: [
+      { metric: 'cpa', operator: 'gt', value: 45, lookback: 'last_3d' },
+      { metric: 'spend_today', operator: 'gt', value: 100, lookback: 'today' },
+    ],
+    params: { cpa_threshold: 45, spend_threshold: 100 },
+  },
+  {
+    id: 'zero_conv',
+    name: 'Zero Conversions Kill',
+    description: 'Pause when spend is high but zero conversions',
+    scope: 'ad',
+    action: 'pause',
+    cooldown_hours: 12,
+    alert_level: 'warning',
+    combinator: 'AND',
+    conditions: [
+      { metric: 'spend_today', operator: 'gt', value: 80, lookback: 'today' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'today' },
+    ],
+    params: { spend_threshold: 80 },
+  },
+  {
+    id: 'burst_spend',
+    name: 'Burst Spend',
+    description: 'Pause when spend velocity spikes vs 7-day baseline',
+    scope: 'campaign',
+    action: 'pause',
+    cooldown_hours: 1,
+    alert_level: 'critical',
+    combinator: 'AND',
+    conditions: [{ metric: 'spend_velocity', operator: 'gt', value: 3, lookback: 'last_30min' }],
+    params: { multiplier: 3 },
+  },
+  {
+    id: 'scale_winner',
+    name: 'Scale Winner',
+    description: 'Scale budget +20% when CPA is low and conversions are high',
+    scope: 'adset',
+    action: 'scale_budget',
+    cooldown_hours: 48,
+    alert_level: 'info',
+    combinator: 'AND',
+    conditions: [
+      { metric: 'cpa', operator: 'lt', value: 25, lookback: 'last_3d' },
+      { metric: 'conversions', operator: 'gte', value: 5, lookback: 'last_3d' },
+      { metric: 'spend_today', operator: 'gt', value: 200, lookback: 'today' },
+    ],
+    action_params: { scale_pct: 20, cap: 500 },
+    params: { cpa_threshold: 25, min_conversions: 5, spend_threshold: 200, cap: 500 },
+  },
+  {
+    id: 'account_cap',
+    name: 'Account Spend Cap',
+    description: 'Pause all campaigns when account daily spend exceeds cap',
+    scope: 'account',
+    action: 'pause',
+    cooldown_hours: 4,
+    alert_level: 'critical',
+    combinator: 'AND',
+    conditions: [{ metric: 'account_spend_today', operator: 'gt', value: 5000, lookback: 'today' }],
+    params: { cap: 5000 },
+  },
+];
+
+rulesEngineUiRouter.get('/templates', (req, res) => {
+  res.json(RULE_TEMPLATES);
+});
+
+rulesEngineUiRouter.post('/rules/from-template', async (req, res) => {
+  try {
+    const { template_id, overrides = {} } = req.body;
+    const tpl = RULE_TEMPLATES.find(t => t.id === template_id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+
+    const conditions = tpl.conditions.map(c => ({
+      ...c,
+      value: overrides[Object.keys(overrides).find(k => c.metric.includes(k.replace('_threshold','').replace('_cap','')))] ?? c.value,
+    }));
+
+    const rule = await RulesEngineDB.createRule({
+      name: overrides.name || tpl.name,
+      scope: tpl.scope,
+      conditions_json: JSON.stringify(conditions),
+      action: tpl.action,
+      action_params_json: tpl.action_params ? JSON.stringify(tpl.action_params) : null,
+      cooldown_hours: overrides.cooldown_hours ?? tpl.cooldown_hours,
+      is_active: 1,
+      is_dry_run: 0,
+      combinator: tpl.combinator,
+      alert_level: tpl.alert_level,
+    });
+    res.status(201).json({ ...rule, template_id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // --- Rules CRUD ---
 rulesEngineUiRouter.get('/rules', async (req, res) => {
   try { res.json(await RulesEngineDB.listAllRules()); }
@@ -79,9 +212,14 @@ rulesEngineUiRouter.post('/rules/:id/assign', async (req, res) => {
 });
 
 rulesEngineUiRouter.delete('/rules/:id/assign', async (req, res) => {
-  const { entity_type, entity_id } = req.body;
   try {
-    await RulesEngineDB.removeAssignment(parseInt(req.params.id), entity_type, entity_id);
+    const ruleId = parseInt(req.params.id);
+    const assignments = Array.isArray(req.body.assignments)
+      ? req.body.assignments
+      : [{ entity_type: req.body.entity_type, entity_id: req.body.entity_id }];
+    for (const a of assignments) {
+      await RulesEngineDB.removeAssignment(ruleId, a.entity_type, a.entity_id);
+    }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -333,6 +471,15 @@ rulesEngineUiRouter.delete('/tags', async (req, res) => {
   try {
     const { campaign_id, tag } = req.body;
     await RulesEngineDB.removeTag(campaign_id, tag);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+rulesEngineUiRouter.delete('/tags/global', async (req, res) => {
+  try {
+    const { tag } = req.body;
+    if (!tag) return res.status(400).json({ error: 'tag required' });
+    await RulesEngineDB.removeTagGlobally(tag);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

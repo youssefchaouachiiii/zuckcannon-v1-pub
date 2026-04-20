@@ -198,6 +198,16 @@ export const RulesEngineDB = {
       [campaignId, tag]
     );
   },
+  async removeTagGlobally(tag) {
+    await db.runAsync(
+      `DELETE FROM rule_assignments WHERE entity_type='tag' AND entity_id=?`,
+      [tag]
+    );
+    return db.runAsync(
+      `DELETE FROM campaign_labels WHERE label_type='tag' AND label_value=?`,
+      [tag]
+    );
+  },
 
   // --- Assignments ---
   async addAssignment(ruleId, entityType, entityId) {
@@ -337,6 +347,17 @@ export const RulesEngineDB = {
     return db.getAsync('SELECT * FROM verticals WHERE id = ?', [id]);
   },
   async deleteVertical(id) {
+    const vertical = await db.getAsync('SELECT name FROM verticals WHERE id = ?', [id]);
+    if (vertical) {
+      await db.runAsync(
+        `DELETE FROM campaign_labels WHERE label_type='vertical' AND label_value=?`,
+        [vertical.name]
+      );
+      await db.runAsync(
+        `DELETE FROM rule_assignments WHERE entity_type='vertical' AND entity_id=?`,
+        [vertical.name]
+      );
+    }
     return db.runAsync('DELETE FROM verticals WHERE id = ?', [id]);
   },
 
@@ -349,12 +370,13 @@ export const RulesEngineDB = {
        data.action_taken, data.trigger_data_json, data.is_dry_run ?? 0]
     );
   },
-  async getLogs({ date_from, date_to, rule_id, limit = 500 } = {}) {
+  async getLogs({ date_from, date_to, rule_id, action_taken, limit = 500 } = {}) {
     let sql = 'SELECT * FROM rule_logs WHERE 1=1';
     const params = [];
-    if (date_from) { sql += ' AND DATE(created_at) >= ?'; params.push(date_from); }
-    if (date_to) { sql += ' AND DATE(created_at) <= ?'; params.push(date_to); }
+    if (date_from) { sql += ' AND created_at >= ?'; params.push(date_from); }
+    if (date_to) { sql += ' AND created_at <= ?'; params.push(date_to); }
     if (rule_id) { sql += ' AND rule_id = ?'; params.push(rule_id); }
+    if (action_taken) { sql += ' AND action_taken = ?'; params.push(action_taken); }
     sql += ' ORDER BY created_at DESC LIMIT ?';
     params.push(limit);
     return db.allAsync(sql, params);
@@ -400,9 +422,17 @@ export const RulesEngineDB = {
 
   async listAllAssignedCampaignIds() {
     const rows = await db.allAsync(
-      `SELECT DISTINCT entity_id FROM rule_assignments WHERE entity_type = 'campaign'`
+      `SELECT DISTINCT entity_id as campaign_id FROM rule_assignments WHERE entity_type = 'campaign'
+       UNION
+       SELECT DISTINCT cl.campaign_id FROM campaign_labels cl
+       JOIN rule_assignments ra ON ra.entity_type = 'vertical' AND ra.entity_id = cl.label_value
+       WHERE cl.label_type = 'vertical'
+       UNION
+       SELECT DISTINCT cl.campaign_id FROM campaign_labels cl
+       JOIN rule_assignments ra ON ra.entity_type = 'tag' AND ra.entity_id = cl.label_value
+       WHERE cl.label_type = 'tag'`
     );
-    return new Set(rows.map(r => r.entity_id));
+    return new Set(rows.map(r => r.campaign_id));
   },
 
   async listAllScheduledCampaignIds() {
