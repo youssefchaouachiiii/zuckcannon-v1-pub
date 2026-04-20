@@ -455,6 +455,38 @@ export const RulesEngineDB = {
       [ruleId, entityId]
     );
   },
+
+  // S03: stale pause_pending entries (pending > X minutes without resolution)
+  async getStalePausePending(minutes = 10) {
+    const cutoff = new Date(Date.now() - minutes * 60000).toISOString();
+    return db.allAsync(
+      `SELECT rule_id, entity_id, created_at FROM pause_pending WHERE created_at <= ?`,
+      [cutoff]
+    );
+  },
+
+  // I06: last successful FB data pull
+  async getLastPullSuccessAt() {
+    const row = await db.getAsync(
+      `SELECT created_at FROM rule_logs WHERE action_taken='pull_success' ORDER BY created_at DESC LIMIT 1`
+    );
+    return row?.created_at || null;
+  },
+
+  // M02: count consecutive pull_failed entries before any pull_success
+  async getConsecutivePullFailures() {
+    const rows = await db.allAsync(
+      `SELECT action_taken FROM rule_logs
+       WHERE action_taken IN ('pull_success', 'pull_failed')
+       ORDER BY created_at DESC LIMIT 10`
+    );
+    let count = 0;
+    for (const row of rows) {
+      if (row.action_taken === 'pull_failed') count++;
+      else break;
+    }
+    return count;
+  },
 };
 
 export default RulesEngineDB;

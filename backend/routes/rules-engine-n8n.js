@@ -9,8 +9,9 @@ export const rulesEngineN8nRouter = express.Router();
 
 rulesEngineN8nRouter.get('/health', async (req, res) => {
   try {
-    const [lastCycleAt, errorCount, tokens] = await Promise.all([
+    const [lastCycleAt, lastPullSuccessAt, errorCount, tokens] = await Promise.all([
       RulesEngineDB.getLastCycleAt(),
+      RulesEngineDB.getLastPullSuccessAt(),
       RulesEngineDB.getRecentErrorCount(24),
       FacebookAuthDB.listSystemUserTokens(),
     ]);
@@ -19,6 +20,7 @@ rulesEngineN8nRouter.get('/health', async (req, res) => {
       ok: !stale,
       ts: new Date().toISOString(),
       last_cycle: lastCycleAt,
+      last_pull_success: lastPullSuccessAt,
       stale,
       accounts: tokens.length,
       errors_24h: errorCount,
@@ -195,6 +197,23 @@ rulesEngineN8nRouter.get('/pause-pending/check', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// S03: stale pause_pending entries
+rulesEngineN8nRouter.get('/pause-pending/stale', async (req, res) => {
+  try {
+    const minutes = parseInt(req.query.minutes) || 10;
+    const items = await RulesEngineDB.getStalePausePending(minutes);
+    res.json({ count: items.length, items });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// M02: consecutive pull failure count
+rulesEngineN8nRouter.get('/pull-failures/consecutive', async (req, res) => {
+  try {
+    const count = await RulesEngineDB.getConsecutivePullFailures();
+    res.json({ consecutive_failures: count, alert: count >= 3 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 rulesEngineN8nRouter.delete('/pause-pending', async (req, res) => {
