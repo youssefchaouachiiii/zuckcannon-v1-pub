@@ -360,6 +360,21 @@ export const RulesEngineDB = {
     return db.allAsync(sql, params);
   },
 
+  async getLastCycleAt() {
+    const row = await db.getAsync(
+      `SELECT created_at FROM rule_logs WHERE action_taken='cycle_ran' ORDER BY created_at DESC LIMIT 1`
+    );
+    return row?.created_at || null;
+  },
+  async getRecentErrorCount(hours = 24) {
+    const since = new Date(Date.now() - hours * 3600000).toISOString();
+    const row = await db.getAsync(
+      `SELECT COUNT(*) as cnt FROM rule_logs WHERE action_taken LIKE '%_failed' AND created_at >= ?`,
+      [since]
+    );
+    return row?.cnt || 0;
+  },
+
   // --- Exemptions ---
   async setExemption(ruleId, entityId, type, expiresAt) {
     return db.runAsync(
@@ -429,8 +444,8 @@ export const RulesEngineDB = {
   },
   async isPausePending(ruleId, entityId) {
     const row = await db.getAsync(
-      `SELECT 1 FROM pause_pending WHERE rule_id=? AND entity_id=?`,
-      [ruleId, entityId]
+      `SELECT 1 FROM pause_pending WHERE entity_id=?`,
+      [entityId]
     );
     return !!row;
   },

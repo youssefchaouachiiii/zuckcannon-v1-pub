@@ -7,8 +7,25 @@ import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 
 export const rulesEngineN8nRouter = express.Router();
 
-rulesEngineN8nRouter.get('/health', (req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
+rulesEngineN8nRouter.get('/health', async (req, res) => {
+  try {
+    const [lastCycleAt, errorCount, tokens] = await Promise.all([
+      RulesEngineDB.getLastCycleAt(),
+      RulesEngineDB.getRecentErrorCount(24),
+      FacebookAuthDB.listSystemUserTokens(),
+    ]);
+    const stale = !lastCycleAt || (Date.now() - new Date(lastCycleAt).getTime()) > 5 * 60000;
+    res.json({
+      ok: !stale,
+      ts: new Date().toISOString(),
+      last_cycle: lastCycleAt,
+      stale,
+      accounts: tokens.length,
+      errors_24h: errorCount,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
@@ -125,6 +142,8 @@ rulesEngineN8nRouter.get('/snapshots/:entityId', async (req, res) => {
   }
 });
 
+const MIN_BASELINE_HOURS = 24;
+
 rulesEngineN8nRouter.post('/snapshots/burst-check', async (req, res) => {
   try {
     const { entity_ids, minutes = 30 } = req.body;
@@ -133,6 +152,16 @@ rulesEngineN8nRouter.post('/snapshots/burst-check', async (req, res) => {
       const recentSnaps = await RulesEngineDB.getSpendSnapshots(entityId, minutes);
       const baselineSnaps = await RulesEngineDB.getSpendSnapshots(entityId, 7 * 24 * 60);
       const spend_recent = recentSnaps.reduce((sum, s) => sum + s.spend, 0);
+
+      const oldestSnap = baselineSnaps[0];
+      const hasEnoughBaseline = oldestSnap &&
+        (Date.now() - new Date(oldestSnap.recorded_at).getTime()) >= MIN_BASELINE_HOURS * 3600000;
+
+      if (!hasEnoughBaseline) {
+        results[entityId] = { burst_multiplier: 0, spend_recent, avg_period: 0, insufficient_baseline: true };
+        continue;
+      }
+
       const totalBaseline = baselineSnaps.reduce((sum, s) => sum + s.spend, 0);
       const periods = (7 * 24 * 60) / minutes;
       const avg_period = periods > 0 ? totalBaseline / periods : 0;
