@@ -299,6 +299,69 @@
         "jsonBody": "={{ $json }}",
         "options": { "onError": "continueRegularOutput" }
       }
+    },
+    {
+      "id": "node-check-critical-token-expiry",
+      "name": "Check Critical Token Expiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3100, 220],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/token-health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "days", "value": "3" }]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      }
+    },
+    {
+      "id": "node-critical-tokens",
+      "name": "Critical Tokens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 220],
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.expiring_soon?.length }}",
+            "rightValue": 0,
+            "operator": { "type": "number", "operation": "gt" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-prepare-critical-alert",
+      "name": "Prepare Critical Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3540, 220],
+      "parameters": {
+        "jsCode": "const tokens = $('Check Critical Token Expiry').item.json.expiring_soon || [];\nconst text = '🚨 *URGENT: Token Expiring in <3 Days*\\n' + tokens.map(t => t.business_name + ': expires ' + t.expires_at).join('\\n') + '\\nRefresh token immediately to avoid rule engine failure.';\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown' } }];"
+      }
+    },
+    {
+      "id": "node-alert-critical-token",
+      "name": "Alert Critical Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3760, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": { "onError": "continueRegularOutput" }
+      }
     }
   ],
   "connections": {
@@ -356,7 +419,10 @@
       "main": [[{ "node": "Split Schedules", "type": "main", "index": 0 }]]
     },
     "Check Token Expiry": {
-      "main": [[{ "node": "Tokens Expiring?", "type": "main", "index": 0 }]]
+      "main": [[
+        { "node": "Tokens Expiring?", "type": "main", "index": 0 },
+        { "node": "Check Critical Token Expiry", "type": "main", "index": 0 }
+      ]]
     },
     "Tokens Expiring?": {
       "main": [
@@ -364,7 +430,17 @@
         []
       ]
     },
-    "Prepare Expiry Alert": { "main": [[{ "node": "Alert Expiring Token", "type": "main", "index": 0 }]] }
+    "Prepare Expiry Alert": { "main": [[{ "node": "Alert Expiring Token", "type": "main", "index": 0 }]] },
+    "Check Critical Token Expiry": {
+      "main": [[{ "node": "Critical Tokens?", "type": "main", "index": 0 }]]
+    },
+    "Critical Tokens?": {
+      "main": [
+        [{ "node": "Prepare Critical Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Prepare Critical Alert": { "main": [[{ "node": "Alert Critical Token", "type": "main", "index": 0 }]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1" },

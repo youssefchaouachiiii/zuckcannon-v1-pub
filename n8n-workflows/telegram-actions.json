@@ -158,11 +158,32 @@
       }
     },
     {
+      "id": "node-log-reenable",
+      "name": "Log Re-enable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_type: 'campaign', entity_id: $('Restore Callback Data').item.json.entityId, entity_name: $('Restore Callback Data').item.json.entityName, action_taken: 'telegram_reenable', trigger_data_json: JSON.stringify({ source: 'telegram', user: $('Restore Callback Data').item.json.chatId }) }) }}",
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
       "id": "node-confirm-reenable",
       "name": "Confirm Re-enable",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2000, 100],
+      "position": [2220, 100],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
@@ -171,6 +192,27 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ chat_id: $('Restore Callback Data').item.json.chatId, text: '✅ Re-enabled `' + $('Restore Callback Data').item.json.entityName + '`', parse_mode: 'Markdown' }) }}",
         "options": {}
+      }
+    },
+    {
+      "id": "node-log-snooze",
+      "name": "Log Snooze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_type: 'campaign', entity_id: $('Restore Callback Data').item.json.entityId, entity_name: $('Restore Callback Data').item.json.entityName, action_taken: 'telegram_snooze', trigger_data_json: JSON.stringify({ source: 'telegram', hours: 6, user: $('Restore Callback Data').item.json.chatId }) }) }}",
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
       }
     },
     {
@@ -219,9 +261,15 @@
       "main": [[{ "node": "Clear Pause Pending", "type": "main", "index": 0 }]]
     },
     "Clear Pause Pending": {
+      "main": [[{ "node": "Log Re-enable", "type": "main", "index": 0 }]]
+    },
+    "Log Re-enable": {
       "main": [[{ "node": "Confirm Re-enable", "type": "main", "index": 0 }]]
     },
     "Set Snooze Exemption": {
+      "main": [[{ "node": "Log Snooze", "type": "main", "index": 0 }]]
+    },
+    "Log Snooze": {
       "main": [[{ "node": "Confirm Snooze", "type": "main", "index": 0 }]]
     }
   },

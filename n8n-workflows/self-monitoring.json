@@ -66,6 +66,94 @@
         "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\udd34 *Zuckcannon Unreachable*\\nRules engine is paused \\u2014 no rules are being evaluated.\\nTime: {{ new Date().toISOString() }}\\nCheck server immediately.\",\n  \"parse_mode\": \"Markdown\"\n}",
         "options": {}
       }
+    },
+    {
+      "id": "node-log-engine-down",
+      "name": "Log Engine Down",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\"entity_type\":\"system\",\"entity_id\":\"engine\",\"action_taken\":\"engine_down\",\"trigger_data_json\":\"{}\",\"is_dry_run\":0}",
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-check-recent-down",
+      "name": "Check Recent Down",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 180],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "action_taken", "value": "engine_down" },
+            { "name": "date_from", "value": "={{ new Date(Date.now() - 10 * 60000).toISOString() }}" },
+            { "name": "limit", "value": "1" }
+          ]
+        },
+        "options": { "onError": "continueRegularOutput" }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-was-down",
+      "name": "Was Down Recently?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 180],
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ Array.isArray($json) ? $json.length : 0 }}",
+            "rightValue": 0,
+            "operator": { "type": "number", "operation": "gt" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-prepare-recovery-alert",
+      "name": "Prepare Recovery Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 180],
+      "parameters": {
+        "jsCode": "return [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text: '✅ *Zuckcannon Recovered*\\nRules engine is back online and evaluating rules normally.\\nTime: ' + new Date().toISOString(), parse_mode: 'Markdown' } }];"
+      }
+    },
+    {
+      "id": "node-send-recovery-alert",
+      "name": "Send Recovery Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": { "onError": "continueRegularOutput" }
+      }
     }
   ],
   "connections": {
@@ -77,9 +165,24 @@
     },
     "Is Up?": {
       "main": [
-        [],
+        [{ "node": "Check Recent Down", "type": "main", "index": 0 }],
         [{ "node": "Alert Down", "type": "main", "index": 0 }]
       ]
+    },
+    "Alert Down": {
+      "main": [[{ "node": "Log Engine Down", "type": "main", "index": 0 }]]
+    },
+    "Check Recent Down": {
+      "main": [[{ "node": "Was Down Recently?", "type": "main", "index": 0 }]]
+    },
+    "Was Down Recently?": {
+      "main": [
+        [{ "node": "Prepare Recovery Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Prepare Recovery Alert": {
+      "main": [[{ "node": "Send Recovery Alert", "type": "main", "index": 0 }]]
     }
   },
   "active": false,

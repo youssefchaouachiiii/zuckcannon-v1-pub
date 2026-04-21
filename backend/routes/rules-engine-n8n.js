@@ -36,11 +36,14 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
     const defaultToken = systemUserTokens[0]?.access_token || null;
 
+    const cachedCampaigns = await FacebookCacheDB.getCampaigns();
+    const nameMap = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.name]));
+
     const resolved = await Promise.all(
       rules.map(async (rule) => {
         const entityIds = await resolveRuleEntities(rule.id);
         // Each entity gets a token; future: match per ad-account BM
-        const entities = entityIds.map(entityId => ({ entityId, token: defaultToken }));
+        const entities = entityIds.map(entityId => ({ entityId, entityName: nameMap[entityId] || entityId, token: defaultToken }));
         return {
           ...rule,
           conditions: JSON.parse(rule.conditions_json),
