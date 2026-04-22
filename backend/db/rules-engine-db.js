@@ -109,6 +109,25 @@ async function initializeDatabase() {
   )`);
   await db.runAsync(`ALTER TABLE spend_snapshots ADD COLUMN spend_delta REAL NOT NULL DEFAULT 0`).catch(() => {});
 
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS redtrack_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_name TEXT NOT NULL UNIQUE,
+    roi REAL DEFAULT 0,
+    revenue REAL DEFAULT 0,
+    profit REAL DEFAULT 0,
+    conversions REAL DEFAULT 0,
+    offer_name TEXT,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS rt_offers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    offer_id TEXT NOT NULL UNIQUE,
+    offer_name TEXT NOT NULL,
+    vertical_id INTEGER REFERENCES verticals(id) ON DELETE SET NULL,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
   await db.runAsync(`CREATE TABLE IF NOT EXISTS pause_pending (
     rule_id INTEGER NOT NULL,
     entity_id TEXT NOT NULL,
@@ -486,6 +505,41 @@ export const RulesEngineDB = {
   async pruneSpendSnapshots(daysOld = 7) {
     const cutoff = new Date(Date.now() - daysOld * 86400000).toISOString();
     return db.runAsync(`DELETE FROM spend_snapshots WHERE recorded_at < ?`, [cutoff]);
+  },
+
+  // --- RedTrack Snapshots ---
+  async upsertRedtrackSnapshot(campaignName, data) {
+    return db.runAsync(
+      `INSERT INTO redtrack_snapshots (campaign_name, roi, revenue, profit, conversions, offer_name, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(campaign_name) DO UPDATE SET
+         roi=excluded.roi, revenue=excluded.revenue, profit=excluded.profit,
+         conversions=excluded.conversions, offer_name=excluded.offer_name,
+         recorded_at=CURRENT_TIMESTAMP`,
+      [campaignName, data.roi ?? 0, data.revenue ?? 0, data.profit ?? 0,
+       data.conversions ?? 0, data.offer_name ?? null]
+    );
+  },
+  async getAllRedtrackSnapshots() {
+    return db.allAsync(`SELECT * FROM redtrack_snapshots`);
+  },
+  async pruneRedtrackSnapshots() {
+    return db.runAsync(`DELETE FROM redtrack_snapshots WHERE recorded_at < datetime('now', '-2 hours')`);
+  },
+
+  // --- RT Offers ---
+  async upsertRtOffer(offerId, offerName, verticalId) {
+    return db.runAsync(
+      `INSERT INTO rt_offers (offer_id, offer_name, vertical_id)
+       VALUES (?, ?, ?)
+       ON CONFLICT(offer_id) DO UPDATE SET
+         offer_name=excluded.offer_name,
+         vertical_id=COALESCE(rt_offers.vertical_id, excluded.vertical_id)`,
+      [offerId, offerName, verticalId ?? null]
+    );
+  },
+  async getUnmappedRtOffers() {
+    return db.allAsync(`SELECT offer_id, offer_name FROM rt_offers WHERE vertical_id IS NULL`);
   },
 
   // --- Pause Pending ---

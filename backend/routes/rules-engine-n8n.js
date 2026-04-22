@@ -40,11 +40,22 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     await RulesEngineDB.autoAssignVerticalLabels(cachedCampaigns);
     const nameMap = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.name]));
 
+    const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
+    const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
+
     const resolved = await Promise.all(
       rules.map(async (rule) => {
         const entityIds = await resolveRuleEntities(rule.id);
-        // Each entity gets a token; future: match per ad-account BM
-        const entities = entityIds.map(entityId => ({ entityId, entityName: nameMap[entityId] || entityId, token: defaultToken }));
+        const entities = entityIds.map(entityId => {
+          const entityName = nameMap[entityId] || entityId;
+          const rt = rtMap[entityName.trim().toLowerCase()] || null;
+          return {
+            entityId,
+            entityName,
+            token: defaultToken,
+            rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
+          };
+        });
         return {
           ...rule,
           conditions: JSON.parse(rule.conditions_json),
@@ -171,6 +182,39 @@ rulesEngineN8nRouter.post('/snapshots', async (req, res) => {
     }
     await RulesEngineDB.pruneSpendSnapshots(7);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/snapshots/redtrack', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    for (const item of items) {
+      if (!item.campaign_name) continue;
+      await RulesEngineDB.upsertRedtrackSnapshot(item.campaign_name, item);
+    }
+    await RulesEngineDB.pruneRedtrackSnapshots();
+    res.json({ ok: true, count: items.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/offers/sync', async (req, res) => {
+  try {
+    const offers = Array.isArray(req.body) ? req.body : [req.body];
+    const verticals = await RulesEngineDB.listVerticals();
+    for (const { offer_id, offer_name } of offers) {
+      if (!offer_id || !offer_name) continue;
+      const matches = verticals.filter(v =>
+        offer_name.toLowerCase().includes(v.name.toLowerCase())
+      );
+      const verticalId = matches.length === 1 ? matches[0].id : null;
+      await RulesEngineDB.upsertRtOffer(offer_id, offer_name, verticalId);
+    }
+    const unmatched = await RulesEngineDB.getUnmappedRtOffers();
+    res.json({ ok: true, unmatched });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
