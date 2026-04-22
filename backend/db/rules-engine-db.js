@@ -104,8 +104,10 @@ async function initializeDatabase() {
     entity_id TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     spend REAL NOT NULL,
+    spend_delta REAL NOT NULL DEFAULT 0,
     recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  await db.runAsync(`ALTER TABLE spend_snapshots ADD COLUMN spend_delta REAL NOT NULL DEFAULT 0`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS pause_pending (
     rule_id INTEGER NOT NULL,
@@ -464,9 +466,14 @@ export const RulesEngineDB = {
 
   // --- Spend Snapshots ---
   async saveSpendSnapshot(entityId, entityType, spend) {
+    const prev = await db.getAsync(
+      `SELECT spend FROM spend_snapshots WHERE entity_id=? ORDER BY recorded_at DESC LIMIT 1`,
+      [entityId]
+    );
+    const delta = prev ? Math.max(0, spend - prev.spend) : 0;
     return db.runAsync(
-      `INSERT INTO spend_snapshots (entity_id, entity_type, spend) VALUES (?, ?, ?)`,
-      [entityId, entityType, spend]
+      `INSERT INTO spend_snapshots (entity_id, entity_type, spend, spend_delta) VALUES (?, ?, ?, ?)`,
+      [entityId, entityType, spend, delta]
     );
   },
   async getSpendSnapshots(entityId, minutes = 30) {

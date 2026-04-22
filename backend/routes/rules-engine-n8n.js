@@ -195,7 +195,7 @@ rulesEngineN8nRouter.post('/snapshots/burst-check', async (req, res) => {
     for (const entityId of (entity_ids || [])) {
       const recentSnaps = await RulesEngineDB.getSpendSnapshots(entityId, minutes);
       const baselineSnaps = await RulesEngineDB.getSpendSnapshots(entityId, 7 * 24 * 60);
-      const spend_recent = recentSnaps.reduce((sum, s) => sum + s.spend, 0);
+      const spend_recent = recentSnaps.reduce((sum, s) => sum + s.spend_delta, 0);
 
       const oldestSnap = baselineSnaps[0];
       const hasEnoughBaseline = oldestSnap &&
@@ -206,7 +206,7 @@ rulesEngineN8nRouter.post('/snapshots/burst-check', async (req, res) => {
         continue;
       }
 
-      const totalBaseline = baselineSnaps.reduce((sum, s) => sum + s.spend, 0);
+      const totalBaseline = baselineSnaps.reduce((sum, s) => sum + s.spend_delta, 0);
       const periods = (7 * 24 * 60) / minutes;
       const avg_period = periods > 0 ? totalBaseline / periods : 0;
       results[entityId] = {
