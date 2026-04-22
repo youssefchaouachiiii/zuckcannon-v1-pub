@@ -25,6 +25,7 @@ async function initializeDatabase() {
     default_schedule_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  await db.runAsync(`ALTER TABLE verticals ADD COLUMN keyword TEXT`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -327,6 +328,21 @@ export const RulesEngineDB = {
   async listVerticals() {
     return db.allAsync('SELECT * FROM verticals ORDER BY name ASC');
   },
+  async autoAssignVerticalLabels(campaigns) {
+    const verticals = await db.allAsync(
+      `SELECT name, keyword FROM verticals WHERE keyword IS NOT NULL AND keyword != ''`
+    );
+    for (const campaign of campaigns) {
+      for (const v of verticals) {
+        if (campaign.name.toLowerCase().includes(v.keyword.toLowerCase())) {
+          await db.runAsync(
+            `INSERT OR IGNORE INTO campaign_labels (campaign_id, label_type, label_value) VALUES (?, 'vertical', ?)`,
+            [campaign.id, v.name]
+          );
+        }
+      }
+    }
+  },
   async getCampaignsByVertical(verticalName) {
     return db.allAsync(
       `SELECT campaign_id FROM campaign_labels WHERE label_type='vertical' AND label_value=?`,
@@ -373,8 +389,8 @@ export const RulesEngineDB = {
   async getLogs({ date_from, date_to, rule_id, action_taken, limit = 500 } = {}) {
     let sql = 'SELECT * FROM rule_logs WHERE 1=1';
     const params = [];
-    if (date_from) { sql += ' AND created_at >= ?'; params.push(date_from); }
-    if (date_to) { sql += ' AND created_at <= ?'; params.push(date_to); }
+    if (date_from) { sql += ' AND created_at >= ?'; params.push(date_from.replace('T', ' ').replace('Z', '')); }
+    if (date_to) { sql += ' AND created_at <= ?'; params.push(date_to.replace('T', ' ').replace('Z', '')); }
     if (rule_id) { sql += ' AND rule_id = ?'; params.push(rule_id); }
     if (action_taken) { sql += ' AND action_taken = ?'; params.push(action_taken); }
     sql += ' ORDER BY created_at DESC LIMIT ?';

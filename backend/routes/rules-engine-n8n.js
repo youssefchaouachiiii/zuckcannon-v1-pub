@@ -37,6 +37,7 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const defaultToken = systemUserTokens[0]?.access_token || null;
 
     const cachedCampaigns = await FacebookCacheDB.getCampaigns();
+    await RulesEngineDB.autoAssignVerticalLabels(cachedCampaigns);
     const nameMap = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.name]));
 
     const resolved = await Promise.all(
@@ -78,6 +79,44 @@ rulesEngineN8nRouter.get('/active-schedules', async (req, res) => {
     );
 
     res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/schedules/enforcement', async (req, res) => {
+  try {
+    const schedules = await RulesEngineDB.listActiveSchedules();
+    const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
+    const token = systemUserTokens[0]?.access_token || null;
+
+    const now = new Date();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const actions = [];
+
+    for (const s of schedules) {
+      const campaignRows = await RulesEngineDB.getCampaignsForSchedule(s.id);
+      if (campaignRows.length === 0) continue;
+
+      const localTime = new Date(now.toLocaleString('en-US', { timeZone: s.timezone }));
+      const currentDay = dayNames[localTime.getDay()];
+      const currentTime = localTime.toTimeString().substring(0, 5); // HH:MM
+      const days = JSON.parse(s.days_json);
+      const inWindow = days.includes(currentDay) && currentTime >= s.start_time && currentTime < s.end_time;
+
+      for (const { campaign_id } of campaignRows) {
+        if (inWindow) {
+          // Rules override: don't re-enable if a rule has this campaign paused
+          const pending = await RulesEngineDB.isPausePending(null, campaign_id);
+          if (pending) continue;
+          actions.push({ campaign_id, action: 'ACTIVE', schedule_name: s.name });
+        } else {
+          actions.push({ campaign_id, action: 'PAUSED', schedule_name: s.name });
+        }
+      }
+    }
+
+    res.json({ actions, token });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
