@@ -26,6 +26,7 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   await db.runAsync(`ALTER TABLE verticals ADD COLUMN keyword TEXT`).catch(() => {});
+  await db.runAsync(`ALTER TABLE rt_offers ADD COLUMN last_alerted_at DATETIME`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,7 +620,15 @@ export const RulesEngineDB = {
     return db.allAsync(
       `SELECT offer_id, offer_name FROM rt_offers
        WHERE vertical_id IS NULL
-         AND recorded_at >= datetime('now', '-20 minutes')`
+         AND (last_alerted_at IS NULL OR last_alerted_at < datetime('now', '-24 hours'))`
+    );
+  },
+  async markOffersAlerted(offerIds) {
+    if (!offerIds.length) return;
+    const placeholders = offerIds.map(() => '?').join(',');
+    return db.runAsync(
+      `UPDATE rt_offers SET last_alerted_at = CURRENT_TIMESTAMP WHERE offer_id IN (${placeholders})`,
+      offerIds
     );
   },
 

@@ -304,6 +304,7 @@ rulesEngineN8nRouter.post('/offers/sync', async (req, res) => {
       await RulesEngineDB.upsertRtOffer(offer_id, offer_name, verticalId);
     }
     const unmatched = await RulesEngineDB.getUnmappedRtOffers();
+    if (unmatched.length) await RulesEngineDB.markOffersAlerted(unmatched.map(o => o.offer_id));
     res.json({ ok: true, unmatched });
   } catch (err) {
     res.status(500).json({ error: err.message });
