@@ -4,9 +4,11 @@ import express from 'express';
 
 jest.mock('../backend/db/rules-engine-db.js');
 jest.mock('../backend/utils/facebook-auth-db.js');
+jest.mock('../backend/utils/facebook-cache-db.js');
 
 import { RulesEngineDB } from '../backend/db/rules-engine-db.js';
 import { FacebookAuthDB } from '../backend/utils/facebook-auth-db.js';
+import { FacebookCacheDB } from '../backend/utils/facebook-cache-db.js';
 
 const { rulesEngineN8nRouter } = await import('../backend/routes/rules-engine-n8n.js');
 
@@ -27,8 +29,11 @@ beforeEach(() => {
   RulesEngineDB.pruneDaily = jest.fn().mockResolvedValue({});
   RulesEngineDB.getFbDailyWindow = jest.fn().mockResolvedValue(null);
   RulesEngineDB.getRtDailyWindow = jest.fn().mockResolvedValue(null);
+  RulesEngineDB.autoAssignVerticalLabels = jest.fn().mockResolvedValue({});
+  RulesEngineDB.getAllRedtrackSnapshots = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.getExpiringTokens = jest.fn().mockResolvedValue([]);
+  FacebookCacheDB.getCampaigns = jest.fn().mockResolvedValue([]);
 });
 
 describe('GET /api/rules-engine/health', () => {
@@ -202,14 +207,28 @@ describe('POST /daily/fb', () => {
 
 describe('GET /active-rules includes insights_3d and insights_7d', () => {
   it('each entity has insights_3d and insights_7d fields', async () => {
+    RulesEngineDB.listActiveRules.mockResolvedValueOnce([{
+      id: 1, name: 'Test Rule', scope: 'campaign',
+      conditions_json: '[]', action: 'pause',
+      action_params_json: null, cooldown_hours: 4,
+      is_active: 1, is_dry_run: 0, created_at: '2026-01-01',
+      combinator: 'AND', alert_level: 'warning',
+    }]);
+    RulesEngineDB.getAssignmentsForRule.mockResolvedValueOnce([
+      { entity_type: 'campaign', entity_id: 'camp_test' },
+    ]);
+    // getFbDailyWindow and getRtDailyWindow already mocked to return null
+
     const res = await request(app)
       .get('/api/rules-engine/active-rules')
       .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
     expect(res.status).toBe(200);
-    if (res.body.length > 0 && res.body[0].entities?.length > 0) {
-      const e = res.body[0].entities[0];
-      expect(e).toHaveProperty('insights_3d');
-      expect(e).toHaveProperty('insights_7d');
-    }
+    expect(res.body.length).toBeGreaterThan(0);
+    const entity = res.body[0].entities[0];
+    expect(entity).toHaveProperty('insights_3d');
+    expect(entity).toHaveProperty('insights_7d');
+    // Both null because FB window mock returns null
+    expect(entity.insights_3d).toBeNull();
+    expect(entity.insights_7d).toBeNull();
   });
 });

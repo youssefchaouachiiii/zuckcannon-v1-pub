@@ -257,6 +257,7 @@ rulesEngineN8nRouter.post('/daily/fb', async (req, res) => {
       });
       count++;
     }
+    await RulesEngineDB.pruneDaily(30);
     res.json({ ok: true, count });
   } catch (err) {
     res.status(500).json({ error: err.message });
