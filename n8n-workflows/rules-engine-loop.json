@@ -1745,7 +1745,13 @@
     },
     "Has Trigger?": {
       "main": [
-        [],
+        [
+          {
+            "node": "Collect Batch",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Split Rules",
