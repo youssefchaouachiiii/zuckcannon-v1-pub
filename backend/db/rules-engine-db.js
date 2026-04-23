@@ -616,7 +616,11 @@ export const RulesEngineDB = {
     );
   },
   async getUnmappedRtOffers() {
-    return db.allAsync(`SELECT offer_id, offer_name FROM rt_offers WHERE vertical_id IS NULL`);
+    return db.allAsync(
+      `SELECT offer_id, offer_name FROM rt_offers
+       WHERE vertical_id IS NULL
+         AND recorded_at >= datetime('now', '-20 minutes')`
+    );
   },
 
   // --- Pause Pending ---
