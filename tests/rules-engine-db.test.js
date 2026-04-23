@@ -77,3 +77,49 @@ describe('RulesEngineDB - snapshots + pause-pending', () => {
     expect(cleared).toBe(false);
   });
 });
+
+describe('RulesEngineDB - daily snapshots', () => {
+  afterEach(async () => {
+    await RulesEngineDB._db.runAsync('DELETE FROM redtrack_daily');
+    await RulesEngineDB._db.runAsync('DELETE FROM fb_daily');
+  });
+
+  it('upsertRtDaily stores and updates a row (no double-count on re-upsert)', async () => {
+    await RulesEngineDB.upsertRtDaily('Banner - EDU', '2026-04-22', {
+      revenue: 500, profit: 120, conversions: 10, cost: 380,
+    });
+    await RulesEngineDB.upsertRtDaily('Banner - EDU', '2026-04-22', {
+      revenue: 600, profit: 150, conversions: 12, cost: 450,
+    });
+    const row = await RulesEngineDB.getRtDailyWindow('Banner - EDU', 3);
+    expect(row.revenue).toBeCloseTo(600); // upsert updated, not doubled
+    expect(row.conversions).toBeCloseTo(12);
+  });
+
+  it('getRtDailyWindow sums rows within window', async () => {
+    await RulesEngineDB.upsertRtDaily('Camp A', '2026-04-21', { revenue: 400, profit: 80, conversions: 8, cost: 320 });
+    await RulesEngineDB.upsertRtDaily('Camp A', '2026-04-22', { revenue: 600, profit: 120, conversions: 12, cost: 480 });
+    const row3d = await RulesEngineDB.getRtDailyWindow('Camp A', 3);
+    expect(row3d.revenue).toBeCloseTo(1000);
+    expect(row3d.conversions).toBeCloseTo(20);
+    expect(row3d.roi).toBeCloseTo(0.25, 2); // profit 200 / cost 800
+  });
+
+  it('upsertFbDaily stores and getFbDailyWindow sums', async () => {
+    await RulesEngineDB.upsertFbDaily('camp_123', 'campaign', '2026-04-21', { spend: 200, conversions: 5, revenue: 250 });
+    await RulesEngineDB.upsertFbDaily('camp_123', 'campaign', '2026-04-22', { spend: 300, conversions: 8, revenue: 380 });
+    const row = await RulesEngineDB.getFbDailyWindow('camp_123', 3);
+    expect(row.spend).toBeCloseTo(500);
+    expect(row.conversions).toBeCloseTo(13);
+    expect(row.cpa).toBeCloseTo(500 / 13, 2);
+  });
+
+  it('pruneDaily removes rows older than keepDays', async () => {
+    await RulesEngineDB._db.runAsync(
+      `INSERT INTO redtrack_daily (campaign_name, date, revenue, profit, conversions, cost, roi) VALUES ('Old Camp', '2020-01-01', 100, 20, 2, 80, 0.25)`
+    );
+    await RulesEngineDB.pruneDaily(30);
+    const row = await RulesEngineDB._db.getAsync(`SELECT * FROM redtrack_daily WHERE campaign_name='Old Camp'`);
+    expect(row).toBeUndefined();
+  });
+});

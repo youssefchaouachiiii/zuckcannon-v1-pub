@@ -128,6 +128,29 @@ async function initializeDatabase() {
     recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS redtrack_daily (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    revenue REAL DEFAULT 0,
+    profit REAL DEFAULT 0,
+    conversions REAL DEFAULT 0,
+    cost REAL DEFAULT 0,
+    roi REAL DEFAULT 0,
+    UNIQUE(campaign_name, date)
+  )`);
+
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS fb_daily (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    spend REAL DEFAULT 0,
+    conversions REAL DEFAULT 0,
+    revenue REAL DEFAULT 0,
+    UNIQUE(entity_id, date)
+  )`);
+
   await db.runAsync(`CREATE TABLE IF NOT EXISTS pause_pending (
     rule_id INTEGER NOT NULL,
     entity_id TEXT NOT NULL,
@@ -526,6 +549,60 @@ export const RulesEngineDB = {
   async pruneRedtrackSnapshots() {
     return db.runAsync(`DELETE FROM redtrack_snapshots WHERE recorded_at < datetime('now', '-2 hours')`);
   },
+
+  // --- Daily Snapshots ---
+  async upsertRtDaily(campaignName, date, { revenue, profit, conversions, cost }) {
+    const roi = cost > 0 ? profit / cost : 0;
+    return db.runAsync(
+      `INSERT INTO redtrack_daily (campaign_name, date, revenue, profit, conversions, cost, roi)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(campaign_name, date) DO UPDATE SET
+         revenue=excluded.revenue, profit=excluded.profit,
+         conversions=excluded.conversions, cost=excluded.cost, roi=excluded.roi`,
+      [campaignName, date, revenue, profit, conversions, cost, roi]
+    );
+  },
+
+  async getRtDailyWindow(campaignName, days) {
+    return db.getAsync(
+      `SELECT
+        SUM(revenue) as revenue, SUM(profit) as profit,
+        SUM(conversions) as conversions, SUM(cost) as cost,
+        CASE WHEN SUM(cost) > 0 THEN SUM(profit) / SUM(cost) ELSE 0 END as roi
+       FROM redtrack_daily
+       WHERE campaign_name=? AND date >= date('now', ? || ' days')`,
+      [campaignName, `-${days}`]
+    );
+  },
+
+  async upsertFbDaily(entityId, entityType, date, { spend, conversions, revenue }) {
+    return db.runAsync(
+      `INSERT INTO fb_daily (entity_id, entity_type, date, spend, conversions, revenue)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(entity_id, date) DO UPDATE SET
+         spend=excluded.spend, conversions=excluded.conversions, revenue=excluded.revenue`,
+      [entityId, entityType, date, spend, conversions, revenue]
+    );
+  },
+
+  async getFbDailyWindow(entityId, days) {
+    return db.getAsync(
+      `SELECT
+        SUM(spend) as spend, SUM(conversions) as conversions, SUM(revenue) as revenue,
+        CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END as cpa,
+        CASE WHEN SUM(spend) > 0 THEN (SUM(revenue) - SUM(spend)) / SUM(spend) ELSE 0 END as roi
+       FROM fb_daily
+       WHERE entity_id=? AND date >= date('now', ? || ' days')`,
+      [entityId, `-${days}`]
+    );
+  },
+
+  async pruneDaily(keepDays = 30) {
+    await db.runAsync(`DELETE FROM redtrack_daily WHERE date < date('now', ? || ' days')`, [`-${keepDays}`]);
+    await db.runAsync(`DELETE FROM fb_daily WHERE date < date('now', ? || ' days')`, [`-${keepDays}`]);
+  },
+
+  get _db() { return db; },
 
   // --- RT Offers ---
   async upsertRtOffer(offerId, offerName, verticalId) {

@@ -12,7 +12,7 @@ const projectRoot = path.join(__dirname, '..', '..');
 
 // Base directory for data storage
 export const getDataDir = () => {
-  return process.env.NODE_ENV === 'development' 
+  return (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
     ? path.join(projectRoot, 'data')
     : '/data';
 };
