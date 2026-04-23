@@ -117,10 +117,16 @@ rulesEngineUiRouter.post('/rules/from-template', async (req, res) => {
     const tpl = RULE_TEMPLATES.find(t => t.id === template_id);
     if (!tpl) return res.status(404).json({ error: 'Template not found' });
 
-    const conditions = tpl.conditions.map(c => ({
-      ...c,
-      value: overrides[Object.keys(overrides).find(k => c.metric.includes(k.replace('_threshold','').replace('_cap','')))] ?? c.value,
-    }));
+    const conditions = tpl.conditions.map(c => {
+      const directVal = overrides[c.metric];
+      const namedKey = Object.keys(overrides).find(k => {
+        if (k === 'threshold' || k === 'cap' || k === 'multiplier') return false;
+        const stripped = k.replace('_threshold', '').replace('_cap', '').replace('_multiplier', '');
+        return stripped && c.metric.includes(stripped);
+      });
+      const val = directVal ?? (namedKey !== undefined ? overrides[namedKey] : undefined) ?? overrides.threshold ?? overrides.cap ?? overrides.multiplier ?? c.value;
+      return { ...c, value: val };
+    });
 
     const rule = await RulesEngineDB.createRule({
       name: overrides.name || tpl.name,
@@ -130,7 +136,7 @@ rulesEngineUiRouter.post('/rules/from-template', async (req, res) => {
       action_params_json: tpl.action_params ? JSON.stringify(tpl.action_params) : null,
       cooldown_hours: overrides.cooldown_hours ?? tpl.cooldown_hours,
       is_active: 1,
-      is_dry_run: 0,
+      is_dry_run: overrides.is_dry_run ?? 1,
       combinator: tpl.combinator,
       alert_level: tpl.alert_level,
     });
