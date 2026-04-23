@@ -43,41 +43,68 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
     const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
 
+    const resolvePerCampaignEntities = async (entityIds) => {
+      return Promise.all(entityIds.map(async (entityId) => {
+        const entityName = nameMap[entityId] || entityId;
+        const rt = rtMap[entityName.trim().toLowerCase()] || null;
+        const nameLower = entityName.trim().toLowerCase();
+
+        const [fb3d, rt3d, fb7d, rt7d] = await Promise.all([
+          RulesEngineDB.getFbDailyWindow(entityId, 3),
+          RulesEngineDB.getRtDailyWindow(nameLower, 3),
+          RulesEngineDB.getFbDailyWindow(entityId, 7),
+          RulesEngineDB.getRtDailyWindow(nameLower, 7),
+        ]);
+
+        const mergeWindow = (fb, rt) => {
+          if (!fb) return null;
+          const spend = fb.spend || 0;
+          const conversions = rt ? (rt.conversions || 0) : (fb.conversions || 0);
+          const revenue = rt ? (rt.revenue || 0) : (fb.revenue || 0);
+          const profit = rt ? (rt.profit || 0) : (revenue - spend);
+          const roi = rt ? (rt.roi || 0) : (spend > 0 ? profit / spend : 0);
+          const cpa = conversions > 0 ? spend / conversions : 0;
+          return { spend, conversions, revenue, profit, roi, cpa };
+        };
+
+        return {
+          entityId,
+          entityName,
+          token: defaultToken,
+          rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
+          insights_3d: mergeWindow(fb3d, rt3d),
+          insights_7d: mergeWindow(fb7d, rt7d),
+        };
+      }));
+    };
+
     const resolved = await Promise.all(
       rules.map(async (rule) => {
-        const entityIds = await resolveRuleEntities(rule.id);
-        const entities = await Promise.all(entityIds.map(async (entityId) => {
-          const entityName = nameMap[entityId] || entityId;
-          const rt = rtMap[entityName.trim().toLowerCase()] || null;
-          const nameLower = entityName.trim().toLowerCase();
+        let entities;
 
-          const [fb3d, rt3d, fb7d, rt7d] = await Promise.all([
-            RulesEngineDB.getFbDailyWindow(entityId, 3),
-            RulesEngineDB.getRtDailyWindow(nameLower, 3),
-            RulesEngineDB.getFbDailyWindow(entityId, 7),
-            RulesEngineDB.getRtDailyWindow(nameLower, 7),
-          ]);
-
-          const mergeWindow = (fb, rt) => {
-            if (!fb) return null;
-            const spend = fb.spend || 0;
-            const conversions = rt ? (rt.conversions || 0) : (fb.conversions || 0);
-            const revenue = rt ? (rt.revenue || 0) : (fb.revenue || 0);
-            const profit = rt ? (rt.profit || 0) : (revenue - spend);
-            const roi = rt ? (rt.roi || 0) : (spend > 0 ? profit / spend : 0);
-            const cpa = conversions > 0 ? spend / conversions : 0;
-            return { spend, conversions, revenue, profit, roi, cpa };
-          };
-
-          return {
-            entityId,
-            entityName,
+        if (rule.scope === 'account') {
+          const entityIds = await resolveRuleEntities(rule.id);
+          let accountIds;
+          if (entityIds.length > 0) {
+            const assigned = cachedCampaigns.filter(c => entityIds.includes(c.id));
+            accountIds = [...new Set(assigned.map(c => c.account_id).filter(Boolean))];
+          }
+          if (!accountIds || accountIds.length === 0) {
+            accountIds = [...new Set(cachedCampaigns.map(c => c.account_id).filter(Boolean))];
+          }
+          entities = accountIds.map(aid => ({
+            entityId: `act_${aid}`,
+            entityName: `Account ${aid}`,
             token: defaultToken,
-            rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
-            insights_3d: mergeWindow(fb3d, rt3d),
-            insights_7d: mergeWindow(fb7d, rt7d),
-          };
-        }));
+            rt: null,
+            insights_3d: null,
+            insights_7d: null,
+          }));
+        } else {
+          const entityIds = await resolveRuleEntities(rule.id);
+          entities = await resolvePerCampaignEntities(entityIds);
+        }
+
         return {
           ...rule,
           conditions: JSON.parse(rule.conditions_json),
