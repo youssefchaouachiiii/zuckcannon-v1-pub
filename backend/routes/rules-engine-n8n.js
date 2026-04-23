@@ -46,16 +46,38 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const resolved = await Promise.all(
       rules.map(async (rule) => {
         const entityIds = await resolveRuleEntities(rule.id);
-        const entities = entityIds.map(entityId => {
+        const entities = await Promise.all(entityIds.map(async (entityId) => {
           const entityName = nameMap[entityId] || entityId;
           const rt = rtMap[entityName.trim().toLowerCase()] || null;
+          const nameLower = entityName.trim().toLowerCase();
+
+          const [fb3d, rt3d, fb7d, rt7d] = await Promise.all([
+            RulesEngineDB.getFbDailyWindow(entityId, 3),
+            RulesEngineDB.getRtDailyWindow(nameLower, 3),
+            RulesEngineDB.getFbDailyWindow(entityId, 7),
+            RulesEngineDB.getRtDailyWindow(nameLower, 7),
+          ]);
+
+          const mergeWindow = (fb, rt) => {
+            if (!fb) return null;
+            const spend = fb.spend || 0;
+            const conversions = rt ? (rt.conversions || 0) : (fb.conversions || 0);
+            const revenue = rt ? (rt.revenue || 0) : (fb.revenue || 0);
+            const profit = rt ? (rt.profit || 0) : (revenue - spend);
+            const roi = rt ? (rt.roi || 0) : (spend > 0 ? profit / spend : 0);
+            const cpa = conversions > 0 ? spend / conversions : 0;
+            return { spend, conversions, revenue, profit, roi, cpa };
+          };
+
           return {
             entityId,
             entityName,
             token: defaultToken,
             rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
+            insights_3d: mergeWindow(fb3d, rt3d),
+            insights_7d: mergeWindow(fb7d, rt7d),
           };
-        });
+        }));
         return {
           ...rule,
           conditions: JSON.parse(rule.conditions_json),
@@ -196,6 +218,46 @@ rulesEngineN8nRouter.post('/snapshots/redtrack', async (req, res) => {
     }
     await RulesEngineDB.pruneRedtrackSnapshots();
     res.json({ ok: true, count: items.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/daily/redtrack', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    let count = 0;
+    for (const { campaign_name, date, revenue, profit, conversions, cost } of items) {
+      if (!campaign_name || !date) continue;
+      await RulesEngineDB.upsertRtDaily(campaign_name, date, {
+        revenue: revenue || 0,
+        profit: profit || 0,
+        conversions: conversions || 0,
+        cost: cost || 0,
+      });
+      count++;
+    }
+    await RulesEngineDB.pruneDaily(30);
+    res.json({ ok: true, count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/daily/fb', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body) ? req.body : [req.body];
+    let count = 0;
+    for (const { entity_id, entity_type, date, spend, conversions, revenue } of items) {
+      if (!entity_id || !date) continue;
+      await RulesEngineDB.upsertFbDaily(entity_id, entity_type || 'campaign', date, {
+        spend: spend || 0,
+        conversions: conversions || 0,
+        revenue: revenue || 0,
+      });
+      count++;
+    }
+    res.json({ ok: true, count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

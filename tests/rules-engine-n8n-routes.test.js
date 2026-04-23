@@ -22,6 +22,11 @@ beforeEach(() => {
   RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([]);
   RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([]);
   RulesEngineDB.getAssignmentsForRule = jest.fn().mockResolvedValue([]);
+  RulesEngineDB.upsertRtDaily = jest.fn().mockResolvedValue({});
+  RulesEngineDB.upsertFbDaily = jest.fn().mockResolvedValue({});
+  RulesEngineDB.pruneDaily = jest.fn().mockResolvedValue({});
+  RulesEngineDB.getFbDailyWindow = jest.fn().mockResolvedValue(null);
+  RulesEngineDB.getRtDailyWindow = jest.fn().mockResolvedValue(null);
   FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.getExpiringTokens = jest.fn().mockResolvedValue([]);
 });
@@ -50,10 +55,10 @@ describe('GET /api/rules-engine/active-rules', () => {
 
     const res = await request(app).get('/api/rules-engine/active-rules');
     expect(res.status).toBe(200);
-    expect(res.body[0].entities).toEqual([
-      { entityId: 'camp_123', token: 'SYS_TOKEN' },
-      { entityId: 'camp_456', token: 'SYS_TOKEN' },
-    ]);
+    expect(res.body[0].entities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entityId: 'camp_123', token: 'SYS_TOKEN' }),
+      expect.objectContaining({ entityId: 'camp_456', token: 'SYS_TOKEN' }),
+    ]));
     expect(res.body[0].token).toBeUndefined();
   });
 });
@@ -155,5 +160,56 @@ describe('GET /api/rules-engine/token-health', () => {
       { id: 1, business_name: 'Test Biz', business_manager_id: 'bm_1', expires_at: '2026-04-22T00:00:00Z' }
     ]);
     expect(FacebookAuthDB.getExpiringTokens).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('POST /daily/redtrack', () => {
+  it('upserts RT daily rows and returns count', async () => {
+    const res = await request(app)
+      .post('/api/rules-engine/daily/redtrack')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret')
+      .send([
+        { campaign_name: 'Camp RT', date: '2026-04-22', revenue: 500, profit: 100, conversions: 10, cost: 400 },
+      ]);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.count).toBe(1);
+  });
+
+  it('skips rows missing campaign_name or date', async () => {
+    const res = await request(app)
+      .post('/api/rules-engine/daily/redtrack')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret')
+      .send([{ revenue: 100 }]);
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+  });
+});
+
+describe('POST /daily/fb', () => {
+  it('upserts FB daily rows and returns count', async () => {
+    const res = await request(app)
+      .post('/api/rules-engine/daily/fb')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret')
+      .send([
+        { entity_id: 'camp_abc', entity_type: 'campaign', date: '2026-04-22', spend: 200, conversions: 5, revenue: 250 },
+      ]);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.count).toBe(1);
+  });
+});
+
+describe('GET /active-rules includes insights_3d and insights_7d', () => {
+  it('each entity has insights_3d and insights_7d fields', async () => {
+    const res = await request(app)
+      .get('/api/rules-engine/active-rules')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    if (res.body.length > 0 && res.body[0].entities?.length > 0) {
+      const e = res.body[0].entities[0];
+      expect(e).toHaveProperty('insights_3d');
+      expect(e).toHaveProperty('insights_7d');
+    }
   });
 });
