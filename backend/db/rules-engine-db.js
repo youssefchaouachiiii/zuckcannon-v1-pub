@@ -646,6 +646,17 @@ export const RulesEngineDB = {
     );
     return !!row;
   },
+  async batchIsPausePending(items) {
+    if (!items.length) return [];
+    const entityIds = items.map(i => i.entity_id);
+    const placeholders = entityIds.map(() => '?').join(',');
+    const rows = await db.allAsync(
+      `SELECT entity_id FROM pause_pending WHERE entity_id IN (${placeholders})`,
+      entityIds
+    );
+    const pendingSet = new Set(rows.map(r => r.entity_id));
+    return items.map(i => ({ rule_id: i.rule_id, entity_id: i.entity_id, pending: pendingSet.has(i.entity_id) }));
+  },
   async clearPausePending(ruleId, entityId) {
     return db.runAsync(
       `DELETE FROM pause_pending WHERE rule_id=? AND entity_id=?`,

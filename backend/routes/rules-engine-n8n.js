@@ -389,6 +389,16 @@ rulesEngineN8nRouter.get('/pause-pending/check', async (req, res) => {
   }
 });
 
+rulesEngineN8nRouter.post('/pause-pending/batch-check', async (req, res) => {
+  try {
+    const { items, _context } = req.body;
+    const results = await RulesEngineDB.batchIsPausePending(items || []);
+    res.json({ results, _context });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // S03: stale pause_pending entries
 rulesEngineN8nRouter.get('/pause-pending/stale', async (req, res) => {
   try {
