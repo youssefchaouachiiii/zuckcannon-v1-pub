@@ -570,7 +570,7 @@ export const RulesEngineDB = {
         SUM(conversions) as conversions, SUM(cost) as cost,
         CASE WHEN SUM(cost) > 0 THEN SUM(profit) / SUM(cost) ELSE 0 END as roi
        FROM redtrack_daily
-       WHERE campaign_name=? AND date >= date('now', ? || ' days')`,
+       WHERE LOWER(campaign_name)=LOWER(?) AND date >= date('now', ? || ' days')`,
       [campaignName, `-${days}`]
     );
   },

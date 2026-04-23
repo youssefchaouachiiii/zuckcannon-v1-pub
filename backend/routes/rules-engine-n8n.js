@@ -283,6 +283,18 @@ rulesEngineN8nRouter.post('/offers/sync', async (req, res) => {
   }
 });
 
+rulesEngineN8nRouter.post('/campaigns/names', async (req, res) => {
+  try {
+    const names = Array.isArray(req.body) ? req.body : [];
+    for (const { id, name } of names) {
+      if (id && name) await FacebookCacheDB.upsertCampaignName(id, name);
+    }
+    res.json({ ok: true, count: names.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 rulesEngineN8nRouter.get('/snapshots/:entityId', async (req, res) => {
   try {
     const minutes = parseInt(req.query.minutes) || 30;

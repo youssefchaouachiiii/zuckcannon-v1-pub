@@ -324,6 +324,15 @@ export const FacebookCacheDB = {
   },
 
   // Campaigns
+  async upsertCampaignName(id, name) {
+    await db.runAsync(
+      `INSERT INTO cached_campaigns (id, user_id, account_id, name, data, last_fetched, updated_at)
+       VALUES (?, 0, '', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT(id, user_id) DO UPDATE SET name=excluded.name, updated_at=CURRENT_TIMESTAMP`,
+      [id, name, JSON.stringify({ id, name })]
+    );
+  },
+
   async saveCampaigns(campaigns) {
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO cached_campaigns (id, account_id, name, data, last_fetched, updated_at)
