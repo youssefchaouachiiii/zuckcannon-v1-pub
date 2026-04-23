@@ -99,6 +99,7 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
             rt: null,
             insights_3d: null,
             insights_7d: null,
+            campaignIds: cachedCampaigns.filter(c => c.account_id === aid).map(c => c.id),
           }));
         } else {
           const entityIds = await resolveRuleEntities(rule.id);
