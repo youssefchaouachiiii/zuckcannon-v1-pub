@@ -646,6 +646,21 @@ export const RulesEngineDB = {
     );
     return !!row;
   },
+  async batchIsExempt(items) {
+    if (!items.length) return [];
+    const params = [];
+    const clauses = items.map(i => {
+      params.push(i.rule_id, i.entity_id);
+      return '(rule_id=? AND entity_id=?)';
+    });
+    const rows = await db.allAsync(
+      `SELECT rule_id, entity_id FROM rule_exemptions WHERE (${clauses.join(' OR ')}) AND datetime(expires_at) > datetime(CURRENT_TIMESTAMP)`,
+      params
+    );
+    const exemptSet = new Set(rows.map(r => `${r.rule_id}:${r.entity_id}`));
+    return items.map(i => ({ rule_id: i.rule_id, entity_id: i.entity_id, exempt: exemptSet.has(`${i.rule_id}:${i.entity_id}`) }));
+  },
+
   async batchIsPausePending(items) {
     if (!items.length) return [];
     const entityIds = items.map(i => i.entity_id);

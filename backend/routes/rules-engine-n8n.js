@@ -202,6 +202,16 @@ rulesEngineN8nRouter.get('/exemptions/check', async (req, res) => {
   }
 });
 
+rulesEngineN8nRouter.post('/exemptions/batch-check', async (req, res) => {
+  try {
+    const { items, _context } = req.body;
+    const results = await RulesEngineDB.batchIsExempt(items || []);
+    res.json({ results, _context });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 rulesEngineN8nRouter.post('/exemptions', async (req, res) => {
   const { rule_id, entity_id, type, cooldown_hours } = req.body;
   const hours = cooldown_hours || 4;
