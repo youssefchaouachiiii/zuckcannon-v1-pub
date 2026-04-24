@@ -11,13 +11,13 @@
           ]
         }
       },
-      "id": "30c9c053-bab0-489e-9c04-00cf84fb2904",
+      "id": "77f390c3-91da-41ac-8b98-32b86ce97c1c",
       "name": "Every 2 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        0,
-        0
+        -244176,
+        128
       ]
     },
     {
@@ -34,39 +34,39 @@
         },
         "options": {}
       },
-      "id": "d6522844-2ecc-4918-b893-5890b9d9aa81",
+      "id": "fae3108e-482d-4209-992d-4b43a8dbb54c",
       "name": "Get Active Rules",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        480,
-        0
+        -243696,
+        128
       ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "id": "a0f3c547-9ff5-4447-b8be-15e4740b86be",
+      "id": "ebdef6f0-c5c9-4b02-8815-7e18e389735b",
       "name": "Split Rules",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        720,
-        0
+        -243456,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const rule = $input.item.json;\nconst entities = rule.entities || [];\nif (entities.length === 0) return [{ json: { skip: true, reason: 'No entities', rule } }];\nconst token = entities[0]?.token || null;\nif (!token) return [{ json: { skip: true, reason: 'No token', rule } }];\nconst MAX = 24;\nconst chunks = [];\n\nif (rule.scope === 'account' && entities.length > 0 && entities.every(e => e.entityId.startsWith('act_'))) {\n  for (let i = 0; i < entities.length; i += MAX) {\n    const chunk = entities.slice(i, i + MAX);\n    const batch = chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?date_preset=today&fields=spend` }));\n    chunks.push({ json: { batch, token, rule, entities, chunkIndex: chunks.length, isAccountScope: true } });\n  }\n  return chunks;\n}\n\nfor (let i = 0; i < entities.length; i += MAX) {\n  const chunk = entities.slice(i, i + MAX);\n  const batch = [\n    ...chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}?fields=effective_status,name` })),\n    ...chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?fields=spend,actions,action_values,purchase_roas,cost_per_action_type&date_preset=today` })),\n  ];\n  chunks.push({ json: { batch, token, rule, entities, chunkIndex: chunks.length } });\n}\nreturn chunks;"
       },
-      "id": "5ed66c47-15f6-4159-a5a4-b93b29ababd6",
+      "id": "f8c1271f-21dd-4717-a140-6400eec94477",
       "name": "Build FB Batch",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        960,
-        0
+        -243216,
+        128
       ]
     },
     {
@@ -92,13 +92,13 @@
         },
         "options": {}
       },
-      "id": "261307fa-3b09-4927-857c-669c72482fcc",
+      "id": "cceaa8e8-2de1-408e-847b-81553181b6bd",
       "name": "Has Data?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1200,
-        0
+        -242976,
+        128
       ]
     },
     {
@@ -121,13 +121,13 @@
         },
         "options": {}
       },
-      "id": "ac38c857-691d-464d-b55f-f9952afefbf0",
+      "id": "c0ba6619-0e81-423a-a005-6d2406ce325e",
       "name": "FB Batch API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1440,
-        0
+        -242736,
+        128
       ],
       "onError": "continueRegularOutput"
     },
@@ -135,13 +135,13 @@
       "parameters": {
         "jsCode": "const { entities, rule, fbResponses, isAccountScope } = $input.item.json;\nconst responses = fbResponses || [];\nconst n = entities.length;\nconst snapshots = entities.map((e, i) => {\n  let spend = 0;\n  const resp = isAccountScope ? responses[i] : responses[n + i];\n  if (resp && resp.code === 200) {\n    try { const b = JSON.parse(resp.body); spend = parseFloat(b?.data?.[0]?.spend || 0); } catch {}\n  }\n  return { entity_id: e.entityId, entity_type: rule.scope, spend };\n});\nreturn [{ json: { snapshots, entity_ids: entities.map(e => e.entityId), _passthrough: $input.item.json } }];"
       },
-      "id": "925bdcc4-4b6c-4112-bc77-2555e949ae21",
+      "id": "36abd137-d5b2-4c1a-8b3f-0a5b202e088d",
       "name": "Prepare Snapshots",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2880,
-        0
+        -241296,
+        128
       ]
     },
     {
@@ -162,26 +162,26 @@
         "jsonBody": "={{ $json.snapshots }}",
         "options": {}
       },
-      "id": "03f5b90c-42ab-4330-93bc-af268c35da90",
+      "id": "138ef5e5-87a1-4ebc-8c38-f6e9c9c8542d",
       "name": "Save Snapshots",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3120,
-        0
+        -241056,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const entity_ids = $('Prepare Snapshots').item.json.entity_ids;\nreturn [{ json: { entity_ids } }];"
       },
-      "id": "6e6ec931-a9a2-4d12-a21d-6070eb414aeb",
+      "id": "bfea192f-7d77-4150-bde9-d6c2c78f42e2",
       "name": "Prepare Burst Check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3360,
-        0
+        -240816,
+        128
       ]
     },
     {
@@ -202,39 +202,39 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "7f10cd82-9049-473f-bf4f-071df0e6238d",
+      "id": "84a05a14-d7c8-4443-8cc3-4d47e078d5b3",
       "name": "Check Burst",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3600,
-        0
+        -240576,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const burstData_1h = $input.item.json;\nconst burstData = $('Check Burst').item.json;\nconst passthrough = $('Prepare Snapshots').item.json._passthrough;\nreturn [{ json: { ...passthrough, burstData, burstData_1h } }];"
       },
-      "id": "3918893b-4b16-492b-aa50-7d1b79023602",
+      "id": "541a46f9-bfce-41e2-b4dc-68015c438f5c",
       "name": "Merge Burst Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4320,
-        0
+        -239856,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const { rule, entities, token, fbResponses, burstData: burstDataRaw, burstData_1h: burstDataRaw1h } = $input.item.json;\nconst responses = fbResponses || [];\nconst burstData = burstDataRaw || {};\nconst burstData_1h = burstDataRaw1h || {};\nconst n = entities.length;\n\nfunction parseInsights(resp, rt) {\n  if (!resp || resp.code !== 200) return null;\n  let body; try { body = JSON.parse(resp.body); } catch { return null; }\n  const d = body?.data?.[0];\n  if (!d) return null;\n  const spend = parseFloat(d.spend || 0);\n  const fbConversions = parseFloat(d.actions?.find(a => a.action_type === 'purchase')?.value || 0);\n  const conversions = rt ? (rt.conversions || 0) : fbConversions;\n  const cpa = conversions > 0 ? spend / conversions : 0;\n  const roas = parseFloat(d.purchase_roas?.[0]?.value || 0);\n  const purchaseValue = parseFloat(d.action_values?.find(a => a.action_type === 'purchase')?.value || 0);\n  const roi = rt ? (rt.roi || 0) : (spend > 0 ? (purchaseValue - spend) / spend : 0);\n  const revenue = rt ? (rt.revenue || 0) : purchaseValue;\n  const profit = rt ? (rt.profit || 0) : (purchaseValue - spend);\n  return { spend_today: spend, conversions, cpa, roas, roi, revenue, profit };\n}\n\nconst conditions = rule.conditions || [];\nconst combinator = rule.combinator || 'AND';\nconst triggered = [];\n\nfor (let i = 0; i < n; i++) {\n  const entity = entities[i];\n  const entityId = entity.entityId;\n  const entityToken = entity.token || token;\n\n  const statusResp = responses[i];\n  let entityName = entityId;\n  if (statusResp?.code === 200) {\n    let sb; try { sb = typeof statusResp.body === 'string' ? JSON.parse(statusResp.body) : statusResp.body; } catch {}\n    entityName = sb?.name || entity.entityName || entityId;\n    if (sb?.effective_status === 'PAUSED' && rule.action !== 'enable') continue;\n  }\n\n  const todayInsights = parseInsights(responses[n + i], entity.rt);\n  const insights3d = entity.insights_3d || null;\n  const insights7d = entity.insights_7d || null;\n  if (!todayInsights) continue;\n\n  const burst = burstData[entityId] || {};\n  const burstMetrics = { burst_multiplier: burst.burst_multiplier || 0, spend_30m: burst.spend_recent || 0, avg_30m: burst.avg_period || 0 };\n  const burst1h = burstData_1h[entityId] || {};\n  const burstMetrics1h = { burst_multiplier: burst1h.burst_multiplier || 0, spend_1h: burst1h.spend_recent || 0, avg_1h: burst1h.avg_period || 0 };\n\n  const evaluate = (c) => {\n    if (c.lookback === 'last_30m') {\n      const val = burstMetrics[c.metric];\n      if (val === undefined || val === null) return false;\n      switch (c.operator) {\n        case 'gt': return val > c.value;\n        case 'lt': return val < c.value;\n        case 'gte': return val >= c.value;\n        case 'lte': return val <= c.value;\n        case 'eq': return val === c.value;\n        default: return false;\n      }\n    }\n    if (c.lookback === 'last_1h') {\n      const val = burstMetrics1h[c.metric];\n      if (val === undefined || val === null) return false;\n      switch (c.operator) {\n        case 'gt': return val > c.value;\n        case 'lt': return val < c.value;\n        case 'gte': return val >= c.value;\n        case 'lte': return val <= c.value;\n        case 'eq': return val === c.value;\n        default: return false;\n      }\n    }\n    const src = c.lookback === 'last_7d' ? insights7d : c.lookback === 'last_3d' ? insights3d : todayInsights;\n    const val = src?.[c.metric];\n    if (val === undefined || val === null) return false;\n    switch (c.operator) {\n      case 'gt':  return val > c.value;\n      case 'lt':  return val < c.value;\n      case 'gte': return val >= c.value;\n      case 'lte': return val <= c.value;\n      case 'eq':  return val === c.value;\n      default:    return false;\n    }\n  };\n\n  const allMet = combinator === 'OR' ? conditions.some(evaluate) : conditions.every(evaluate);\n  if (allMet) {\n    triggered.push({ json: { rule, entityId, entityName, metrics: { ...todayInsights, ...burstMetrics }, token: entityToken } });\n  }\n}\n\nif (rule.scope === 'account' && conditions.length > 0) {\n  const isAcct = !!$input.item.json.isAccountScope;\n  if (isAcct) {\n    const totalSpend = entities.reduce((sum, e, i) => {\n      const resp = responses[i];\n      if (!resp || resp.code !== 200) return sum;\n      let body; try { body = JSON.parse(resp.body); } catch { return sum; }\n      return sum + parseFloat(body?.data?.[0]?.spend || 0);\n    }, 0);\n    const condition = conditions[0];\n    if (condition && totalSpend > condition.value) {\n      const campaignItems = [];\n      for (const e of entities) {\n        const campaignIds = e.campaignIds || [];\n        for (const cid of campaignIds) {\n          campaignItems.push({ json: { rule, entityId: String(cid), entityName: (`Campaign ${cid} (Acct ${e.entityId})`), metrics: { spend_today: totalSpend, account_spend_today: totalSpend }, token: e.token || token } });\n        }\n      }\n      if (campaignItems.length > 0) return campaignItems;\n      return [{ json: { noTrigger: true } }];\n    }\n    return [{ json: { noTrigger: true } }];\n  }\n  const totalSpend = entities.reduce((sum, e, i) => {\n    const ins = parseInsights(responses[n + i]);\n    return sum + (ins?.spend_today || 0);\n  }, 0);\n  const condition = conditions[0];\n  if (condition && totalSpend > condition.value) {\n    return entities.map((e, i) => {\n      let entityName = e.entityId;\n      const statusResp = responses[i];\n      if (statusResp?.code === 200) {\n        try { entityName = JSON.parse(statusResp.body)?.name || e.entityId; } catch {}\n      }\n      const ins = parseInsights(responses[n + i]) || { spend_today: 0 };\n      return { json: { rule, entityId: e.entityId, entityName, metrics: { spend_today: ins.spend_today, account_spend_today: totalSpend }, token: e.token || token } };\n    });\n  }\n  return [{ json: { noTrigger: true } }];\n}\n\nreturn triggered.length > 0 ? triggered : [{ json: { noTrigger: true } }];"
       },
-      "id": "8d32db00-071a-47f4-a568-8fa47d1fa633",
+      "id": "f5c3665f-869f-4fea-aef9-d24494dd138a",
       "name": "Evaluate Rules",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4560,
-        0
+        -239616,
+        128
       ]
     },
     {
@@ -260,13 +260,13 @@
         },
         "options": {}
       },
-      "id": "7f03008d-3ead-4396-9e53-b6c0ca9024b4",
+      "id": "63e70005-c648-48bf-a2f9-858ada74c372",
       "name": "Has Trigger?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        4800,
-        0
+        -239376,
+        128
       ]
     },
     {
@@ -292,13 +292,13 @@
         },
         "options": {}
       },
-      "id": "7a778e2e-213f-4196-9d5b-fe671050b886",
+      "id": "e9ceb0a4-b22e-4591-bfc8-cb03356308fe",
       "name": "Not Pending?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        5520,
-        220
+        -238656,
+        352
       ]
     },
     {
@@ -324,13 +324,13 @@
         },
         "options": {}
       },
-      "id": "7022120d-6bf6-43c8-9587-e6bb380e6b17",
+      "id": "ef65fff9-958a-4b90-b941-af6ddc6f0d17",
       "name": "Not Exempt?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        6240,
-        220
+        -237936,
+        352
       ]
     },
     {
@@ -356,26 +356,26 @@
         },
         "options": {}
       },
-      "id": "3886cae7-f4cb-4e50-ae19-1d96f539f985",
+      "id": "8e348dfc-9618-43de-ab28-6068678b3d64",
       "name": "Is Dry Run?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        6480,
-        220
+        -237696,
+        352
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $input.item.json;\nreturn [{ json: {\n  rule_id: d.rule.id,\n  entity_type: d.rule.scope,\n  entity_id: d.entityId,\n  entity_name: d.entityName || d.entityId,\n  action_taken: 'would_have_' + d.rule.action + 'd',\n  trigger_data_json: JSON.stringify(d.metrics),\n  is_dry_run: 1\n} }];"
       },
-      "id": "4c84bcda-3137-46cf-851b-f1318eed5651",
+      "id": "f09916a4-94e8-40b2-8d34-7ae6192bd227",
       "name": "Prepare Dry Run Log",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6480,
-        880
+        -237696,
+        1008
       ]
     },
     {
@@ -396,39 +396,39 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "ddf7a397-63a8-43dc-8cce-c2c59050355d",
+      "id": "472a2404-170b-4668-b756-691186c11ce5",
       "name": "Log Dry Run",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6720,
-        880
+        -237456,
+        1008
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: d }];"
       },
-      "id": "9eb48767-176d-48a7-a621-7bf0d62f2447",
+      "id": "d2c29fa1-ca8d-4221-93e5-77b7d3394684",
       "name": "Restore After Dry Run Log",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6960,
-        880
+        -237216,
+        1008
       ]
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '\ud83e\uddea *[DRY RUN]* \ud83d\udca5 ' + d.rule.name + '\\n`' + name + '`  |  would PAUSE\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') \u2014 ' + pct + '%\\n' + time;\n} else {\n  const roi = m.roi != null ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n  const cpa = m.cpa != null ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n  text = '\ud83e\uddea *[DRY RUN]* ' + d.rule.name + '\\n`' + name + '`  |  would ' + d.rule.action.toUpperCase() + '\\nSpend: $' + m.spend_today.toFixed(0) + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '\ud83d\udca4 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '🧪 *[DRY RUN]* 💥 ' + d.rule.name + '\\n`' + name + '`  |  would PAUSE\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') — ' + pct + '%\\n' + time;\n} else {\n  const roi = m.roi != null ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n  const cpa = m.cpa != null ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n  text = '🧪 *[DRY RUN]* ' + d.rule.name + '\\n`' + name + '`  |  would ' + d.rule.action.toUpperCase() + '\\nSpend: $' + m.spend_today.toFixed(0) + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '💤 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
       },
-      "id": "561b7e16-a307-4257-a72e-6b286acdce73",
+      "id": "1b664a73-9c03-424c-9462-4bebb3decc7c",
       "name": "Prepare Dry Run Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7200,
-        880
+        -236976,
+        1008
       ]
     },
     {
@@ -440,13 +440,13 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "feaa2c07-8e7a-4534-a1c3-6bbbfe4f4fa8",
+      "id": "caaee8ff-af15-4b5b-8fac-4d0af408a857",
       "name": "Dry Run Telegram",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7440,
-        880
+        -236736,
+        1008
       ]
     },
     {
@@ -472,29 +472,29 @@
         },
         "options": {}
       },
-      "id": "8ae6989f-5381-4e0c-9a14-679ae8342a03",
+      "id": "b3a9f6cb-aaeb-405e-a660-6f3541f9b509",
       "name": "Dry Run Is Critical?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        8160,
-        880
+        -236016,
+        1008
       ]
     },
     {
       "parameters": {
         "sendTo": "=info@sigmagrowthpartners.com",
-        "subject": "=\ud83e\uddea [DRY RUN] {{ $('Evaluate Rules').item.json.rule.name }} would fire on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
-        "message": "=<b>\ud83e\uddea [DRY RUN]</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> would {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
+        "subject": "=🧪 [DRY RUN] {{ $('Evaluate Rules').item.json.rule.name }} would fire on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
+        "message": "=<b>🧪 [DRY RUN]</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> would {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
         "options": {}
       },
-      "id": "53f73874-6b4d-482d-9dbd-110810e16ba9",
+      "id": "29143478-481e-4bed-94c5-238717c30247",
       "name": "Dry Run Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        8400,
-        880
+        -235776,
+        1008
       ],
       "webhookId": "59c6b3d6-8407-4908-acb2-1caf564c3332",
       "credentials": {
@@ -522,26 +522,26 @@
         },
         "options": {}
       },
-      "id": "c87c9534-076c-4470-8161-21aaf4d5ef13",
+      "id": "c9a67766-8726-441c-8fa4-bf97bffa07bb",
       "name": "Check Learning Phase",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6480,
-        440
+        -237696,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: { ...d, learning_stage_info: $input.item.json.learning_stage_info || null } }];"
       },
-      "id": "8fd23c1e-3c6f-47af-82c0-9ed1de6fed3e",
+      "id": "7243534f-d64c-4d8d-bfa9-a8947675fc8e",
       "name": "Restore Learning",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6720,
-        440
+        -237456,
+        576
       ]
     },
     {
@@ -567,26 +567,26 @@
         },
         "options": {}
       },
-      "id": "d4d44c9b-99d6-45ec-bb38-d4bc6cceaf2b",
+      "id": "bd4b0488-8947-4e54-8d5a-255fb8657f8f",
       "name": "Not In Learning?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        6960,
-        440
+        -237216,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const { rule, entityId, entityName, metrics, token } = $input.item.json;\n\nlet body = {};\nif (rule.action === 'pause') body = { status: 'PAUSED', access_token: token };\nelse if (rule.action === 'enable') body = { status: 'ACTIVE', access_token: token };\n\nreturn [{ json: { entityId, entityName, body, rule, metrics, token } }];"
       },
-      "id": "9046803d-e3ac-4f2f-b774-5212cc1e93ca",
+      "id": "977777f3-7bca-4731-bfbe-18bef03bdd5a",
       "name": "Build FB Action",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7200,
-        440
+        -236976,
+        576
       ]
     },
     {
@@ -612,13 +612,13 @@
         },
         "options": {}
       },
-      "id": "88a2ebe5-7415-4731-9eaf-cf16dee2b146",
+      "id": "3d11a384-2165-426e-b1be-eac561dfdcf5",
       "name": "Is Scale Budget?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        7440,
-        440
+        -236736,
+        576
       ]
     },
     {
@@ -639,39 +639,39 @@
         },
         "options": {}
       },
-      "id": "2a9dd08e-d49b-4c7b-935e-c91b5811a4d1",
+      "id": "12179db5-7344-4048-9f73-5e9c05c6c00c",
       "name": "Fetch Current Budget",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7440,
-        660
+        -236736,
+        784
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: { ...d, daily_budget: $input.item.json.daily_budget } }];"
       },
-      "id": "d9aac961-0ca5-40d2-8c70-c79ea876386d",
+      "id": "b2896f11-dded-4942-b44d-b6d614a932d1",
       "name": "Restore Budget",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7680,
-        660
+        -236496,
+        784
       ]
     },
     {
       "parameters": {
         "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentBudgetCents = parseInt(daily_budget || 0);\nconst scaledCents = Math.round(currentBudgetCents * 1.2);\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = Math.min(scaledCents, maxCents);\nconst noAction = newBudgetCents === currentBudgetCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents, noAction } }];"
       },
-      "id": "05da9aaf-46a4-483d-9efe-3f2fe39ee886",
+      "id": "1ab3c896-a981-45fa-afe9-56e1ef0abb38",
       "name": "Compute Scale Budget",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7920,
-        660
+        -236256,
+        784
       ]
     },
     {
@@ -694,13 +694,13 @@
         },
         "options": {}
       },
-      "id": "8f8e69ce-cec6-45c3-9a66-c38b8caa8ac5",
+      "id": "8eaa90e6-97f6-4905-bd75-473938e2d834",
       "name": "Call FB API Scale",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8400,
-        660
+        -235776,
+        784
       ]
     },
     {
@@ -726,26 +726,26 @@
         },
         "options": {}
       },
-      "id": "8ab96c1b-33eb-4871-a909-8f01ac72d146",
+      "id": "c42d1e2b-67c1-4549-a74c-51801f25c4d3",
       "name": "Budget Changed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        8160,
-        660
+        -236016,
+        784
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nconst fbResult = $input.item.json;\nreturn [{ json: { ...d, fbResult, actionFailed: !!(fbResult?.error || fbResult?.message) } }];"
       },
-      "id": "606a90a5-fff9-486f-a7a3-89e7eaa11576",
+      "id": "d6a323c0-281b-4bdb-b3b1-5b6570402f6d",
       "name": "Restore After Scale",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8640,
-        660
+        -235536,
+        784
       ]
     },
     {
@@ -768,39 +768,39 @@
         },
         "options": {}
       },
-      "id": "804ab40d-9a01-4552-b37c-399348283fb6",
+      "id": "71717db1-d368-4bbe-ab20-114843c69d11",
       "name": "Call FB API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7680,
-        440
+        -236496,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nconst fbResult = $input.item.json;\nreturn [{ json: { ...d, fbResult, actionFailed: !!(fbResult?.error || fbResult?.message) } }];"
       },
-      "id": "2784e904-e1e4-4f11-8173-e74a36e43dbb",
+      "id": "26563cfc-96bf-4950-86cb-5e68011fdfa0",
       "name": "Restore After FB API",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7920,
-        440
+        -236256,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $input.item.json;\nreturn [{ json: { rule_id: d.rule.id, entity_id: d.entityId } }];"
       },
-      "id": "400df831-d5f8-4d60-a60a-4a3793809432",
+      "id": "4c15a2f7-2aa0-4555-9c06-9b4f3ae6d620",
       "name": "Prepare Pause Pending",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8160,
-        440
+        -236016,
+        576
       ]
     },
     {
@@ -821,39 +821,39 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "fc13d6ef-25bf-4142-9693-f33b4159af75",
+      "id": "08109132-b80f-4cd3-b533-dc58f9b3ec63",
       "name": "Set Pause Pending",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8400,
-        440
+        -235776,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nconst actionFailed = !!$('Restore After FB API').item.json.actionFailed;\nreturn [{ json: { ...d, actionFailed } }];"
       },
-      "id": "8e1224a7-3144-4307-9fea-76d6287437e7",
+      "id": "e32123f3-8606-4d82-ae13-57600172dd74",
       "name": "Restore After Set Pause",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8640,
-        440
+        -235536,
+        576
       ]
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '\ud83d\udca5 *Velocity Kill: ' + d.rule.name + '*\\n`' + name + '`  |  PAUSED\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') \u2014 ' + pct + '%\\n' + time;\n} else {\n  const roi = m.roi != null ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n  const cpa = m.cpa != null ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n  text = '\ud83d\uded1 *' + d.rule.action.charAt(0).toUpperCase() + d.rule.action.slice(1) + ': ' + d.rule.name + '*\\n`' + name + '`  |  ' + d.rule.action.toUpperCase() + 'D\\nSpend: $' + m.spend_today.toFixed(0) + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '\u2705 Re-enable', callback_data: 'reenable:' + d.rule.id + ':' + d.entityId }, { text: '\ud83d\udca4 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '💥 *Velocity Kill: ' + d.rule.name + '*\\n`' + name + '`  |  PAUSED\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') — ' + pct + '%\\n' + time;\n} else {\n  const roi = m.roi != null ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n  const cpa = m.cpa != null ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n  text = '🛑 *' + d.rule.action.charAt(0).toUpperCase() + d.rule.action.slice(1) + ': ' + d.rule.name + '*\\n`' + name + '`  |  ' + d.rule.action.toUpperCase() + 'D\\nSpend: $' + m.spend_today.toFixed(0) + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '✅ Re-enable', callback_data: 'reenable:' + d.rule.id + ':' + d.entityId }, { text: '💤 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
       },
-      "id": "9790a01b-a845-4747-8423-0ae4b45216b6",
+      "id": "909e9c1d-4d05-4bb3-93fa-d1f602b8abea",
       "name": "Prepare Telegram",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8880,
-        440
+        -235296,
+        576
       ]
     },
     {
@@ -865,13 +865,13 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "c25ca200-6133-4f95-9a26-8635464bef65",
+      "id": "69666852-4dcf-49a8-b3ee-565f97872a7b",
       "name": "Telegram Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        9120,
-        440
+        -235056,
+        576
       ]
     },
     {
@@ -897,29 +897,29 @@
         },
         "options": {}
       },
-      "id": "f1b884da-51a4-4355-9340-a9fd292e68e7",
+      "id": "647f594f-7f46-4ff4-8dcd-19206fb0f229",
       "name": "Is Critical?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        9360,
-        440
+        -234816,
+        576
       ]
     },
     {
       "parameters": {
         "sendTo": "=info@sigmagrowthpartners.com",
-        "subject": "=\ud83d\udea8 [Rules Engine] {{ $('Evaluate Rules').item.json.rule.name }} fired on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
-        "message": "=<b>\ud83d\uded1 RULE FIRED</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}D<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
+        "subject": "=🚨 [Rules Engine] {{ $('Evaluate Rules').item.json.rule.name }} fired on {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}",
+        "message": "=<b>🛑 RULE FIRED</b><br><br><b>Rule:</b> {{ $('Evaluate Rules').item.json.rule.name }}<br><b>Entity:</b> {{ $('Evaluate Rules').item.json.entityName || $('Evaluate Rules').item.json.entityId }}<br><b>Action:</b> {{ $('Evaluate Rules').item.json.rule.action.toUpperCase() }}D<br><b>Spend:</b> ${{ $('Evaluate Rules').item.json.metrics.spend_today.toFixed(2) }}<br><b>ROI:</b> {{ ($('Evaluate Rules').item.json.metrics.roi * 100).toFixed(1) }}%<br><b>CPA:</b> ${{ $('Evaluate Rules').item.json.metrics.cpa.toFixed(2) }}<br><b>Time:</b> {{ new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) }} ET",
         "options": {}
       },
-      "id": "1c54d095-3bff-4197-81e8-5bb1e1c1da18",
+      "id": "5b08fc83-ed82-4270-856b-23b36b412834",
       "name": "Email Alert",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        9360,
-        220
+        -234816,
+        352
       ],
       "webhookId": "79133e98-8e10-40da-9344-5528ca9ec776",
       "credentials": {
@@ -933,13 +933,13 @@
       "parameters": {
         "jsCode": "const d = $('Evaluate Rules').item.json;\nlet actionFailed = false;\ntry { actionFailed = !!$('Restore After FB API').item.json.actionFailed; } catch(e) {}\ntry { if (!actionFailed) actionFailed = !!$('Restore After Scale').item.json.actionFailed; } catch(e) {}\nreturn [{ json: {\n  rule_id: d.rule.id,\n  entity_type: d.rule.scope,\n  entity_id: d.entityId,\n  entity_name: d.entityName || d.entityId,\n  action_taken: actionFailed ? d.rule.action + '_failed' : d.rule.action + 'd',\n  trigger_data_json: JSON.stringify(d.metrics),\n  is_dry_run: 0\n} }];"
       },
-      "id": "49235fcb-eea3-4c68-97e9-e6d82e282290",
+      "id": "c36664b6-c277-45d5-81a9-fddde0915fcc",
       "name": "Prepare Action Log",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9600,
-        440
+        -234576,
+        576
       ]
     },
     {
@@ -960,26 +960,26 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "018411fe-ef0d-4b2d-a713-54d7f70da112",
+      "id": "cd9acc5a-ec26-405f-ab4f-b4fa2f045e64",
       "name": "Log Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        9840,
-        440
+        -234336,
+        576
       ]
     },
     {
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: { rule_id: d.rule.id, entity_id: d.entityId, type: 'cooldown', cooldown_hours: d.rule.cooldown_hours || 4 } }];"
+        "jsCode": "const d = $('Evaluate Rules').item.json;\nlet entityId = d.entityId;\nif (d.rule.scope === 'account') {\n  const m = (d.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n  if (m) entityId = m[1];\n}\nreturn [{ json: { rule_id: d.rule.id, entity_id: entityId, type: 'cooldown', cooldown_hours: d.rule.cooldown_hours || 4 } }];"
       },
-      "id": "be7dcbf6-4cea-49e3-8dcd-ca91d3062616",
+      "id": "633f03b6-7a56-48ca-8635-cad7fe117fcd",
       "name": "Prepare Cooldown",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        10080,
-        440
+        -234096,
+        576
       ]
     },
     {
@@ -1000,39 +1000,39 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "a2b74cae-4625-483f-9322-74b6cf09a518",
+      "id": "9ef9de08-1fd6-4eeb-81b7-d74d9b92ba85",
       "name": "Set Cooldown",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        10320,
-        440
+        -233856,
+        576
       ]
     },
     {
       "parameters": {
         "jsCode": "const chunkMeta = $('Build FB Batch').item.json;\nconst fbItems = $input.all();\nconst chunkResponses = fbItems.map(i => i.json);\nreturn [{ json: {\n  rule: chunkMeta.rule,\n  entities: chunkMeta.entities,\n  token: chunkMeta.token,\n  chunkIndex: chunkMeta.chunkIndex,\n  isAccountScope: chunkMeta.isAccountScope || false,\n  chunkResponses,\n}}];"
       },
-      "id": "eeef5cf3-052c-4e79-a397-cb1dc3d5f379",
+      "id": "2d28a455-2f95-447a-a601-8401690c92b2",
       "name": "Restore Chunk Context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1680,
-        0
+        -242496,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const items = $input.all();\nconst first = items[0].json;\nconst allResponses = items.flatMap(i => i.json.chunkResponses || []);\nreturn [{ json: {\n  rule: first.rule,\n  entities: first.entities,\n  fbResponses: allResponses,\n  token: first.token,\n  isAccountScope: first.isAccountScope || false,\n}}];"
       },
-      "id": "37b35151-241f-4805-8877-b36867a308e8",
+      "id": "1a45ae44-3f8d-4760-8a17-154978e6a561",
       "name": "Aggregate Responses",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1920,
-        0
+        -242256,
+        128
       ]
     },
     {
@@ -1053,13 +1053,13 @@
         "jsonBody": "{\"rule_id\": null, \"entity_type\": \"system\", \"entity_id\": \"engine\", \"entity_name\": \"Rules Engine\", \"action_taken\": \"cycle_ran\", \"trigger_data_json\": \"{}\", \"is_dry_run\": 0}",
         "options": {}
       },
-      "id": "ca71bece-08b0-4472-898d-3eaa13f1279a",
+      "id": "8c3861d4-925f-48de-9436-ee68a23d0f26",
       "name": "Log Cycle",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        240,
-        0
+        -243936,
+        128
       ]
     },
     {
@@ -1076,13 +1076,13 @@
         },
         "options": {}
       },
-      "id": "fe2b58b9-3713-4d68-9b95-e872712821d5",
+      "id": "33313621-64bf-4e68-a0b6-066261beb858",
       "name": "Check Stale Pending",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        240,
-        -220
+        -243936,
+        -96
       ]
     },
     {
@@ -1111,13 +1111,13 @@
           "looseTypeValidation": true
         }
       },
-      "id": "906bd24e-8149-41d7-83f1-f11ac3298926",
+      "id": "974f14fb-ce4f-48a6-9cf4-b7cc58e403f7",
       "name": "Has Stale Pending?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        480,
-        -220
+        -243696,
+        -96
       ]
     },
     {
@@ -1126,29 +1126,29 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '\u26a0\ufe0f *Stale Pause Pending*\\n' + $json.items.map(e => '`' + e.entity_id + '` \u2014 since ' + e.created_at).join('\\n') + '\\n\\nManual check needed.', parse_mode: 'Markdown' }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ *Stale Pause Pending*\\n' + $json.items.map(e => '`' + e.entity_id + '` — since ' + e.created_at).join('\\n') + '\\n\\nManual check needed.', parse_mode: 'Markdown' }) }}",
         "options": {}
       },
-      "id": "547f2446-0da0-4082-b6b9-32c1bce546c0",
+      "id": "8299008a-eddc-485b-8e79-c7c5d0091bd9",
       "name": "Stale Pending Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        720,
-        -220
+        -243456,
+        -96
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $input.item.json;\nconst responses = d.fbResponses || [];\nconst successCount = responses.filter(r => r && r.code === 200).length;\nconst pullOk = responses.length > 0 && successCount > 0;\nreturn [{ json: { ...d, pullOk } }];"
       },
-      "id": "c5810b86-108d-4063-8686-a2dae0c91425",
+      "id": "628818b9-1ff6-45a6-8d7b-56394e378b1d",
       "name": "Classify Pull Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2160,
-        0
+        -242016,
+        128
       ]
     },
     {
@@ -1169,26 +1169,26 @@
         "jsonBody": "={{ JSON.stringify({ entity_type: 'engine', entity_id: 'engine', action_taken: $json.pullOk ? 'pull_success' : 'pull_failed', trigger_data_json: JSON.stringify({ responses_total: ($json.fbResponses || []).length, success_count: ($json.fbResponses || []).filter(r => r && r.code === 200).length }) }) }}",
         "options": {}
       },
-      "id": "be590072-6396-4679-a3ed-0529ed8fffc1",
+      "id": "a9d11105-6cbe-4cdb-8697-da5691d3f655",
       "name": "Log Pull Result",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2400,
-        0
+        -241776,
+        128
       ]
     },
     {
       "parameters": {
         "jsCode": "const d = $('Classify Pull Result').item.json;\nreturn [{ json: d }];"
       },
-      "id": "2ca70c4c-b975-4246-bd93-f3149695753e",
+      "id": "7e692fdf-85e5-4c20-94ab-9b98e35083b3",
       "name": "Restore After Pull Log",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2640,
-        0
+        -241536,
+        128
       ]
     },
     {
@@ -1205,13 +1205,13 @@
         },
         "options": {}
       },
-      "id": "e77d856f-5821-4581-822f-242d870e82d8",
+      "id": "a8edef40-01be-45ad-bee7-9decc7974d82",
       "name": "Check Consecutive Failures",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
-        220
+        -241536,
+        352
       ]
     },
     {
@@ -1241,13 +1241,13 @@
           "looseTypeValidation": true
         }
       },
-      "id": "57c6e43d-5faf-4ed1-81d3-2e59c279e788",
+      "id": "a34994b8-c833-41a0-8915-21ae85263fd8",
       "name": "Need Pull Fail Alert?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        2880,
-        220
+        -241296,
+        352
       ]
     },
     {
@@ -1281,13 +1281,13 @@
         },
         "options": {}
       },
-      "id": "node-check-recent-pull-alert",
+      "id": "bc91bac5-0501-408a-a11a-424aef7a75aa",
       "name": "Check Recent Pull Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3120,
-        220
+        -241056,
+        352
       ],
       "alwaysOutputData": true
     },
@@ -1317,13 +1317,13 @@
           "looseTypeValidation": true
         }
       },
-      "id": "node-not-yet-pull-alerted",
+      "id": "42744e22-0e8d-4111-8e3e-2a38efd3df2a",
       "name": "Not Yet Pull Alerted?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        3360,
-        220
+        -240816,
+        352
       ]
     },
     {
@@ -1332,16 +1332,16 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '\ud83d\udea8 *FB Data Pull Failing*\\n' + $('Check Consecutive Failures').item.json.consecutive_failures + ' consecutive failures \u2014 Facebook API may be down or token invalid.', parse_mode: 'Markdown' }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🚨 *FB Data Pull Failing*\\n' + $('Check Consecutive Failures').item.json.consecutive_failures + ' consecutive failures — Facebook API may be down or token invalid.', parse_mode: 'Markdown' }) }}",
         "options": {}
       },
-      "id": "8a0ffbed-c7a5-4788-abb7-c8fe716be575",
+      "id": "eca448bd-ebcd-4fb5-af8b-373d8bfe4aab",
       "name": "Pull Fail Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3600,
-        220
+        -240576,
+        352
       ]
     },
     {
@@ -1362,26 +1362,26 @@
         "jsonBody": "{\"entity_type\":\"engine\",\"entity_id\":\"engine\",\"action_taken\":\"pull_fail_alert\",\"trigger_data_json\":\"{}\",\"is_dry_run\":0}",
         "options": {}
       },
-      "id": "node-log-pull-fail-alert",
+      "id": "1cb85750-9e87-4385-8a9b-1df521725b0a",
       "name": "Log Pull Fail Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3840,
-        220
+        -240336,
+        352
       ]
     },
     {
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nreturn [{ json: { rule_id: d.rule.id, entity_id: d.entityId, type: 'cooldown', cooldown_hours: 0.5 } }];"
+        "jsCode": "const d = $('Evaluate Rules').item.json;\nlet entityId = d.entityId;\nif (d.rule.scope === 'account') {\n  const m = (d.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n  if (m) entityId = m[1];\n}\nreturn [{ json: { rule_id: d.rule.id, entity_id: entityId, type: 'cooldown', cooldown_hours: 0.5 } }];"
       },
-      "id": "2f804a74-28b4-42e2-988e-85a5075cd63e",
+      "id": "a690e21d-016a-4e2e-953f-b24f5b05f57e",
       "name": "Prepare Dry Run Cooldown",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7680,
-        880
+        -236496,
+        1008
       ]
     },
     {
@@ -1402,26 +1402,26 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "b9981062-2f15-42f8-8d89-196a59a880fc",
+      "id": "8ceba003-778c-4980-8603-e63ef02e6122",
       "name": "Set Dry Run Cooldown",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7920,
-        880
+        -236256,
+        1008
       ]
     },
     {
       "parameters": {
         "jsCode": "const { entities, fbResponses } = $input.item.json;\nconst n = entities.length;\nconst names = [];\nfor (let i = 0; i < n; i++) {\n  const resp = fbResponses[i];\n  if (!resp || resp.code !== 200) continue;\n  let body;\n  try { body = JSON.parse(resp.body); } catch { continue; }\n  if (body.name) names.push({ id: entities[i].entityId, name: body.name });\n}\nreturn [{ json: { names } }];"
       },
-      "id": "zzz00001-name-sync-extract",
+      "id": "254d94a6-23a1-45c9-b7f3-bbd2adb26d65",
       "name": "Extract Entity Names",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2640,
-        440
+        -241536,
+        576
       ]
     },
     {
@@ -1446,13 +1446,13 @@
         "jsonBody": "={{ $json.names }}",
         "options": {}
       },
-      "id": "zzz00002-name-sync-post",
+      "id": "cda72302-cd71-4ccc-9056-0678d1bb87ec",
       "name": "Cache Entity Names",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2880,
-        440
+        -241296,
+        576
       ],
       "onError": "continueRegularOutput"
     },
@@ -1460,13 +1460,13 @@
       "parameters": {
         "jsCode": "const entity_ids = $('Prepare Burst Check').item.json.entity_ids;\nreturn [{ json: { entity_ids, minutes: 60 } }];"
       },
-      "id": "zzz00003-burst-1h-prepare",
+      "id": "04cf95c1-c0e4-4afe-a6cb-5b3c74451418",
       "name": "Prepare Burst 1h",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3840,
-        0
+        -240336,
+        128
       ]
     },
     {
@@ -1487,39 +1487,30 @@
         "jsonBody": "={{ $json }}",
         "options": {}
       },
-      "id": "zzz00004-burst-1h-check",
+      "id": "02cdb24d-9184-4098-bd1a-9a36f1700ab3",
       "name": "Check Burst 1h",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4080,
-        0
+        -240096,
+        128
       ],
       "onError": "continueRegularOutput"
     },
     {
-      "id": "collect-batch-pause-check",
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nreturn [{ json: {\n  items: items.map(i => ({ rule_id: i.rule.id, entity_id: i.entityId })),\n  _context: items,\n} }];"
+      },
+      "id": "714fffd9-5e2e-4a0d-9045-b5d84adc72e0",
       "name": "Collect Batch",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4800,
-        220
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all().map(i => i.json);\nreturn [{ json: {\n  items: items.map(i => ({ rule_id: i.rule.id, entity_id: i.entityId })),\n  _context: items,\n} }];"
-      }
+        -239376,
+        352
+      ]
     },
     {
-      "id": "batch-check-pending-http",
-      "name": "Batch Check Pending",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        5040,
-        220
-      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending/batch-check",
@@ -1536,34 +1527,40 @@
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
         "options": {}
-      }
+      },
+      "id": "edc52da1-9273-4bba-89ad-9000f61bb744",
+      "name": "Batch Check Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -239136,
+        352
+      ]
     },
     {
-      "id": "expand-batch-results",
+      "parameters": {
+        "jsCode": "const { results, _context } = $input.item.json;\nconst pendingMap = Object.fromEntries((results || []).map(r => [String(r.entity_id), r.pending]));\nreturn (_context || []).map(item => ({\n  json: { ...item, pending: pendingMap[String(item.entityId)] || false }\n}));"
+      },
+      "id": "b6266338-9366-4c54-90ee-3d09f573a2f3",
       "name": "Expand Batch Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5280,
-        220
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const { results, _context } = $input.item.json;\nconst pendingMap = Object.fromEntries((results || []).map(r => [String(r.entity_id), r.pending]));\nreturn (_context || []).map(item => ({\n  json: { ...item, pending: pendingMap[String(item.entityId)] || false }\n}));"
-      }
+        -238896,
+        352
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all().map(i => i.json);\nreturn [{ json: {\n  items: items.map(i => ({ rule_id: i.rule.id, entity_id: i.entityId })),\n  _context: items,\n} }];",
-        "mode": "runOnceForAllItems"
+        "jsCode": "const items = $input.all().map(i => i.json);\nreturn [{ json: {\n  items: items.map(i => {\n    let entityId = i.entityId;\n    if (i.rule && i.rule.scope === 'account') {\n      const m = (i.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n      if (m) entityId = m[1];\n    }\n    return { rule_id: i.rule.id, entity_id: entityId };\n  }),\n  _context: items,\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5520,
-        220
+        -238672,
+        192
       ],
-      "id": "collect-exemption-batch",
+      "id": "fa8f0c68-9cda-442b-ad16-e3a98a07b141",
       "name": "Collect Exemption Batch"
     },
     {
@@ -1589,24 +1586,29 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5760,
-        220
+        -238416,
+        352
       ],
-      "id": "batch-check-exemptions",
-      "name": "Batch Check Exemptions"
+      "id": "e39995b4-0671-4e16-a379-9a741ec2a431",
+      "name": "Batch Check Exemptions",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const { results, _context } = $input.item.json;\nconst exemptMap = Object.fromEntries((results || []).map(r => [`${r.rule_id}:${String(r.entity_id)}`, r.exempt]));\nreturn (_context || []).map(item => ({\n  json: { ...item, exempt: exemptMap[`${item.rule.id}:${String(item.entityId)}`] || false }\n}));",
-        "mode": "runOnceForAllItems"
+        "jsCode": "const { results, _context } = $input.item.json;\nconst exemptMap = Object.fromEntries((results || []).map(r => [`${r.rule_id}:${String(r.entity_id)}`, r.exempt]));\nreturn (_context || []).map(item => {\n  let lookupId = item.entityId;\n  if (item.rule && item.rule.scope === 'account') {\n    const m = (item.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n    if (m) lookupId = m[1];\n  }\n  return { json: { ...item, exempt: exemptMap[`${item.rule.id}:${String(lookupId)}`] || false } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6000,
-        220
+        -238176,
+        352
       ],
-      "id": "expand-exemption-results",
+      "id": "ec73cfdb-34bb-4c10-a2a2-f33382396067",
       "name": "Expand Exemption Results"
     }
   ],
@@ -2343,8 +2345,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "Pull Fail Alert": {
