@@ -435,7 +435,11 @@ export const RulesEngineDB = {
     let sql = 'SELECT * FROM rule_logs WHERE 1=1';
     const params = [];
     if (date_from) { sql += ' AND created_at >= ?'; params.push(date_from.replace('T', ' ').replace('Z', '')); }
-    if (date_to) { sql += ' AND created_at <= ?'; params.push(date_to.replace('T', ' ').replace('Z', '')); }
+    if (date_to) {
+      // Append end-of-day time if only a date was provided, so same-day timestamps are included
+      const dt = date_to.includes('T') ? date_to.replace('T', ' ').replace('Z', '') : date_to + ' 23:59:59';
+      sql += ' AND created_at <= ?'; params.push(dt);
+    }
     if (rule_id) { sql += ' AND rule_id = ?'; params.push(rule_id); }
     if (action_taken) { sql += ' AND action_taken = ?'; params.push(action_taken); }
     sql += ' ORDER BY created_at DESC LIMIT ?';
