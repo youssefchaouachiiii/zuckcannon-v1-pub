@@ -2968,16 +2968,13 @@
                 <label style="display:block;font-size:13px;margin-bottom:4px;">Action</label>
                 <select id="rule-action" style="width:100%;padding:6px 8px;">
                   <option value="pause">Pause</option>
-                  <option value="scale_budget">Scale Budget</option>
                   <option value="enable">Enable</option>
+                  <option value="scale_budget">Scale Budget</option>
+                  <option value="decrease_budget">Decrease Budget</option>
+                  <option value="notify">Notify Only (no FB action)</option>
                 </select>
               </div>
-              <div id="scale-params" style="display:none;">
-                <label style="display:block;font-size:13px;margin-bottom:4px;">Scale % / Cap $</label>
-                <input type="number" id="scale-pct" value="20" min="1" max="100" style="width:60px;" />
-                <span>/</span>
-                <input type="number" id="scale-cap" value="500" min="0" style="width:70px;" />
-              </div>
+              <div id="action-params" style="display:none;"></div>
               <div>
                 <label style="display:block;font-size:13px;margin-bottom:4px;">Cooldown (hours)</label>
                 <input type="number" id="rule-cooldown" value="4" min="0" style="width:100%;padding:6px 8px;" />

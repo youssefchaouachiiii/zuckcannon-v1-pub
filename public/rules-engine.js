@@ -84,15 +84,193 @@ const RULE_TEMPLATES = [
     scope: 'account',
     alert_level: 'critical',
   },
+  // === STOP-LOSS & KILL SWITCHES ===
+  {
+    name: 'Zero Traction',
+    scope: 'campaign',
+    action: 'pause',
+    conditions: [
+      { metric: 'spend', operator: 'gt', value: 52, lookback: 'last_7d' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'last_7d' },
+    ],
+  },
+  {
+    name: 'Bleeding Ad',
+    scope: 'campaign',
+    action: 'pause',
+    conditions: [
+      { metric: 'spend', operator: 'gt', value: 55, lookback: 'last_7d' },
+      { metric: 'roi', operator: 'lt', value: -0.05, lookback: 'last_7d' },
+      { metric: 'conversions', operator: 'gt', value: 0, lookback: 'last_7d' },
+    ],
+  },
+  {
+    name: 'Terrible CTR',
+    scope: 'ad',
+    action: 'pause',
+    conditions: [
+      { metric: 'spend_today', operator: 'gt', value: 15, lookback: 'today' },
+      { metric: 'ctr', operator: 'lt', value: 0.5, lookback: 'today' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'today' },
+    ],
+  },
+  {
+    name: 'Expensive CPC',
+    scope: 'ad',
+    action: 'pause',
+    conditions: [
+      { metric: 'spend_today', operator: 'gt', value: 25, lookback: 'today' },
+      { metric: 'cpc', operator: 'gt', value: 5, lookback: 'today' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'today' },
+    ],
+  },
+  {
+    name: 'Clickbait Disconnect',
+    scope: 'campaign',
+    action: 'pause',
+    conditions: [
+      { metric: 'outbound_clicks_ctr', operator: 'gt', value: 2.5, lookback: 'last_3d' },
+      { metric: 'lp_conv_rate', operator: 'lt', value: 0.5, lookback: 'last_3d' },
+      { metric: 'spend', operator: 'gt', value: 50, lookback: 'last_3d' },
+    ],
+  },
+  // === SCALING & WINNER MANAGEMENT ===
+  {
+    name: 'Winner Alert',
+    scope: 'campaign',
+    action: 'notify',
+    alert_level: 'info',
+    conditions: [
+      { metric: 'conversions', operator: 'gte', value: 10, lookback: 'last_7d' },
+      { metric: 'roi', operator: 'gt', value: 0.35, lookback: 'last_7d' },
+      { metric: 'spend', operator: 'gt', value: 1000, lookback: 'last_7d' },
+    ],
+  },
+  {
+    name: 'Steady Scaler',
+    scope: 'campaign',
+    action: 'scale_budget',
+    action_params: { scale_pct: 15, max_budget: 500 },
+    conditions: [
+      { metric: 'conversions', operator: 'gt', value: 5, lookback: 'last_3d' },
+      { metric: 'cpa', operator: 'lt', value: 25, lookback: 'last_3d' },
+    ],
+  },
+  {
+    name: 'Late-Day Momentum',
+    scope: 'campaign',
+    action: 'scale_budget',
+    action_params: { scale_pct: 20, max_budget: 0 },
+    conditions: [
+      { metric: 'time_of_day_et', operator: 'gte', value: 1020, lookback: 'today' },
+      { metric: 'roi', operator: 'gt', value: 0, lookback: 'last_3d' },
+    ],
+  },
+  // === BUDGET PROTECTION ===
+  {
+    name: 'Mid-Day Bleed Stop',
+    scope: 'campaign',
+    action: 'pause',
+    alert_level: 'critical',
+    conditions: [
+      { metric: 'time_of_day_et', operator: 'lt', value: 840, lookback: 'today' },
+      { metric: 'budget_pct_used', operator: 'gt', value: 50, lookback: 'today' },
+      { metric: 'roi', operator: 'lt', value: -0.4, lookback: 'today' },
+    ],
+  },
+  {
+    name: 'Bad Day Slasher',
+    scope: 'campaign',
+    action: 'decrease_budget',
+    action_params: { decrease_pct: 50, min_budget: 0 },
+    conditions: [
+      { metric: 'time_of_day_et', operator: 'gte', value: 840, lookback: 'today' },
+      { metric: 'budget_pct_used', operator: 'gt', value: 40, lookback: 'today' },
+      { metric: 'roi', operator: 'lt', value: -0.3, lookback: 'today' },
+    ],
+  },
+  // === FUNNEL HEALTH ===
+  {
+    name: 'Broken Checkout',
+    scope: 'campaign',
+    action: 'pause',
+    alert_level: 'critical',
+    conditions: [
+      { metric: 'initiate_checkout', operator: 'gt', value: 15, lookback: 'today' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'today' },
+      { metric: 'spend_today', operator: 'gt', value: 100, lookback: 'today' },
+    ],
+  },
+  {
+    name: 'Bot Traffic',
+    scope: 'campaign',
+    action: 'pause',
+    alert_level: 'critical',
+    conditions: [
+      { metric: 'link_clicks', operator: 'gt', value: 100, lookback: 'today' },
+      { metric: 'lp_views', operator: 'lt', value: 15, lookback: 'today' },
+    ],
+  },
+  {
+    name: 'Ad Fatigue Downscaler',
+    scope: 'campaign',
+    action: 'decrease_budget',
+    action_params: { decrease_pct: 20, min_budget: 0 },
+    conditions: [
+      { metric: 'frequency', operator: 'gt', value: 3.0, lookback: 'today' },
+      { metric: 'cpa', operator: 'gt', value: 35, lookback: 'last_7d' },
+      { metric: 'spend', operator: 'gt', value: 50, lookback: 'last_7d' },
+    ],
+  },
+  // === DAYPARTING ===
+  {
+    name: 'Weekend Scale-Up',
+    scope: 'campaign',
+    action: 'scale_budget',
+    action_params: { scale_pct: 20, max_budget: 0 },
+    conditions: [
+      { metric: 'day_of_week', operator: 'eq', value: 5, lookback: 'today' },
+      { metric: 'time_of_day_et', operator: 'gte', value: 1380, lookback: 'today' },
+      { metric: 'roi', operator: 'gt', value: 0.1, lookback: 'last_7d' },
+    ],
+  },
+  {
+    name: 'Monday Revert',
+    scope: 'campaign',
+    action: 'decrease_budget',
+    action_params: { decrease_pct: 17, min_budget: 0 },
+    conditions: [
+      { metric: 'day_of_week', operator: 'eq', value: 7, lookback: 'today' },
+      { metric: 'time_of_day_et', operator: 'gte', value: 1380, lookback: 'today' },
+    ],
+  },
 ];
 
 const METRICS = [
-  { value: 'spend_today', label: 'Spend Today ($)' },
-  { value: 'cpa', label: 'CPA ($)' },
-  { value: 'roas', label: 'ROAS' },
-  { value: 'roi', label: 'ROI (%)' },
-  { value: 'conversions', label: 'Conversions' },
-  { value: 'burst_multiplier', label: 'Burst Multiplier' },
+  // Spend
+  { value: 'spend_today',        label: 'Spend Today ($)' },
+  { value: 'spend',              label: 'Spend — window ($)' },
+  { value: 'budget_pct_used',    label: 'Budget Used % (e.g. 50 = 50%)', todayOnly: true },
+  { value: 'budget_remaining_pct', label: 'Budget Remaining %',          todayOnly: true },
+  // Performance
+  { value: 'roi',                label: 'ROI (decimal, e.g. -0.05 = -5%)' },
+  { value: 'cpa',                label: 'CPA ($)' },
+  { value: 'conversions',        label: 'Conversions' },
+  { value: 'roas',               label: 'ROAS' },
+  // Engagement
+  { value: 'ctr',                label: 'CTR — inline (%, e.g. 1.5 = 1.5%)' },
+  { value: 'outbound_clicks_ctr',label: 'Outbound CTR (%, e.g. 2.5 = 2.5%)' },
+  { value: 'lp_conv_rate',       label: 'LP Conversion Rate (%, e.g. 0.5 = 0.5%)' },
+  { value: 'cpc',                label: 'CPC ($)' },
+  { value: 'frequency',          label: 'Frequency' },
+  { value: 'link_clicks',        label: 'Link Clicks' },
+  { value: 'lp_views',           label: 'Landing Page Views' },
+  { value: 'initiate_checkout',  label: 'Initiate Checkout' },
+  // Time (today only)
+  { value: 'time_of_day_et',     label: 'Time of Day ET (mins, e.g. 1020 = 5:00 PM)', todayOnly: true },
+  { value: 'day_of_week',        label: 'Day of Week (1=Mon … 7=Sun)',                todayOnly: true },
+  // Burst
+  { value: 'burst_multiplier',   label: 'Burst Multiplier' },
 ];
 
 const OPERATORS = [
@@ -105,6 +283,18 @@ const OPERATORS = [
 
 let editingRuleId = null;
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function updateLookbackOptions(scopeValue, lookbackSelect) {
+  const multiDayOptions = lookbackSelect.querySelectorAll('option[value="last_3d"], option[value="last_7d"]');
+  const restricted = scopeValue === 'ad';
+  multiDayOptions.forEach(opt => {
+    opt.disabled = restricted;
+    opt.title = restricted ? 'Not available for Ad scope — fb_daily stores campaign-level only' : '';
+  });
+  if (restricted && (lookbackSelect.value === 'last_3d' || lookbackSelect.value === 'last_7d')) {
+    lookbackSelect.value = 'today';
+  }
+}
 
 // ── Tab switching ──────────────────────────────────────────────────────
 function switchReTab(tabName) {
@@ -182,14 +372,42 @@ function applyTemplate(index) {
   document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === 'AND'; });
   document.getElementById('conditions-builder').innerHTML = '';
   t.conditions.forEach(c => addConditionRow(c));
-  document.getElementById('scale-params').style.display = t.action === 'scale_budget' ? 'flex' : 'none';
-  if (t.action_params) {
-    if (t.action_params.scale_pct) document.getElementById('scale-pct').value = t.action_params.scale_pct;
-    if (t.action_params.cap) document.getElementById('scale-cap').value = t.action_params.cap;
-  }
+  renderActionParams(t.action, t.action_params || null);
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'New Rule from Template';
   editingRuleId = null;
+}
+
+function renderActionParams(action, params) {
+  const container = document.getElementById('action-params');
+  if (!container) return;
+  if (action === 'scale_budget') {
+    container.style.display = 'block';
+    container.innerHTML = `<label style="display:block;font-size:13px;margin-bottom:4px;">Scale Params</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <label>Scale % (default 20):
+          <input type="number" name="scale_pct" value="${params?.scale_pct ?? 20}" min="1" max="19" style="width:70px">
+          <small style="color:#888">max 19% — FB resets learning phase above 20%</small>
+        </label>
+        <label style="margin-left:12px">Max Budget ($/day, 0 = no cap):
+          <input type="number" name="max_budget" value="${params?.max_budget || 0}" min="0" style="width:80px">
+        </label>
+      </div>`;
+  } else if (action === 'decrease_budget') {
+    container.style.display = 'block';
+    container.innerHTML = `<label style="display:block;font-size:13px;margin-bottom:4px;">Decrease Params</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <label>Decrease % (e.g. 50 = cut by half):
+          <input type="number" name="decrease_pct" value="${params?.decrease_pct ?? 50}" min="1" max="99" style="width:70px">
+        </label>
+        <label style="margin-left:12px">Min Budget ($/day, 0 = no floor):
+          <input type="number" name="min_budget" value="${params?.min_budget || 0}" min="0" style="width:80px">
+        </label>
+      </div>`;
+  } else {
+    container.style.display = 'none';
+    container.innerHTML = '';
+  }
 }
 
 function addCondition() {
@@ -218,6 +436,12 @@ function addConditionRow(c = {}) {
     <button onclick="this.parentElement.remove()" class="btn-danger btn-sm">×</button>
   `;
   builder.appendChild(div);
+  // Apply scope restriction on initial render
+  const scopeEl = document.getElementById('rule-scope');
+  if (scopeEl) {
+    const lookbackSel = div.querySelector('.cond-lookback');
+    updateLookbackOptions(scopeEl.value, lookbackSel);
+  }
 }
 
 function collectConditions() {
@@ -229,16 +453,37 @@ function collectConditions() {
   }));
 }
 
+function collectActionParams(action) {
+  const container = document.getElementById('action-params');
+  if (!container) return null;
+  if (action === 'scale_budget') {
+    const scalePct = container.querySelector('input[name="scale_pct"]');
+    const maxBudget = container.querySelector('input[name="max_budget"]');
+    return {
+      scale_pct: scalePct ? parseInt(scalePct.value) : 20,
+      max_budget: maxBudget ? parseInt(maxBudget.value) : 0,
+    };
+  }
+  if (action === 'decrease_budget') {
+    const decreasePct = container.querySelector('input[name="decrease_pct"]');
+    const minBudget = container.querySelector('input[name="min_budget"]');
+    return {
+      decrease_pct: decreasePct ? parseInt(decreasePct.value) : 50,
+      min_budget: minBudget ? parseInt(minBudget.value) : 0,
+    };
+  }
+  return null;
+}
+
 async function saveRule() {
+  const action = document.getElementById('rule-action').value;
   const body = {
     name: document.getElementById('rule-name').value.trim(),
     scope: document.getElementById('rule-scope').value,
     conditions: collectConditions(),
     combinator: document.querySelector('input[name="rule-combinator"]:checked')?.value || 'AND',
-    action: document.getElementById('rule-action').value,
-    action_params: document.getElementById('rule-action').value === 'scale_budget'
-      ? { scale_pct: parseInt(document.getElementById('scale-pct').value), cap: parseInt(document.getElementById('scale-cap').value) }
-      : null,
+    action,
+    action_params: collectActionParams(action),
     cooldown_hours: parseInt(document.getElementById('rule-cooldown').value),
     is_dry_run: document.getElementById('rule-dry-run').checked ? 1 : 0,
     alert_level: document.getElementById('rule-alert-level').value,
@@ -267,6 +512,8 @@ async function editRule(id) {
   JSON.parse(rule.conditions_json).forEach(c => addConditionRow(c));
   const combinator = rule.combinator || 'AND';
   document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === combinator; });
+  const storedParams = rule.action_params ? (typeof rule.action_params === 'string' ? JSON.parse(rule.action_params) : rule.action_params) : null;
+  renderActionParams(rule.action, storedParams);
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'Edit Rule';
   // show tabs for edit mode
@@ -799,9 +1046,16 @@ function initRulesEnginePanel() {
     if (e.target === document.getElementById('rules-engine-panel')) closeRulesEnginePanel();
   });
 
-  // Rule editor: show/hide scale params
+  // Rule editor: show/hide action params
   document.getElementById('rule-action').addEventListener('change', e => {
-    document.getElementById('scale-params').style.display = e.target.value === 'scale_budget' ? 'flex' : 'none';
+    renderActionParams(e.target.value, null);
+  });
+
+  // Rule editor: scope → lookback restriction
+  document.getElementById('rule-scope').addEventListener('change', e => {
+    document.querySelectorAll('.cond-lookback').forEach(sel => {
+      updateLookbackOptions(e.target.value, sel);
+    });
   });
 
   // New rule button
