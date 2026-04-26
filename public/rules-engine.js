@@ -353,13 +353,16 @@ async function loadRules() {
 function renderTemplates() {
   const container = document.getElementById('rule-templates');
   if (!container) return;
-  container.innerHTML = RULE_TEMPLATES.map((t, i) => `
-    <div style="border:1px solid #ddd;border-radius:4px;padding:8px 12px;min-width:150px;">
-      <strong style="font-size:13px;">${escapeHtml(t.name)}</strong>
-      <p style="font-size:12px;color:#666;margin:4px 0;">${t.conditions.length} condition(s) → ${escapeHtml(t.action)}</p>
-      <button class="btn-secondary btn-sm apply-template-btn" data-template-index="${i}">Use</button>
-    </div>
-  `).join('');
+  const actionColor = { pause: '#dc2626', scale_budget: '#16a34a', decrease_budget: '#d97706', notify: '#2563eb', enable: '#6b7280' };
+  container.innerHTML = RULE_TEMPLATES.map((t, i) => {
+    const color = actionColor[t.action] || '#6b7280';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:5px 8px;border-bottom:1px solid #f0f0f0;">
+      <button class="btn-secondary btn-sm apply-template-btn" data-template-index="${i}" style="flex-shrink:0;padding:2px 10px;font-size:11px;">Use</button>
+      <span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(t.name)}</span>
+      <span style="font-size:11px;color:#888;white-space:nowrap;">${t.conditions.length} cond</span>
+      <span style="font-size:11px;font-weight:500;color:${color};white-space:nowrap;">→ ${escapeHtml(t.action)}</span>
+    </div>`;
+  }).join('');
 }
 
 function applyTemplate(index) {
