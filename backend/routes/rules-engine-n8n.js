@@ -286,17 +286,40 @@ rulesEngineN8nRouter.post('/daily/fb', async (req, res) => {
   try {
     const items = Array.isArray(req.body) ? req.body : [req.body];
     let count = 0;
-    for (const { entity_id, entity_type, date, spend, conversions, revenue } of items) {
+    for (const item of items) {
+      const { entity_id, entity_type, date, spend, conversions, revenue,
+              ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout, outbound_clicks } = item;
       if (!entity_id || !date) continue;
       await RulesEngineDB.upsertFbDaily(entity_id, entity_type || 'campaign', date, {
-        spend: spend || 0,
-        conversions: conversions || 0,
-        revenue: revenue || 0,
+        spend: spend||0, conversions: conversions||0, revenue: revenue||0,
+        ctr: ctr||0, cpc: cpc||0, frequency: frequency||0,
+        link_clicks: link_clicks||0, lp_views: lp_views||0,
+        initiate_checkout: initiate_checkout||0, outbound_clicks: outbound_clicks||0,
       });
       count++;
     }
     await RulesEngineDB.pruneDaily(30);
     res.json({ ok: true, count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/budget-history', async (req, res) => {
+  try {
+    const { entity_id, entity_type, rule_id, old_budget_cents, new_budget_cents, action } = req.body;
+    if (!entity_id || !old_budget_cents) return res.status(400).json({ error: 'missing fields' });
+    await RulesEngineDB.saveBudgetHistory(entity_id, entity_type||'campaign', rule_id, old_budget_cents, new_budget_cents, action||'decrease_budget');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.get('/budget-history/yesterday-decreased', async (req, res) => {
+  try {
+    const rows = await RulesEngineDB.getYesterdayDecreasedBudgets();
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
