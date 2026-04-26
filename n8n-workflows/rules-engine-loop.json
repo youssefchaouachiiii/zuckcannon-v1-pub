@@ -577,6 +577,7 @@
             "leftValue": "",
             "typeValidation": "strict"
           },
+          "combinator": "or",
           "conditions": [
             {
               "id": "cond-scale",
@@ -586,14 +587,22 @@
                 "type": "string",
                 "operation": "equals"
               }
+            },
+            {
+              "id": "cond-decrease",
+              "leftValue": "={{ $json.rule.action }}",
+              "rightValue": "decrease_budget",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ],
-          "combinator": "and"
+          ]
         },
         "options": {}
       },
       "id": "4aebc4df-b6cf-4312-b8fd-d70c7dc43069",
-      "name": "Is Scale Budget?",
+      "name": "Is Budget Action?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
@@ -1687,6 +1696,133 @@
         -212528,
         3152
       ]
+    },
+    {
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Is Decrease Budget?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -211568,
+        3616
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-decrease-check",
+              "leftValue": "={{ $json.rule.action }}",
+              "rightValue": "decrease_budget",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+      "name": "Compute Decrease Budget",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -211328,
+        3616
+      ],
+      "parameters": {
+        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentCents = parseInt(daily_budget || 0);\nconst decreasePct = (rule.action_params?.decrease_pct ?? 50) / 100;\nconst minCents = rule.action_params?.min_budget ? rule.action_params.min_budget * 100 : 0;\nconst newCents = Math.max(Math.round(currentCents * (1 - decreasePct)), minCents);\nconst noAction = newCents === currentCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents: newCents, oldBudgetCents: currentCents, noAction } }];"
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678902",
+      "name": "Is Dry Run Decrease?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -210368,
+        3472
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-dry-run-decrease",
+              "leftValue": "={{ $json.rule.is_dry_run }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789013",
+      "name": "Save Budget History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -210128,
+        3472
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/n8n/budget-history",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"entity_id\": \"{{ $json.entityId }}\", \"entity_type\": \"campaign\", \"rule_id\": \"{{ $json.rule.id }}\", \"old_budget_cents\": {{ $json.oldBudgetCents }}, \"new_budget_cents\": {{ $json.newBudgetCents }}, \"action\": \"decrease_budget\" }",
+        "options": {}
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890124",
+      "name": "Is Decrease Action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -210608,
+        3472
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-decrease-action",
+              "leftValue": "={{ $json.rule.action }}",
+              "rightValue": "decrease_budget",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -2019,25 +2155,7 @@
       "main": [
         [
           {
-            "node": "Is Scale Budget?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Is Scale Budget?": {
-      "main": [
-        [
-          {
-            "node": "Fetch Current Budget",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Call FB API",
+            "node": "Is Budget Action?",
             "type": "main",
             "index": 0
           }
@@ -2059,7 +2177,7 @@
       "main": [
         [
           {
-            "node": "Compute Scale Budget",
+            "node": "Is Decrease Budget?",
             "type": "main",
             "index": 0
           }
@@ -2110,7 +2228,7 @@
       "main": [
         [
           {
-            "node": "Prepare Telegram",
+            "node": "Is Decrease Action?",
             "type": "main",
             "index": 0
           }
@@ -2598,6 +2716,100 @@
         [
           {
             "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Budget Action?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Current Budget",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call FB API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Decrease Budget?": {
+      "main": [
+        [
+          {
+            "node": "Compute Decrease Budget",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Compute Scale Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Decrease Budget": {
+      "main": [
+        [
+          {
+            "node": "Budget Changed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Decrease Action?": {
+      "main": [
+        [
+          {
+            "node": "Is Dry Run Decrease?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Dry Run Decrease?": {
+      "main": [
+        [
+          {
+            "node": "Save Budget History",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Budget History": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram",
             "type": "main",
             "index": 0
           }
