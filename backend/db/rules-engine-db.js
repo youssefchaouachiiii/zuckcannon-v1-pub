@@ -44,6 +44,36 @@ async function initializeDatabase() {
   await db.runAsync(`ALTER TABLE rules ADD COLUMN combinator TEXT DEFAULT 'AND'`).catch(() => {});
   await db.runAsync(`ALTER TABLE rules ADD COLUMN alert_level TEXT DEFAULT 'warning'`).catch(() => {});
 
+  try {
+    await db.runAsync(`INSERT INTO rules (name,scope,conditions_json,action,is_active) VALUES ('_migtest','campaign','[]','notify',0)`);
+    await db.runAsync(`DELETE FROM rules WHERE name='_migtest'`);
+  } catch (err) {
+    if (err.message && err.message.includes('CHECK constraint')) {
+      await db.runAsync(`PRAGMA foreign_keys = OFF`);
+      await db.runAsync(`
+        CREATE TABLE rules_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          scope TEXT NOT NULL CHECK(scope IN ('campaign','adset','ad','account')),
+          conditions_json TEXT NOT NULL,
+          action TEXT NOT NULL CHECK(action IN ('pause','enable','scale_budget','notify','decrease_budget')),
+          action_params_json TEXT,
+          cooldown_hours INTEGER DEFAULT 4,
+          is_active INTEGER DEFAULT 1,
+          is_dry_run INTEGER DEFAULT 0,
+          combinator TEXT DEFAULT 'AND',
+          alert_level TEXT DEFAULT 'warning',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+      await db.runAsync(`INSERT INTO rules_v2 SELECT * FROM rules`);
+      await db.runAsync(`DROP TABLE rules`);
+      await db.runAsync(`ALTER TABLE rules_v2 RENAME TO rules`);
+      await db.runAsync(`PRAGMA foreign_keys = ON`);
+    } else {
+      throw err;
+    }
+  }
+
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rule_assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
@@ -150,6 +180,25 @@ async function initializeDatabase() {
     conversions REAL DEFAULT 0,
     revenue REAL DEFAULT 0,
     UNIQUE(entity_id, date)
+  )`);
+
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN ctr REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN cpc REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN frequency REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN link_clicks REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN lp_views REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN initiate_checkout REAL DEFAULT 0`).catch(() => {});
+  await db.runAsync(`ALTER TABLE fb_daily ADD COLUMN outbound_clicks REAL DEFAULT 0`).catch(() => {});
+
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS budget_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    rule_id INTEGER,
+    old_budget_cents INTEGER NOT NULL,
+    new_budget_cents INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS pause_pending (
@@ -580,13 +629,34 @@ export const RulesEngineDB = {
     );
   },
 
-  async upsertFbDaily(entityId, entityType, date, { spend, conversions, revenue }) {
+  async upsertFbDaily(entityId, entityType, date, { spend, conversions, revenue, ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout, outbound_clicks }) {
     return db.runAsync(
-      `INSERT INTO fb_daily (entity_id, entity_type, date, spend, conversions, revenue)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO fb_daily (entity_id, entity_type, date, spend, conversions, revenue, ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout, outbound_clicks)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(entity_id, date) DO UPDATE SET
-         spend=excluded.spend, conversions=excluded.conversions, revenue=excluded.revenue`,
-      [entityId, entityType, date, spend, conversions, revenue]
+         spend=excluded.spend, conversions=excluded.conversions, revenue=excluded.revenue,
+         ctr=excluded.ctr, cpc=excluded.cpc, frequency=excluded.frequency,
+         link_clicks=excluded.link_clicks, lp_views=excluded.lp_views,
+         initiate_checkout=excluded.initiate_checkout, outbound_clicks=excluded.outbound_clicks`,
+      [entityId, entityType, date, spend||0, conversions||0, revenue||0,
+       ctr||0, cpc||0, frequency||0, link_clicks||0, lp_views||0, initiate_checkout||0, outbound_clicks||0]
+    );
+  },
+
+  async saveBudgetHistory(entityId, entityType, ruleId, oldCents, newCents, action) {
+    return db.runAsync(
+      `INSERT INTO budget_history (entity_id, entity_type, rule_id, old_budget_cents, new_budget_cents, action)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [entityId, entityType, ruleId || null, oldCents, newCents, action]
+    );
+  },
+  async getYesterdayDecreasedBudgets() {
+    return db.allAsync(
+      `SELECT entity_id, entity_type, MIN(old_budget_cents) as old_budget_cents
+       FROM budget_history
+       WHERE action = 'decrease_budget'
+         AND date(recorded_at) = date('now', '-1 day')
+       GROUP BY entity_id, entity_type`
     );
   },
 
