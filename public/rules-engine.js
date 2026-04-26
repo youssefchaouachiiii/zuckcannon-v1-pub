@@ -354,13 +354,22 @@ function renderTemplates() {
   const container = document.getElementById('rule-templates');
   if (!container) return;
   const actionColor = { pause: '#dc2626', scale_budget: '#16a34a', decrease_budget: '#d97706', notify: '#2563eb', enable: '#6b7280' };
+  const opLabel = { gt: '>', lt: '<', gte: '>=', lte: '<=', eq: '=' };
   container.innerHTML = RULE_TEMPLATES.map((t, i) => {
     const color = actionColor[t.action] || '#6b7280';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:5px 8px;border-bottom:1px solid #f0f0f0;">
-      <button class="btn-secondary btn-sm apply-template-btn" data-template-index="${i}" style="flex-shrink:0;padding:2px 10px;font-size:11px;">Use</button>
-      <span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(t.name)}</span>
-      <span style="font-size:11px;color:#888;white-space:nowrap;">${t.conditions.length} cond</span>
-      <span style="font-size:11px;font-weight:500;color:${color};white-space:nowrap;">→ ${escapeHtml(t.action)}</span>
+    const condSummary = t.conditions.map(c =>
+      `<span style="display:inline-block;background:#f3f4f6;border-radius:3px;padding:1px 5px;font-size:10px;color:#555;margin:2px 2px 0 0;">${escapeHtml(c.metric)} ${opLabel[c.operator] || c.operator} ${c.value} <span style="color:#999;">(${c.lookback})</span></span>`
+    ).join('');
+    return `<div style="display:flex;align-items:center;gap:12px;padding:7px 10px;border-bottom:1px solid #f0f0f0;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+          <span style="font-size:13px;font-weight:600;">${escapeHtml(t.name)}</span>
+          <span style="font-size:11px;font-weight:500;color:${color};">→ ${escapeHtml(t.action)}</span>
+          <span style="font-size:10px;color:#aaa;">${escapeHtml(t.scope || 'campaign')}</span>
+        </div>
+        <div>${condSummary}</div>
+      </div>
+      <button class="btn-secondary btn-sm apply-template-btn" data-template-index="${i}" style="flex-shrink:0;padding:3px 12px;font-size:11px;">Use</button>
     </div>`;
   }).join('');
 }
