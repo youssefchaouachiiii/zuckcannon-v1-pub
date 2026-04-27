@@ -64,7 +64,19 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
           const profit = rt ? (rt.profit || 0) : (revenue - spend);
           const roi = rt ? (rt.roi || 0) : (spend > 0 ? profit / spend : 0);
           const cpa = conversions > 0 ? spend / conversions : 0;
-          return { spend, conversions, revenue, profit, roi, cpa };
+          const link_clicks = fb.link_clicks || 0;
+          const lp_views = fb.lp_views || 0;
+          return {
+            spend, conversions, revenue, profit, roi, cpa,
+            ctr: fb.ctr || 0,
+            cpc: fb.cpc || 0,
+            frequency: fb.frequency || 0,
+            link_clicks,
+            lp_views,
+            initiate_checkout: fb.initiate_checkout || 0,
+            outbound_clicks_ctr: fb.outbound_clicks || 0,
+            lp_conv_rate: link_clicks > 0 ? (lp_views / link_clicks) * 100 : 0,
+          };
         };
 
         return {
