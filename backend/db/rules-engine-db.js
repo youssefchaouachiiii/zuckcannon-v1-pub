@@ -718,6 +718,11 @@ export const RulesEngineDB = {
   },
 
   async getOfferPerformance(days = 7) {
+    // Filter:
+    //   - Window has rows with cost > 0 (per-row WHERE)
+    //   - Aggregate cost ≥ $20, OR has at least 1 conversion (HAVING)
+    // Excludes noise like $5-spend / 0-conv campaigns that fail with -100% ROI
+    // and just clutter the digest. Also de-noises after grouping.
     return db.allAsync(
       `SELECT
          campaign_name,
@@ -733,7 +738,7 @@ export const RulesEngineDB = {
        WHERE date >= date('now', ? || ' days')
          AND cost > 0
        GROUP BY campaign_name
-       HAVING SUM(cost) >= 5
+       HAVING SUM(cost) >= 20 OR SUM(conversions) > 0
        ORDER BY profit DESC`,
       [`-${days}`]
     );

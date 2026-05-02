@@ -665,10 +665,31 @@ rulesEngineN8nRouter.get('/offer-performance', async (req, res) => {
       verticalLabels.map(l => [l.campaign_id, l.label_value])
     );
 
+    // URL-decode campaign names — some RT entries arrive with %2F (slash)
+    // and other percent-escapes embedded in the raw name. Try whole-string
+    // decode first (handles multi-byte UTF-8), fall back to per-pair decode
+    // for partially-malformed strings (e.g. trailing "%2" without 2 hex chars).
+    const decodeName = (s) => {
+      const str = String(s || '');
+      try { return decodeURIComponent(str); }
+      catch {
+        return str.replace(/%[0-9A-Fa-f]{2}/g, m => {
+          try { return decodeURIComponent(m); } catch { return m; }
+        });
+      }
+    };
+
     const rows = await RulesEngineDB.getOfferPerformance(days);
     const enriched = rows.map(r => {
-      const cid = nameToId[r.campaign_name.trim().toLowerCase()];
-      return { ...r, campaign_id: cid || null, vertical: cid ? (idToVertical[cid] || null) : null };
+      const cleanName = decodeName(r.campaign_name);
+      const cid = nameToId[cleanName.trim().toLowerCase()] ||
+                  nameToId[String(r.campaign_name || '').trim().toLowerCase()];
+      return {
+        ...r,
+        campaign_name: cleanName,
+        campaign_id: cid || null,
+        vertical: cid ? (idToVertical[cid] || null) : null,
+      };
     });
 
     const totals = enriched.reduce((acc, r) => {
