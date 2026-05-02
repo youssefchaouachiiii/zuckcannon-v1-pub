@@ -1626,6 +1626,112 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/cycle-lock/acquire",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.ZUCKCANNON_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: \"rules-engine-loop\", max_age_minutes: 30 }) }}",
+        "options": {}
+      },
+      "id": "cycle-lock-acquire-node",
+      "name": "Acquire Cycle Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -209904,
+        2848
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-lock-acquired",
+              "leftValue": "={{ $json.acquired }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "cycle-lock-if-node",
+      "name": "Lock Acquired?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -209680,
+        2848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/cycle-lock/release",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.ZUCKCANNON_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: \"rules-engine-loop\", lock_id: $('Acquire Cycle Lock').item.json.lock_id }) }}",
+        "options": {}
+      },
+      "id": "cycle-lock-release-node",
+      "name": "Release Cycle Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180000,
+        2848
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -2690,7 +2796,7 @@
       "main": [
         [
           {
-            "node": "Log Cycle",
+            "node": "Acquire Cycle Lock",
             "type": "main",
             "index": 0
           }
@@ -2814,6 +2920,62 @@
         [
           {
             "node": "Prepare Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acquire Cycle Lock": {
+      "main": [
+        [
+          {
+            "node": "Lock Acquired?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lock Acquired?": {
+      "main": [
+        [
+          {
+            "node": "Log Cycle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Stale Pending Alert": {
+      "main": [
+        [
+          {
+            "node": "Release Cycle Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Pull Fail Alert": {
+      "main": [
+        [
+          {
+            "node": "Release Cycle Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Entity Names": {
+      "main": [
+        [
+          {
+            "node": "Release Cycle Lock",
             "type": "main",
             "index": 0
           }

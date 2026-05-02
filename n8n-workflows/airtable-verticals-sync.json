@@ -1,0 +1,104 @@
+{
+  "name": "Airtable: Verticals Sync",
+  "nodes": [
+    {
+      "id": "trigger-verticals",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+        },
+        "triggerAtTimezone": "America/New_York"
+      }
+    },
+    {
+      "id": "get-verticals",
+      "name": "Get Verticals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/verticals",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "ChO4khvkkZE18mKC", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "transform-verticals",
+      "name": "Transform for Airtable",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300],
+      "parameters": {
+        "jsCode": "const verticals = $input.all().map(i => i.json);\nconst nowIso = new Date().toISOString();\nreturn verticals.map(v => ({\n  json: {\n    fields: {\n      'ID': v.id,\n      'Name': v.name || '',\n      'Tracks LPV': v.tracks_lpv === 1 || v.tracks_lpv === true,\n      'Keyword': v.keyword || '',\n      'Default Schedule ID': v.default_schedule_id || null,\n      'Synced At': nowIso\n    }\n  }\n}));"
+      }
+    },
+    {
+      "id": "batch-chunks-v",
+      "name": "Chunk to 10",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300],
+      "parameters": {
+        "jsCode": "const all = $input.all().map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 10) {\n  chunks.push({ json: { records: all.slice(i, i + 10) } });\n}\nreturn chunks;"
+      }
+    },
+    {
+      "id": "airtable-upsert-v",
+      "name": "Airtable: Upsert Verticals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 300],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.airtable.com/v0/{{ $env.AIRTABLE_BASE_ID }}/{{ $env.AIRTABLE_VERTICALS_TABLE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.AIRTABLE_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ performUpsert: { fieldsToMergeOn: ['ID'] }, records: $json.records, typecast: true }) }}",
+        "options": {
+          "batching": {
+            "batch": { "batchSize": 1, "batchInterval": 250 }
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [[{ "node": "Get Verticals", "type": "main", "index": 0 }]]
+    },
+    "Get Verticals": {
+      "main": [[{ "node": "Transform for Airtable", "type": "main", "index": 0 }]]
+    },
+    "Transform for Airtable": {
+      "main": [[{ "node": "Chunk to 10", "type": "main", "index": 0 }]]
+    },
+    "Chunk to 10": {
+      "main": [[{ "node": "Airtable: Upsert Verticals", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

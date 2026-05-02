@@ -370,6 +370,16 @@ rulesEngineN8nRouter.get('/budget-history/yesterday-decreased', async (req, res)
   }
 });
 
+// List all verticals (used by Airtable sync). Returns id, name, tracks_lpv,
+// keyword, default_schedule_id.
+rulesEngineN8nRouter.get('/verticals', async (req, res) => {
+  try {
+    res.json(await RulesEngineDB.listVerticals());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 rulesEngineN8nRouter.post('/offers/sync', async (req, res) => {
   try {
     const offers = Array.isArray(req.body) ? req.body : [req.body];
