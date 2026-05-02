@@ -1050,7 +1050,7 @@
       "typeVersion": 4.2,
       "position": [
         -206656,
-        1856
+        2080
       ]
     },
     {
@@ -1690,7 +1690,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -206656,
+        -206416,
         2080
       ]
     },
@@ -2539,12 +2539,7 @@
       "main": [
         [
           {
-            "node": "Get Active Rules",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Check Stale Pending",
+            "node": "Lock Acquired?",
             "type": "main",
             "index": 0
           }
@@ -2930,7 +2925,7 @@
       "main": [
         [
           {
-            "node": "Lock Acquired?",
+            "node": "Log Cycle",
             "type": "main",
             "index": 0
           }
@@ -2941,7 +2936,12 @@
       "main": [
         [
           {
-            "node": "Log Cycle",
+            "node": "Get Active Rules",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Stale Pending",
             "type": "main",
             "index": 0
           }
