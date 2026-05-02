@@ -528,6 +528,58 @@ rulesEngineN8nRouter.get('/logs', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Cycle lock — manual mutex for n8n versions without concurrency control.
+// Workflow's first node POSTs to /acquire; if another cycle is running and
+// not yet stale, the response sets acquired=false and the workflow exits
+// early. Last node POSTs to /release with the lock_id it received.
+rulesEngineN8nRouter.post('/cycle-lock/acquire', async (req, res) => {
+  try {
+    const name = String(req.body?.name || req.query?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const maxAge = Math.min(Math.max(parseFloat(req.body?.max_age_minutes || req.query?.max_age_minutes || 30), 1), 120);
+    const result = await RulesEngineDB.acquireCycleLock(name, maxAge);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/cycle-lock/release', async (req, res) => {
+  try {
+    const name = String(req.body?.name || req.query?.name || '').trim();
+    const lockId = String(req.body?.lock_id || req.query?.lock_id || '').trim();
+    if (!name || !lockId) return res.status(400).json({ error: 'name and lock_id required' });
+    const result = await RulesEngineDB.releaseCycleLock(name, lockId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Scale-pending — same shape as the existing pause-pending endpoints.
+rulesEngineN8nRouter.post('/scale-pending/batch-check', async (req, res) => {
+  try {
+    const { items, _context } = req.body || {};
+    const results = await RulesEngineDB.batchIsScalePending(items || []);
+    res.json({ results, _context });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+rulesEngineN8nRouter.post('/scale-pending', async (req, res) => {
+  try {
+    const { rule_id, entity_id, cooldown_hours } = req.body || {};
+    if (!rule_id || !entity_id) return res.status(400).json({ error: 'rule_id and entity_id required' });
+    const hours = Number(cooldown_hours) || 4;
+    await RulesEngineDB.setScalePending(rule_id, entity_id, hours);
+    await RulesEngineDB.pruneExpiredScalePending();
+    res.json({ ok: true, expires_at: new Date(Date.now() + hours * 3600000).toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Execute a rule's action live on a single entity. Used by the Telegram
 // "Approve" button to promote a DRY RUN finding into a real action without
 // waiting for the next engine cycle. v1 supports pause only — scale/decrease

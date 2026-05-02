@@ -213,6 +213,29 @@ async function initializeDatabase() {
     PRIMARY KEY (rule_id, entity_id)
   )`);
 
+  // Cycle locks — manual mutex for workflows whose n8n version doesn't expose
+  // concurrency control. Workflow acquires at start, releases at end. Stale
+  // locks (older than max_age_minutes) are auto-overridden so a crashed run
+  // doesn't permanently block future cycles.
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS cycle_locks (
+    name TEXT PRIMARY KEY,
+    lock_id TEXT NOT NULL,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // scale_pending — analog of pause_pending for scale_budget / decrease_budget
+  // rules. Set when a scale rule fires (live or dry) so subsequent cycles
+  // skip the entity even if the rule_exemptions check has a race condition.
+  // Cleared by the engine after the rule's cooldown elapses naturally, or
+  // explicitly via DELETE /api/rules-engine/scale-pending.
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS scale_pending (
+    rule_id INTEGER NOT NULL,
+    entity_id TEXT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (rule_id, entity_id)
+  )`);
+
   // Seed default schedules (per doc Section 4) on first run
   const schedCount = await db.getAsync('SELECT COUNT(*) as cnt FROM schedules');
   if (schedCount.cnt === 0) {
@@ -747,6 +770,76 @@ export const RulesEngineDB = {
     return db.runAsync(
       `UPDATE rt_offers SET last_alerted_at = CURRENT_TIMESTAMP WHERE offer_id IN (${placeholders})`,
       offerIds
+    );
+  },
+
+  // --- Cycle Locks (manual concurrency mutex) ---
+  async acquireCycleLock(name, maxAgeMinutes = 30) {
+    const lockId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const existing = await db.getAsync(
+      `SELECT lock_id, started_at,
+        (julianday('now') - julianday(started_at)) * 24 * 60 as age_min
+       FROM cycle_locks WHERE name = ?`,
+      [name]
+    );
+    if (existing && existing.age_min < maxAgeMinutes) {
+      return { acquired: false, holder_lock_id: existing.lock_id, age_minutes: existing.age_min };
+    }
+    await db.runAsync(
+      `INSERT INTO cycle_locks (name, lock_id, started_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(name) DO UPDATE SET lock_id = excluded.lock_id, started_at = CURRENT_TIMESTAMP`,
+      [name, lockId]
+    );
+    return { acquired: true, lock_id: lockId };
+  },
+  async releaseCycleLock(name, lockId) {
+    const result = await db.runAsync(
+      `DELETE FROM cycle_locks WHERE name = ? AND lock_id = ?`,
+      [name, lockId]
+    );
+    return { released: result.changes > 0 };
+  },
+
+  // --- Scale Pending (analog of pause_pending for scale rules) ---
+  async setScalePending(ruleId, entityId, cooldownHours) {
+    const expiresAt = new Date(Date.now() + cooldownHours * 3600000).toISOString();
+    return db.runAsync(
+      `INSERT INTO scale_pending (rule_id, entity_id, expires_at) VALUES (?, ?, ?)
+       ON CONFLICT(rule_id, entity_id) DO UPDATE SET expires_at = excluded.expires_at`,
+      [ruleId, entityId, expiresAt]
+    );
+  },
+  async isScalePending(ruleId, entityId) {
+    const row = await db.getAsync(
+      `SELECT 1 FROM scale_pending
+       WHERE rule_id = ? AND entity_id = ? AND datetime(expires_at) > datetime(CURRENT_TIMESTAMP)`,
+      [ruleId, entityId]
+    );
+    return !!row;
+  },
+  async batchIsScalePending(items) {
+    if (!items.length) return [];
+    const params = [];
+    const clauses = items.map(i => {
+      params.push(i.rule_id, i.entity_id);
+      return '(rule_id=? AND entity_id=?)';
+    });
+    const rows = await db.allAsync(
+      `SELECT rule_id, entity_id FROM scale_pending
+       WHERE (${clauses.join(' OR ')})
+         AND datetime(expires_at) > datetime(CURRENT_TIMESTAMP)`,
+      params
+    );
+    const set = new Set(rows.map(r => `${r.rule_id}:${r.entity_id}`));
+    return items.map(i => ({
+      rule_id: i.rule_id,
+      entity_id: i.entity_id,
+      pending: set.has(`${i.rule_id}:${i.entity_id}`),
+    }));
+  },
+  async pruneExpiredScalePending() {
+    return db.runAsync(
+      `DELETE FROM scale_pending WHERE datetime(expires_at) <= datetime(CURRENT_TIMESTAMP)`
     );
   },
 
