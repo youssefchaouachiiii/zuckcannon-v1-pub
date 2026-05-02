@@ -495,6 +495,41 @@ rulesEngineN8nRouter.get('/logs', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- Offer performance (for ad performance summary) ---
+rulesEngineN8nRouter.get('/offer-performance', async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days || '7', 10) || 7, 1), 30);
+    const cachedCampaigns = await FacebookCacheDB.getCampaigns();
+    const nameToId = Object.fromEntries(
+      cachedCampaigns.map(c => [c.name.trim().toLowerCase(), c.id])
+    );
+    const verticalLabels = await RulesEngineDB.listAllVerticalLabels();
+    const idToVertical = Object.fromEntries(
+      verticalLabels.map(l => [l.campaign_id, l.label_value])
+    );
+
+    const rows = await RulesEngineDB.getOfferPerformance(days);
+    const enriched = rows.map(r => {
+      const cid = nameToId[r.campaign_name.trim().toLowerCase()];
+      return { ...r, campaign_id: cid || null, vertical: cid ? (idToVertical[cid] || null) : null };
+    });
+
+    const totals = enriched.reduce((acc, r) => {
+      acc.cost += r.cost || 0;
+      acc.revenue += r.revenue || 0;
+      acc.profit += r.profit || 0;
+      acc.conversions += r.conversions || 0;
+      return acc;
+    }, { cost: 0, revenue: 0, profit: 0, conversions: 0 });
+    totals.roi = totals.cost > 0 ? totals.profit / totals.cost : 0;
+    totals.cpa = totals.conversions > 0 ? totals.cost / totals.conversions : 0;
+
+    res.json({ days, count: enriched.length, totals, offers: enriched });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Coverage (for daily digest) ---
 rulesEngineN8nRouter.get('/coverage', async (req, res) => {
   try {

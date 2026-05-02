@@ -1,0 +1,110 @@
+{
+  "name": "Ad Performance Summary",
+  "nodes": [
+    {
+      "id": "node-schedule-trigger",
+      "name": "Daily 8am ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+        },
+        "triggerAtTimezone": "America/New_York"
+      }
+    },
+    {
+      "id": "node-get-3d",
+      "name": "Get Last 3d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 220],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/offer-performance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "days", "value": "=3" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-get-7d",
+      "name": "Get Last 7d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 380],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/offer-performance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "days", "value": "=7" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+      }
+    },
+    {
+      "id": "node-build-message",
+      "name": "Build Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300],
+      "parameters": {
+        "jsCode": "const data3 = $('Get Last 3d').first().json || {};\nconst data7 = $('Get Last 7d').first().json || {};\n\nconst esc = s => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nconst money = n => {\n  const v = Number(n || 0);\n  return '$' + (Math.abs(v) >= 1000 ? v.toFixed(0).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',') : v.toFixed(0));\n};\nconst pct = n => {\n  const v = Number(n || 0) * 100;\n  const sign = v >= 0 ? '+' : '';\n  return sign + v.toFixed(1) + '%';\n};\nconst num = n => Math.round(Number(n || 0));\n\nconst trimName = n => {\n  const s = String(n || '');\n  return s.length > 42 ? s.slice(0, 41) + '\\u2026' : s;\n};\n\nconst icon = (i) => i === 0 ? '\\uD83E\\uDD47' : i === 1 ? '\\uD83E\\uDD48' : i === 2 ? '\\uD83E\\uDD49' : '\\u2022';\n\nconst section = (label, data, topN = 8) => {\n  const offers = (data.offers || []);\n  const t = data.totals || { cost: 0, profit: 0, conversions: 0, roi: 0, cpa: 0 };\n  if (!offers.length) {\n    return '<b>' + label + '</b>\\n<i>No active offers in window.</i>';\n  }\n  const top = offers.slice(0, topN);\n  const rest = Math.max(0, offers.length - topN);\n  const lines = top.map((o, i) => {\n    const name = trimName(o.campaign_name);\n    const v = o.vertical ? ' <i>(' + esc(o.vertical) + ')</i>' : '';\n    return icon(i) + ' <b>' + esc(name) + '</b>' + v + '\\n   '\n      + 'Spend ' + money(o.cost) + '  \\u00b7  Conv ' + num(o.conversions)\n      + '  \\u00b7  CPA ' + money(o.cpa) + '  \\u00b7  ROI ' + pct(o.roi);\n  });\n  let out = '<b>' + label + '</b>  <i>(' + offers.length + ' offers)</i>\\n' + lines.join('\\n');\n  if (rest > 0) out += '\\n<i>\\u2026 +' + rest + ' more</i>';\n  out += '\\n<b>Totals:</b> Spend ' + money(t.cost) + '  \\u00b7  Profit ' + money(t.profit)\n    + '  \\u00b7  Conv ' + num(t.conversions) + '  \\u00b7  ROI ' + pct(t.roi);\n  return out;\n};\n\nconst dateStr = new Date().toLocaleDateString('en-US', {\n  timeZone: 'America/New_York',\n  month: 'short', day: 'numeric', year: 'numeric'\n});\n\nconst header = '\\uD83D\\uDCCA <b>Ad Performance Summary</b>\\n\\uD83D\\uDCC5 ' + dateStr + ' (ET)';\nconst divider = '\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500';\n\nconst body = [\n  header,\n  divider,\n  section('\\uD83D\\uDCC8 LAST 3 DAYS', data3),\n  divider,\n  section('\\uD83D\\uDCC8 LAST 7 DAYS', data7)\n].join('\\n\\n');\n\nlet text = body;\nif (text.length > 4000) {\n  text = text.slice(0, 3990) + '\\u2026';\n}\n\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', disable_web_page_preview: true } }];"
+      }
+    },
+    {
+      "id": "node-send-telegram",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Daily 8am ET": {
+      "main": [[
+        { "node": "Get Last 3d", "type": "main", "index": 0 },
+        { "node": "Get Last 7d", "type": "main", "index": 0 }
+      ]]
+    },
+    "Get Last 3d": {
+      "main": [[{ "node": "Build Message", "type": "main", "index": 0 }]]
+    },
+    "Get Last 7d": {
+      "main": [[{ "node": "Build Message", "type": "main", "index": 0 }]]
+    },
+    "Build Message": {
+      "main": [[{ "node": "Send to Telegram", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

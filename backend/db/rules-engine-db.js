@@ -443,6 +443,11 @@ export const RulesEngineDB = {
       [verticalName]
     );
   },
+  async listAllVerticalLabels() {
+    return db.allAsync(
+      `SELECT campaign_id, label_value FROM campaign_labels WHERE label_type='vertical'`
+    );
+  },
   async clearCampaignsByVertical(verticalName) {
     return db.runAsync(
       `DELETE FROM campaign_labels WHERE label_type='vertical' AND label_value=?`,
@@ -669,6 +674,28 @@ export const RulesEngineDB = {
        FROM fb_daily
        WHERE entity_id=? AND date >= date('now', ? || ' days')`,
       [entityId, `-${days}`]
+    );
+  },
+
+  async getOfferPerformance(days = 7) {
+    return db.allAsync(
+      `SELECT
+         campaign_name,
+         SUM(cost)         as cost,
+         SUM(revenue)      as revenue,
+         SUM(profit)       as profit,
+         SUM(conversions)  as conversions,
+         CASE WHEN SUM(cost) > 0
+              THEN SUM(profit) / SUM(cost) ELSE 0 END as roi,
+         CASE WHEN SUM(conversions) > 0
+              THEN SUM(cost) / SUM(conversions) ELSE 0 END as cpa
+       FROM redtrack_daily
+       WHERE date >= date('now', ? || ' days')
+         AND cost > 0
+       GROUP BY campaign_name
+       HAVING SUM(cost) >= 5
+       ORDER BY profit DESC`,
+      [`-${days}`]
     );
   },
 
