@@ -43,6 +43,27 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
     const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
 
+    // Verticals where lp_views isn't meaningful (redirect-link offers like
+    // EDU). Rules that condition on lp_views / lp_conv_rate skip campaigns
+    // labeled with these verticals — otherwise they fire on every campaign
+    // since LPV is structurally undercounted there.
+    const lpvOffVerticals = await RulesEngineDB.listVerticalsWithLpvOff();
+    const lpvOffSet = new Set(lpvOffVerticals.map(v => v.name));
+    const allVerticalLabels = await RulesEngineDB.listAllVerticalLabels();
+    const campaignToVertical = Object.fromEntries(
+      allVerticalLabels.map(l => [l.campaign_id, l.label_value])
+    );
+    const ruleUsesLpv = (rule) => {
+      try {
+        const conds = JSON.parse(rule.conditions_json || '[]');
+        return conds.some(c => c.metric === 'lp_views' || c.metric === 'lp_conv_rate');
+      } catch { return false; }
+    };
+    const filterLpvBlocked = (rule, entityIds) => {
+      if (!ruleUsesLpv(rule) || lpvOffSet.size === 0) return entityIds;
+      return entityIds.filter(id => !lpvOffSet.has(campaignToVertical[id]));
+    };
+
     const resolvePerCampaignEntities = async (entityIds) => {
       return Promise.all(entityIds.map(async (entityId) => {
         const entityName = nameMap[entityId] || entityId;
@@ -57,24 +78,35 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
         ]);
 
         const mergeWindow = (fb, rt) => {
-          if (!fb) return null;
-          const spend = fb.spend || 0;
-          const conversions = rt ? (rt.conversions || 0) : (fb.conversions || 0);
-          const revenue = rt ? (rt.revenue || 0) : (fb.revenue || 0);
+          if (!fb && !rt) return null;
+          const fbObj = fb || {};
+          const rtCost = rt ? (rt.cost || 0) : 0;
+          const fbSpend = fbObj.spend || 0;
+          const conversions = rt ? (rt.conversions || 0) : (fbObj.conversions || 0);
+          // No data anywhere → return null so rules silently skip instead of
+          // evaluating against zeros (prevents false fires when fb_daily is
+          // stale and RT has no row either).
+          if (rtCost === 0 && fbSpend === 0 && conversions === 0) return null;
+          // Prefer RT cost for spend when RT has data — RT tracks spend
+          // independently of FB and is the source of truth for multi-day
+          // windows. Falling back to fb.spend kept CPA at $0 when fb_daily
+          // sync was partial.
+          const spend = rtCost > 0 ? rtCost : fbSpend;
+          const revenue = rt ? (rt.revenue || 0) : (fbObj.revenue || 0);
           const profit = rt ? (rt.profit || 0) : (revenue - spend);
-          const roi = rt ? (rt.roi || 0) : (spend > 0 ? profit / spend : 0);
+          const roi = rt && rt.roi != null ? rt.roi : (spend > 0 ? profit / spend : 0);
           const cpa = conversions > 0 ? spend / conversions : 0;
-          const link_clicks = fb.link_clicks || 0;
-          const lp_views = fb.lp_views || 0;
+          const link_clicks = fbObj.link_clicks || 0;
+          const lp_views = fbObj.lp_views || 0;
           return {
             spend, conversions, revenue, profit, roi, cpa,
-            ctr: fb.ctr || 0,
-            cpc: fb.cpc || 0,
-            frequency: fb.frequency || 0,
+            ctr: fbObj.ctr || 0,
+            cpc: fbObj.cpc || 0,
+            frequency: fbObj.frequency || 0,
             link_clicks,
             lp_views,
-            initiate_checkout: fb.initiate_checkout || 0,
-            outbound_clicks_ctr: fb.outbound_clicks || 0,
+            initiate_checkout: fbObj.initiate_checkout || 0,
+            outbound_clicks_ctr: fbObj.outbound_clicks || 0,
             lp_conv_rate: link_clicks > 0 ? (lp_views / link_clicks) * 100 : 0,
           };
         };
@@ -114,7 +146,8 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
             campaignIds: cachedCampaigns.filter(c => c.account_id === aid).map(c => c.id),
           }));
         } else {
-          const entityIds = await resolveRuleEntities(rule.id);
+          const rawEntityIds = await resolveRuleEntities(rule.id);
+          const entityIds = filterLpvBlocked(rule, rawEntityIds);
           entities = await resolvePerCampaignEntities(entityIds);
         }
 

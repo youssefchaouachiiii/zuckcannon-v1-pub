@@ -26,6 +26,11 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   await db.runAsync(`ALTER TABLE verticals ADD COLUMN keyword TEXT`).catch(() => {});
+  // tracks_lpv: 1 = vertical uses an FB-pixeled landing page so lp_views is
+  // meaningful; 0 = redirect-link offer where lp_views is structurally
+  // under-counted (e.g. EDU). Rules using lp_views / lp_conv_rate skip
+  // entities whose vertical has tracks_lpv = 0.
+  await db.runAsync(`ALTER TABLE verticals ADD COLUMN tracks_lpv INTEGER DEFAULT 1`).catch(() => {});
   await db.runAsync(`ALTER TABLE rt_offers ADD COLUMN last_alerted_at DATETIME`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rules (
@@ -447,6 +452,18 @@ export const RulesEngineDB = {
     return db.allAsync(
       `SELECT campaign_id, label_value FROM campaign_labels WHERE label_type='vertical'`
     );
+  },
+  async listVerticalsWithLpvOff() {
+    return db.allAsync(
+      `SELECT name FROM verticals WHERE tracks_lpv = 0`
+    );
+  },
+  async setVerticalTracksLpv(verticalId, tracksLpv) {
+    await db.runAsync(
+      `UPDATE verticals SET tracks_lpv = ? WHERE id = ?`,
+      [tracksLpv ? 1 : 0, verticalId]
+    );
+    return db.getAsync('SELECT * FROM verticals WHERE id = ?', [verticalId]);
   },
   async clearCampaignsByVertical(verticalName) {
     return db.runAsync(

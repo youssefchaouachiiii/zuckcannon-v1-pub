@@ -340,6 +340,20 @@ rulesEngineUiRouter.put('/verticals/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Toggle whether a vertical's landing page is FB-pixel tracked. Verticals
+// with tracks_lpv=0 (e.g. EDU redirect-link offers) are excluded from any
+// rule that conditions on lp_views or lp_conv_rate, since LPV is structurally
+// undercounted there and the rule would always fire on healthy traffic.
+rulesEngineUiRouter.put('/verticals/:id/tracks-lpv', async (req, res) => {
+  try {
+    const v = await RulesEngineDB.setVerticalTracksLpv(
+      parseInt(req.params.id),
+      !!req.body.tracks_lpv
+    );
+    res.json(v);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 rulesEngineUiRouter.get('/verticals/:id/campaigns', async (req, res) => {
   try {
     const vertical = await RulesEngineDB.getVerticalById(parseInt(req.params.id));
