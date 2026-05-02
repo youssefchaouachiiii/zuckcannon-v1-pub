@@ -1117,7 +1117,7 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ <b>Stale Pause Pending</b>\\n' + ($json.items || []).map(e => '<code>' + String(e.entity_id || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code> — since ' + String(e.created_at || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('\\n') + '\\n\\nManual check needed.', parse_mode: 'HTML' }) }}",
+        "jsonBody": "={{ JSON.stringify((() => { const items = ($json.items || []).filter(e => e && e.entity_id); if (!items.length) return { chat_id: $env.TELEGRAM_CHAT_ID, text: '' }; const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); const lines = items.slice(0, 15).map(e => '• <code>' + esc(e.entity_id) + '</code> · rule ' + (e.rule_id || '?') + ' · since ' + esc(e.created_at)); const more = items.length > 15 ? '\\n<i>… +' + (items.length - 15) + ' more</i>' : ''; return { chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ <b>Stale Pause Pending</b>  <i>(' + items.length + ')</i>\\n' + lines.join('\\n') + more + '\\n\\nManual check needed — campaigns flagged for pause but not confirmed via FB API after 10+ min.', parse_mode: 'HTML' }; })()) }}",
         "options": {}
       },
       "id": "737413ca-152d-4731-b25d-d9cc4bc5f64e",
