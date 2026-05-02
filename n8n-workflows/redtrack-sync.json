@@ -1,0 +1,451 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "0aac4f44-3dfd-4e2f-ba77-4f035425aa1c",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.redtrack.io/report",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "group",
+              "value": "rt_campaign,offer"
+            },
+            {
+              "name": "date_from",
+              "value": "={{ $now.toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "name": "date_to",
+              "value": "={{ $now.toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "name": "timezone",
+              "value": "America/New_York"
+            },
+            {
+              "name": "per",
+              "value": "1000"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "055690e9-0f27-4346-955a-ddefc03fa85c",
+      "name": "Fetch RT Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "kc8PjCCyMioTHOXg",
+          "name": "redtrack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst bycamp = {};\nfor (const item of items) {\n  const r = item.json;\n  const name = r.rt_campaign;\n  if (!name) continue;\n  if (!bycamp[name]) {\n    bycamp[name] = { campaign_name: name, revenue: 0, profit: 0, conversions: 0, cost: 0, offer_name: r.offer || null };\n  }\n  bycamp[name].revenue += r.revenue || 0;\n  bycamp[name].profit += r.profit || 0;\n  bycamp[name].conversions += r.conversions || 0;\n  bycamp[name].cost += r.cost || 0;\n}\nconst results = Object.values(bycamp).map(c => ({ json: {\n  campaign_name: c.campaign_name,\n  roi: c.cost > 0 ? (c.revenue - c.cost) / c.cost : 0,\n  revenue: c.revenue,\n  profit: c.profit,\n  conversions: c.conversions,\n  offer_name: c.offer_name,\n}}));\nif (results.length === 0) return [{ json: { _empty: true } }];\nreturn results;"
+      },
+      "id": "e58103ee-6fc4-44de-8400-7cd68970c76e",
+      "name": "Aggregate per Campaign",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "79d39542-7464-42ed-ab66-8332df37d482",
+      "name": "Aggregate Campaigns",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/snapshots/redtrack",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.ZUCKCANNON_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.data }}",
+        "options": {}
+      },
+      "id": "89d7e47f-092b-4f01-bba9-da3b419c1567",
+      "name": "POST RT Snapshots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.redtrack.io/offers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "per",
+              "value": "1000"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            },
+            {
+              "name": "status",
+              "value": "all"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "93315070-c08a-4a78-94db-73fbcc7ad53d",
+      "name": "Fetch RT Offers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        240
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "kc8PjCCyMioTHOXg",
+          "name": "redtrack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({ json: {\n  offer_id: item.json.id,\n  offer_name: item.json.title,\n}}));"
+      },
+      "id": "b3b999ef-f1c9-475c-89b2-4edd7bad00a6",
+      "name": "Map Offers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "97ae9e99-9cbf-4a5c-8cde-87e9bfbc1704",
+      "name": "Aggregate Offers",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        448,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/offers/sync",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.ZUCKCANNON_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.data }}",
+        "options": {}
+      },
+      "id": "60a327fd-f91f-4ca8-9c3f-1734958e51b0",
+      "name": "POST Offers Sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-unmatched",
+              "leftValue": "={{ $json.unmatched.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "fa7074a6-6cb6-4d49-a2b0-d12a92094d2f",
+      "name": "Has Unmatched?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "alert-chat-id",
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}",
+              "type": "string"
+            },
+            {
+              "id": "alert-text",
+              "name": "text",
+              "value": "={{ (() => { const u = $json.unmatched || []; const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); const top = u.slice(0, 10); const rest = Math.max(0, u.length - 10); const lines = top.map(o => '• <b>' + esc(o.offer_name) + '</b>  <i>(' + esc(o.offer_id) + ')</i>'); const more = rest > 0 ? '\\n<i>… +' + rest + ' more</i>' : ''; const link = $env.ZUCKCANNON_URL ? '\\n\\n<a href=\"' + $env.ZUCKCANNON_URL + '/rules-engine\">Open Rules Engine UI →</a>' : ''; return '🏷️ <b>' + u.length + ' offer' + (u.length === 1 ? '' : 's') + ' need vertical assignment</b>\\n' + lines.join('\\n') + more + link; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "alert-parse-mode",
+              "name": "parse_mode",
+              "value": "HTML",
+              "type": "string"
+            },
+            {
+              "id": "alert-disable-preview",
+              "name": "disable_web_page_preview",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8b8bcee2-dcd2-4873-8246-b00457b24d64",
+      "name": "Build Unmatched Alert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1104,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "9b000008-f2de-4946-8dd4-e9c1a214137f",
+      "name": "Alert Unmatched Offers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        192
+      ]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch RT Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch RT Report": {
+      "main": [
+        [
+          {
+            "node": "Aggregate per Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate per Campaign": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Campaigns": {
+      "main": [
+        [
+          {
+            "node": "POST RT Snapshots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST RT Snapshots": {
+      "main": [
+        [
+          {
+            "node": "Fetch RT Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch RT Offers": {
+      "main": [
+        [
+          {
+            "node": "Map Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Offers": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Offers": {
+      "main": [
+        [
+          {
+            "node": "POST Offers Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Offers Sync": {
+      "main": [
+        [
+          {
+            "node": "Has Unmatched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Unmatched?": {
+      "main": [
+        [
+          {
+            "node": "Build Unmatched Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Unmatched Alert": {
+      "main": [
+        [
+          {
+            "node": "Alert Unmatched Offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "43bcb00c7c923df4e36c0bf713549f86f2dbcd6776a5aa1796b3cf9b1cdd7b7e"
+  }
+}
