@@ -1,42 +1,37 @@
 {
-  "name": "Self-Monitoring",
   "nodes": [
     {
-      "id": "node-schedule-trigger",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "802cd778-b6ed-4d65-8ec8-3160a17018c6",
       "name": "Every 5 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [240, 300],
-      "parameters": {
-        "rule": {
-          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
-        }
-      }
+      "position": [-656, 128]
     },
     {
-      "id": "node-ping",
+      "parameters": {
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "3b350bb8-9e06-44ce-b014-d89d6b88e897",
       "name": "Ping Zuckcannon",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 300],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/health",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": { "timeout": 10000 },
-        "onError": "continueRegularOutput"
-      },
-      "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
-      }
+      "position": [-448, 128]
     },
     {
-      "id": "node-is-up",
-      "name": "Is Up?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [680, 300],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
@@ -49,111 +44,184 @@
             }
           ],
           "combinator": "and"
-        }
-      }
+        },
+        "options": {}
+      },
+      "id": "fef2a874-fb6a-45c4-8f0a-28617034aad2",
+      "name": "Is Up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-224, 128]
     },
     {
-      "id": "node-alert-down",
-      "name": "Alert Down",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [900, 400],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
-        "contentType": "json",
-        "body": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"\\ud83d\\udd34 *Zuckcannon Unreachable*\\nRules engine is paused \\u2014 no rules are being evaluated.\\nTime: {{ new Date().toISOString() }}\\nCheck server immediately.\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🔴 *Bulk Uploader Unreachable*\\nRules engine is paused — no rules are being evaluated.\\nTime: ' + new Date().toISOString() + '\\nCheck server immediately.', parse_mode: 'Markdown' }) }}",
         "options": {}
-      }
-    },
-    {
-      "id": "node-log-engine-down",
-      "name": "Log Engine Down",
+      },
+      "id": "266b7681-0926-4450-bf70-7fd4b1a6f5a8",
+      "name": "Alert Down",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 400],
+      "position": [0, 224]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
         "sendBody": true,
-        "contentType": "json",
-        "body": "={\"entity_type\":\"system\",\"entity_id\":\"engine\",\"action_taken\":\"engine_down\",\"trigger_data_json\":\"{}\",\"is_dry_run\":0}",
-        "options": { "onError": "continueRegularOutput" }
+        "specifyBody": "json",
+        "jsonBody": "{\"entity_type\":\"system\",\"entity_id\":\"engine\",\"action_taken\":\"engine_down\",\"trigger_data_json\":\"{}\",\"is_dry_run\":0}",
+        "options": {}
       },
-      "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
-      }
-    },
-    {
-      "id": "node-check-recent-down",
-      "name": "Check Recent Down",
+      "id": "0dfa6fbc-94f5-40d0-89d8-46c55aa0671f",
+      "name": "Log Engine Down",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 180],
+      "position": [224, 224]
+    },
+    {
       "parameters": {
-        "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/logs",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             { "name": "action_taken", "value": "engine_down" },
-            { "name": "date_from", "value": "={{ new Date(Date.now() - 10 * 60000).toISOString() }}" },
+            { "name": "date_from", "value": "={{ new Date(Date.now() - 30 * 60000).toISOString() }}" },
             { "name": "limit", "value": "1" }
           ]
         },
-        "options": { "onError": "continueRegularOutput" }
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "options": {}
       },
-      "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
-      }
+      "id": "80f6ad43-f170-4938-bb79-bddc89310e0d",
+      "name": "Check Recent Down",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0],
+      "alwaysOutputData": true
     },
     {
-      "id": "node-was-down",
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 1 },
+          "conditions": [
+            {
+              "id": "7fca63c1-891f-4409-b658-1274a5bf1b27",
+              "leftValue": "={{ $json.id != null ? 1 : 0 }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": { "looseTypeValidation": true }
+      },
+      "id": "204e711a-2b3e-4c18-a8e6-21b7d56ef97a",
       "name": "Was Down Recently?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 180],
-      "parameters": {
-        "conditions": {
-          "conditions": [{
-            "leftValue": "={{ Array.isArray($json) ? $json.length : 0 }}",
-            "rightValue": 0,
-            "operator": { "type": "number", "operation": "gt" }
-          }],
-          "combinator": "and"
-        }
-      }
+      "position": [224, 0]
     },
     {
-      "id": "node-prepare-recovery-alert",
+      "parameters": {
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/logs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "action_taken", "value": "engine_recovered" },
+            { "name": "date_from", "value": "={{ $json.created_at }}" },
+            { "name": "limit", "value": "1" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "options": {}
+      },
+      "id": "node-check-already-recovered",
+      "name": "Check Already Recovered",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [448, 0],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 1 },
+          "conditions": [
+            {
+              "id": "cond-already-recovered",
+              "leftValue": "={{ $json.id != null ? 1 : 0 }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": { "looseTypeValidation": true }
+      },
+      "id": "node-not-yet-recovered",
+      "name": "Not Yet Recovered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [672, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text: '✅ *Bulk Uploader Recovered*\\nRules engine is back online and evaluating rules normally.\\nTime: ' + new Date().toISOString(), parse_mode: 'Markdown' } }];"
+      },
+      "id": "7719e262-1e36-47f7-9e7f-e90aadf39a9c",
       "name": "Prepare Recovery Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 180],
-      "parameters": {
-        "jsCode": "return [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text: '✅ *Zuckcannon Recovered*\\nRules engine is back online and evaluating rules normally.\\nTime: ' + new Date().toISOString(), parse_mode: 'Markdown' } }];"
-      }
+      "position": [896, 0]
     },
     {
-      "id": "node-send-recovery-alert",
-      "name": "Send Recovery Alert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1560, 180],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
-        "options": { "onError": "continueRegularOutput" }
-      }
+        "options": {}
+      },
+      "id": "28c26d73-07b0-439c-bac8-41aeaef97a32",
+      "name": "Send Recovery Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-n8n-secret", "value": "={{ $env.ZUCKCANNON_SECRET }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"entity_type\":\"system\",\"entity_id\":\"engine\",\"action_taken\":\"engine_recovered\",\"trigger_data_json\":\"{}\",\"is_dry_run\":0}",
+        "options": {}
+      },
+      "id": "node-log-recovery",
+      "name": "Log Recovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1344, 0]
     }
   ],
   "connections": {
@@ -177,15 +245,28 @@
     },
     "Was Down Recently?": {
       "main": [
+        [{ "node": "Check Already Recovered", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Check Already Recovered": {
+      "main": [[{ "node": "Not Yet Recovered?", "type": "main", "index": 0 }]]
+    },
+    "Not Yet Recovered?": {
+      "main": [
         [{ "node": "Prepare Recovery Alert", "type": "main", "index": 0 }],
         []
       ]
     },
     "Prepare Recovery Alert": {
       "main": [[{ "node": "Send Recovery Alert", "type": "main", "index": 0 }]]
+    },
+    "Send Recovery Alert": {
+      "main": [[{ "node": "Log Recovery", "type": "main", "index": 0 }]]
     }
   },
-  "active": false,
-  "settings": { "executionOrder": "v1" },
-  "meta": { "templateCredsSetupCompleted": true }
+  "pinData": {},
+  "meta": {
+    "instanceId": "43bcb00c7c923df4e36c0bf713549f86f2dbcd6776a5aa1796b3cf9b1cdd7b7e"
+  }
 }

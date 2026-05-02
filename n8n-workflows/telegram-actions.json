@@ -1,106 +1,148 @@
 {
-  "name": "Telegram Quick Actions",
   "nodes": [
     {
-      "id": "node-tg-trigger",
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "e42118f4-e861-4249-93a7-1a2b1ad12981",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.1,
-      "position": [240, 300],
+      "position": [
+        -4496,
+        544
+      ],
       "webhookId": "CONFIGURE_IN_N8N",
       "credentials": {
         "telegramApi": {
-          "id": "CONFIGURE_IN_N8N",
-          "name": "CONFIGURE_IN_N8N"
+          "id": "l4HvAg0NrGlNPSC9",
+          "name": "Sigma Ad Status Engine Telegram Bot"
         }
-      },
-      "parameters": {
-        "additionalFields": {}
       }
     },
     {
-      "id": "node-is-callback",
-      "name": "Is Callback?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [460, 300],
       "parameters": {
         "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
           "conditions": [
             {
               "leftValue": "={{ $json.callback_query }}",
               "rightValue": "",
-              "operator": { "type": "object", "operation": "exists", "singleValue": true }
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "id": "58466d3b-74e7-4591-a993-2bf0fe430af1"
             }
           ],
           "combinator": "and"
         },
-        "options": {}
-      }
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "252af7dc-af04-4b12-894d-f20c93d7238f",
+      "name": "Is Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -4272,
+        544
+      ]
     },
     {
-      "id": "node-parse-callback",
+      "parameters": {
+        "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\nconst msgText = callbackQuery?.message?.text || '';\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\nconst [action, ruleId, entityId] = data.split(':');\n\n// Extract rule name and entity name from the alert message\nconst lines = msgText.split('\\n');\nlet rn = (lines[0] || '').replace(/\\[DRY RUN\\]/g, '').replace(/[🛑💥🧪*]/g, '').replace(/^(Pause|Scale_budget|Velocity Kill):\\s*/i, '').trim();\nconst ruleName = rn || 'Rule #' + ruleId;\nconst entityName = (lines[1] || '').replace(/`/g, '').split('|')[0].trim() || entityId;\n\n// For account-scope rules, entityName contains \"(Acct act_XXXX)\" — exemptions are\n// keyed by account ID, so extract it to avoid a mismatch with the batch-check lookup.\nlet exemptionEntityId = entityId;\nconst acctMatch = entityName.match(/\\(Acct (act_\\d+)\\)/);\nif (acctMatch) exemptionEntityId = acctMatch[1];\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, exemptionEntityId, chatId, callbackQueryId, ruleName, entityName } }];"
+      },
+      "id": "02a62311-9a21-4fe4-a0ae-65772b7a95ea",
       "name": "Parse Callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 200],
-      "parameters": {
-        "jsCode": "const callbackQuery = $input.item.json.callback_query;\nconst data = callbackQuery?.data || '';\nconst chatId = callbackQuery?.message?.chat?.id;\nconst callbackQueryId = callbackQuery?.id;\nconst msgText = callbackQuery?.message?.text || '';\n\n// callback_data format: \"{action}:{ruleId}:{entityId}\"\nconst [action, ruleId, entityId] = data.split(':');\n\n// Extract rule name and entity name from the alert message\nconst lines = msgText.split('\\n');\nlet rn = (lines[0] || '').replace(/\\[DRY RUN\\]/g, '').replace(/[🛑💥🧪*]/g, '').replace(/^(Pause|Scale_budget|Velocity Kill):\\s*/i, '').trim();\nconst ruleName = rn || 'Rule #' + ruleId;\nconst entityName = (lines[1] || '').replace(/`/g, '').split('|')[0].trim() || entityId;\n\n// For account-scope rules, entityName contains \"(Acct act_XXXX)\" — exemptions are\n// keyed by account ID, so extract it to avoid a mismatch with the batch-check lookup.\nlet exemptionEntityId = entityId;\nconst acctMatch = entityName.match(/\\(Acct (act_\\d+)\\)/);\nif (acctMatch) exemptionEntityId = acctMatch[1];\n\nreturn [{ json: { action, ruleId: parseInt(ruleId), entityId, exemptionEntityId, chatId, callbackQueryId, ruleName, entityName } }];"
-      }
+      "position": [
+        -4048,
+        448
+      ]
     },
     {
-      "id": "node-get-token",
-      "name": "Get Token",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [900, 200],
       "parameters": {
-        "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/tokens",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
+      "id": "adb618ec-4006-4cd0-82ba-bc181f99b14b",
+      "name": "Get Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3824,
+        448
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
       }
     },
     {
-      "id": "node-restore-data",
+      "parameters": {
+        "jsCode": "const cb = $('Parse Callback').item.json;\nconst tokens = $input.all().map(i => i.json);\nconst token = tokens[0]?.access_token || null;\nreturn [{ json: { ...cb, token } }];"
+      },
+      "id": "6d996a05-0462-48e8-b7ba-17e6327c373f",
       "name": "Restore Callback Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 200],
-      "parameters": {
-        "jsCode": "const cb = $('Parse Callback').item.json;\nconst tokens = $input.all().map(i => i.json);\nconst token = tokens[0]?.access_token || null;\nreturn [{ json: { ...cb, token } }];"
-      }
+      "position": [
+        -3616,
+        448
+      ]
     },
     {
-      "id": "node-route-action",
-      "name": "Route Action",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [1340, 200],
       "parameters": {
         "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
           "conditions": [
             {
               "leftValue": "={{ $json.action }}",
               "rightValue": "reenable",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "40cc023d-b764-4d56-ac24-d793360d6b1c"
             }
           ],
           "combinator": "and"
         },
-        "options": {}
-      }
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "0ae649a8-ebb8-44e2-97ab-3eab28f04c43",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -3392,
+        448
+      ]
     },
     {
-      "id": "node-fb-reenable",
-      "name": "Re-enable Entity",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1560, 100],
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v25.0/{{ $json.entityId }}",
@@ -108,177 +150,301 @@
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            { "name": "status", "value": "ACTIVE" },
-            { "name": "access_token", "value": "={{ $json.token }}" }
+            {
+              "name": "status",
+              "value": "ACTIVE"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.token }}"
+            }
           ]
         },
         "options": {}
-      }
-    },
-    {
-      "id": "node-clear-pause",
-      "name": "Clear Pause Pending",
+      },
+      "id": "3e5b3b77-c567-4e04-86e3-53f7df349b79",
+      "name": "Re-enable Entity",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1780, 100],
+      "position": [
+        -3168,
+        336
+      ]
+    },
+    {
       "parameters": {
         "method": "DELETE",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/pause-pending",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_id: $('Restore Callback Data').item.json.entityId }) }}",
-        "options": { "onError": "continueRegularOutput" }
+        "options": {}
       },
+      "id": "b292f66a-c8de-4b7d-8223-377b58b4b153",
+      "name": "Clear Pause Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2944,
+        336
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
       }
     },
     {
-      "id": "node-snooze",
-      "name": "Set Snooze Exemption",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1560, 300],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/exemptions",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_id: $('Restore Callback Data').item.json.exemptionEntityId, type: 'snooze', cooldown_hours: 6 }) }}",
         "options": {}
       },
+      "id": "be79b39e-2545-45b6-a5b4-95747d84675f",
+      "name": "Set Snooze Exemption",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3168,
+        544
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
       }
     },
     {
-      "id": "node-log-reenable",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_type: 'campaign', entity_id: $('Restore Callback Data').item.json.entityId, entity_name: $('Restore Callback Data').item.json.entityName, action_taken: 'telegram_reenable', trigger_data_json: JSON.stringify({ source: 'telegram', user: $('Restore Callback Data').item.json.chatId }) }) }}",
+        "options": {}
+      },
+      "id": "d0fc8852-8482-4bf4-bd1d-24c61d93a45a",
       "name": "Log Re-enable",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2000, 100],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "json",
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_type: 'campaign', entity_id: $('Restore Callback Data').item.json.entityId, entity_name: $('Restore Callback Data').item.json.entityName, action_taken: 'telegram_reenable', trigger_data_json: JSON.stringify({ source: 'telegram', user: $('Restore Callback Data').item.json.chatId }) }) }}",
-        "options": { "onError": "continueRegularOutput" }
-      },
+      "position": [
+        -2736,
+        336
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
       }
     },
     {
-      "id": "node-confirm-reenable",
-      "name": "Confirm Re-enable",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2220, 100],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ chat_id: $('Restore Callback Data').item.json.chatId, text: '✅ Re-enabled `' + $('Restore Callback Data').item.json.entityName + '`', parse_mode: 'Markdown' }) }}",
         "options": {}
-      }
-    },
-    {
-      "id": "node-log-snooze",
-      "name": "Log Snooze",
+      },
+      "id": "8a1302b9-49ec-4b52-8e98-e551fc59ec6d",
+      "name": "Confirm Re-enable",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2000, 300],
+      "position": [
+        -2512,
+        336
+      ]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ rule_id: $('Restore Callback Data').item.json.ruleId, entity_type: 'campaign', entity_id: $('Restore Callback Data').item.json.entityId, entity_name: $('Restore Callback Data').item.json.entityName, action_taken: 'telegram_snooze', trigger_data_json: JSON.stringify({ source: 'telegram', hours: 6, user: $('Restore Callback Data').item.json.chatId }) }) }}",
-        "options": { "onError": "continueRegularOutput" }
+        "options": {}
       },
+      "id": "8cabe506-29a0-4419-a45e-dc7ff81a9475",
+      "name": "Log Snooze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2736,
+        544
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Zuckcannon Secret" }
+        "httpHeaderAuth": {
+          "id": "ChO4khvkkZE18mKC",
+          "name": "Zuckcannon Secret"
+        }
       }
     },
     {
-      "id": "node-confirm-snooze",
-      "name": "Confirm Snooze",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1780, 300],
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
-        "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ chat_id: $('Restore Callback Data').item.json.chatId, text: '💤 Snoozed *' + $('Restore Callback Data').item.json.ruleName + '* for `' + $('Restore Callback Data').item.json.entityName + '` — 6h exemption set', parse_mode: 'Markdown' }) }}",
         "options": {}
-      }
+      },
+      "id": "084ae7a5-b6a7-4fb7-9dd3-387595a232cd",
+      "name": "Confirm Snooze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2944,
+        544
+      ]
     }
   ],
   "connections": {
     "Telegram Trigger": {
-      "main": [[{ "node": "Is Callback?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Is Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Is Callback?": {
       "main": [
-        [{ "node": "Parse Callback", "type": "main", "index": 0 }],
-        []
+        [
+          {
+            "node": "Parse Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse Callback": {
-      "main": [[{ "node": "Get Token", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Token": {
-      "main": [[{ "node": "Restore Callback Data", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Restore Callback Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Restore Callback Data": {
-      "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Route Action": {
       "main": [
-        [{ "node": "Re-enable Entity", "type": "main", "index": 0 }],
-        [{ "node": "Set Snooze Exemption", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Re-enable Entity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Snooze Exemption",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Re-enable Entity": {
-      "main": [[{ "node": "Clear Pause Pending", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Clear Pause Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Clear Pause Pending": {
-      "main": [[{ "node": "Log Re-enable", "type": "main", "index": 0 }]]
-    },
-    "Log Re-enable": {
-      "main": [[{ "node": "Confirm Re-enable", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Re-enable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Set Snooze Exemption": {
-      "main": [[{ "node": "Log Snooze", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Snooze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Re-enable": {
+      "main": [
+        [
+          {
+            "node": "Confirm Re-enable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Log Snooze": {
-      "main": [[{ "node": "Confirm Snooze", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Confirm Snooze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": ""
-  },
+  "pinData": {},
   "meta": {
-    "templateCredsSetupCompleted": false
+    "templateCredsSetupCompleted": true,
+    "instanceId": "43bcb00c7c923df4e36c0bf713549f86f2dbcd6776a5aa1796b3cf9b1cdd7b7e"
   }
 }

@@ -400,7 +400,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst m3d = d.insights_3d || {};\nconst m7d = d.insights_7d || {};\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nconst actionLabel = d.rule.action.toUpperCase().replace(/_/g, ' ');\n\nfunction getSrc(lookback) {\n  if (lookback === 'last_7d') return m7d;\n  if (lookback === 'last_3d') return m3d;\n  return m;\n}\n\nconst escapeMd = s => String(s).replace(/[_*`\\[]/g, c => '\\\\' + c);\n\nfunction fmtMetric(metric, val, lookback) {\n  const lb = (lookback && lookback !== 'today') ? ' ·' + lookback.replace('last_', '') : '';\n  if (metric === 'roi') return 'ROI' + lb + ': ' + (val * 100).toFixed(1) + '%';\n  if (metric === 'cpa') return 'CPA' + lb + ': $' + val.toFixed(0);\n  if (metric === 'conversions') return 'Conv' + lb + ': ' + Math.round(val);\n  if (metric === 'ctr') return 'CTR' + lb + ': ' + val.toFixed(2) + '%';\n  if (metric === 'cpc') return 'CPC' + lb + ': $' + val.toFixed(2);\n  if (metric === 'frequency') return 'Freq' + lb + ': ' + val.toFixed(1);\n  if (metric === 'link_clicks') return 'Clicks' + lb + ': ' + Math.round(val);\n  if (metric === 'lp_views') return 'LPV' + lb + ': ' + Math.round(val);\n  if (metric === 'spend' || metric === 'spend_today') return 'Spend' + lb + ': $' + val.toFixed(0);\n  return metric + lb + ': ' + val;\n}\n\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '🧪 *[DRY RUN]* 💥 ' + escapeMd(d.rule.name) + '\\n`' + name + '`  |  would PAUSE\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') — ' + pct + '%\\n' + time;\n} else {\n  const parts = [];\n  if (m.spend_today != null) parts.push('Spend today: $' + m.spend_today.toFixed(0));\n  const shown = new Set(['spend']);\n  for (const c of (d.rule.conditions || [])) {\n    if (shown.has(c.metric)) continue;\n    shown.add(c.metric);\n    const src = getSrc(c.lookback);\n    const val = src[c.metric];\n    if (val == null) continue;\n    parts.push(fmtMetric(c.metric, val, c.lookback));\n  }\n  const metricsLine = parts.join('  |  ');\n  text = '🧪 *[DRY RUN]* ' + escapeMd(d.rule.name) + '\\n`' + name + '`  |  would ' + actionLabel + (metricsLine ? '\\n' + metricsLine : '') + '\\n' + time;\n}\n\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '💤 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics || {};\nconst m3d = d.insights_3d || {};\nconst m7d = d.insights_7d || {};\nconst name = d.entityName || d.entityId || '';\nconst ruleName = (d.rule && d.rule.name) || '';\nconst ruleAction = (d.rule && d.rule.action) || 'action';\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = ((d.rule && d.rule.conditions) || []).some(c => c.lookback === 'last_30m');\nconst actionLabel = String(ruleAction).toUpperCase().replace(/_/g, ' ');\n\nfunction getSrc(lookback) {\n  if (lookback === 'last_7d') return m7d;\n  if (lookback === 'last_3d') return m3d;\n  return m;\n}\n\nconst esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeNum = (v, d2) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d2) : '0';\n\nfunction fmtMetric(metric, val, lookback) {\n  const lb = (lookback && lookback !== 'today') ? ' ·' + String(lookback).replace('last_', '') : '';\n  if (val == null || !isFinite(val)) return '';\n  if (metric === 'roi') return 'ROI' + lb + ': ' + (val * 100).toFixed(1) + '%';\n  if (metric === 'cpa') return 'CPA' + lb + ': $' + val.toFixed(0);\n  if (metric === 'conversions') return 'Conv' + lb + ': ' + Math.round(val);\n  if (metric === 'ctr') return 'CTR' + lb + ': ' + val.toFixed(2) + '%';\n  if (metric === 'cpc') return 'CPC' + lb + ': $' + val.toFixed(2);\n  if (metric === 'frequency') return 'Freq' + lb + ': ' + val.toFixed(1);\n  if (metric === 'link_clicks') return 'Clicks' + lb + ': ' + Math.round(val);\n  if (metric === 'lp_views') return 'LPV' + lb + ': ' + Math.round(val);\n  if (metric === 'spend' || metric === 'spend_today') return 'Spend' + lb + ': $' + val.toFixed(0);\n  return esc(metric) + lb + ': ' + esc(val);\n}\n\nlet text;\ntry {\n  if (isBurst) {\n    const burst = d.burstMetrics || {};\n    const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n    text = '🧪 <b>[DRY RUN]</b> 💥 ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would PAUSE\\nLast 30 min: $' + safeNum(burst.spend_30m, 0) + ' spent (normal: $' + safeNum(burst.avg_30m, 0) + ') — ' + pct + '%\\n' + time;\n  } else {\n    const parts = [];\n    if (m.spend_today != null && isFinite(m.spend_today)) parts.push('Spend today: $' + m.spend_today.toFixed(0));\n    const shown = new Set(['spend']);\n    for (const c of ((d.rule && d.rule.conditions) || [])) {\n      if (!c || shown.has(c.metric)) continue;\n      shown.add(c.metric);\n      const src = getSrc(c.lookback);\n      const val = src ? src[c.metric] : null;\n      if (val == null) continue;\n      const line = fmtMetric(c.metric, val, c.lookback);\n      if (line) parts.push(line);\n    }\n    const metricsLine = parts.join('  |  ');\n    text = '🧪 <b>[DRY RUN]</b> ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would ' + esc(actionLabel) + (metricsLine ? '\\n' + metricsLine : '') + '\\n' + time;\n  }\n} catch (e) {\n  text = '🧪 [DRY RUN] ' + String(ruleName) + ' — ' + String(name) + ' (alert build error: ' + e.message + ')';\n}\n\nconst ruleId = (d.rule && d.rule.id) || '';\nconst entityId = d.entityId || '';\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '💤 Snooze 6h', callback_data: 'snooze:' + ruleId + ':' + entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', reply_markup } }];"
       },
       "id": "9770dbde-7fa8-46c1-b549-7d55f49170bd",
       "name": "Prepare Dry Run Alert",
@@ -427,7 +427,8 @@
       "position": [
         -199456,
         2848
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -834,7 +835,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = (d.rule.conditions || []).some(c => c.lookback === 'last_30m');\nlet text;\nif (isBurst) {\n  const burst = d.burstMetrics || {};\n  const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n  text = '💥 *Velocity Kill: ' + d.rule.name + '*\\n`' + name + '`  |  PAUSED\\nLast 30 min: $' + (burst.spend_30m || 0).toFixed(0) + ' spent (normal: $' + (burst.avg_30m || 0).toFixed(0) + ') — ' + pct + '%\\n' + time;\n} else {\n  const roi = m.roi != null ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n  const cpa = m.cpa != null ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n  text = '🛑 *' + d.rule.action.charAt(0).toUpperCase() + d.rule.action.slice(1) + ': ' + d.rule.name + '*\\n`' + name + '`  |  ' + d.rule.action.toUpperCase() + 'D\\nSpend: $' + m.spend_today.toFixed(0) + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '✅ Re-enable', callback_data: 'reenable:' + d.rule.id + ':' + d.entityId }, { text: '💤 Snooze 6h', callback_data: 'snooze:' + d.rule.id + ':' + d.entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown', reply_markup } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics || {};\nconst name = d.entityName || d.entityId || '';\nconst ruleName = (d.rule && d.rule.name) || '';\nconst ruleAction = (d.rule && d.rule.action) || 'action';\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = ((d.rule && d.rule.conditions) || []).some(c => c.lookback === 'last_30m');\nconst esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeNum = (v, dec) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(dec) : '0';\nlet text;\ntry {\n  if (isBurst) {\n    const burst = d.burstMetrics || {};\n    const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n    text = '💥 <b>Velocity Kill: ' + esc(ruleName) + '</b>\\n<code>' + esc(name) + '</code>  |  PAUSED\\nLast 30 min: $' + safeNum(burst.spend_30m, 0) + ' spent (normal: $' + safeNum(burst.avg_30m, 0) + ') — ' + pct + '%\\n' + time;\n  } else {\n    const roi = (m.roi != null && isFinite(m.roi)) ? ((m.roi * 100).toFixed(1) + '%') : 'N/A';\n    const cpa = (m.cpa != null && isFinite(m.cpa)) ? ('$' + m.cpa.toFixed(0)) : 'N/A';\n    const spend = (m.spend_today != null && isFinite(m.spend_today)) ? ('$' + m.spend_today.toFixed(0)) : 'N/A';\n    const actionTitle = String(ruleAction).charAt(0).toUpperCase() + String(ruleAction).slice(1);\n    text = '🛑 <b>' + esc(actionTitle) + ': ' + esc(ruleName) + '</b>\\n<code>' + esc(name) + '</code>  |  ' + esc(String(ruleAction).toUpperCase()) + 'D\\nSpend: ' + spend + '  |  ROI: ' + roi + '  |  CPA: ' + cpa + '\\n' + time;\n  }\n} catch (e) {\n  text = String(ruleAction).toUpperCase() + ': ' + String(ruleName) + ' — ' + String(name) + ' (alert build error: ' + e.message + ')';\n}\nconst ruleId = (d.rule && d.rule.id) || '';\nconst entityId = d.entityId || '';\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '✅ Re-enable', callback_data: 'reenable:' + ruleId + ':' + entityId }, { text: '💤 Snooze 6h', callback_data: 'snooze:' + ruleId + ':' + entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', reply_markup } }];"
       },
       "id": "b95786ef-824f-4ac2-b99d-5a1093e08f3d",
       "name": "Prepare Telegram",
@@ -861,7 +862,8 @@
       "position": [
         -197776,
         2304
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1115,7 +1117,7 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ *Stale Pause Pending*\\n' + $json.items.map(e => '`' + e.entity_id + '` — since ' + e.created_at).join('\\n') + '\\n\\nManual check needed.', parse_mode: 'Markdown' }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ <b>Stale Pause Pending</b>\\n' + ($json.items || []).map(e => '<code>' + String(e.entity_id || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code> — since ' + String(e.created_at || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('\\n') + '\\n\\nManual check needed.', parse_mode: 'HTML' }) }}",
         "options": {}
       },
       "id": "737413ca-152d-4731-b25d-d9cc4bc5f64e",
@@ -1125,7 +1127,8 @@
       "position": [
         -206176,
         1632
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1321,7 +1324,7 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🚨 *FB Data Pull Failing*\\n' + $('Check Consecutive Failures').item.json.consecutive_failures + ' consecutive failures — Facebook API may be down or token invalid.', parse_mode: 'Markdown' }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🚨 <b>FB Data Pull Failing</b>\\n' + String($('Check Consecutive Failures').item.json.consecutive_failures || 0) + ' consecutive failures — Facebook API may be down or token invalid.', parse_mode: 'HTML' }) }}",
         "options": {}
       },
       "id": "5e5e3457-e6eb-4a22-931e-ea4ad0b13d21",
@@ -1331,7 +1334,8 @@
       "position": [
         -203296,
         2080
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1686,7 +1690,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics;\nconst name = d.entityName || d.entityId;\nconst time = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) + ' ET';\nconst roi = m.roi != null ? (m.roi * 100).toFixed(1) + '%' : 'N/A';\nconst conv = m.conversions ?? 'N/A';\nconst spend = m.spend_today != null ? '$' + m.spend_today.toFixed(0) : 'N/A';\nconst text = '\\uD83C\\uDFC6 *' + d.rule.name + '*\\n`' + name + '`\\nROI: ' + roi + '  Conv: ' + conv + '  Spend: ' + spend + '\\n' + time;\nreturn [{ json: { ...d, telegramText: text } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics || {};\nconst name = d.entityName || d.entityId || '';\nconst ruleName = (d.rule && d.rule.name) || '';\nconst ruleId = (d.rule && d.rule.id) || '';\nconst entityId = d.entityId || '';\nconst time = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) + ' ET';\nconst esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst roi = (m.roi != null && isFinite(m.roi)) ? (m.roi * 100).toFixed(1) + '%' : 'N/A';\nconst conv = (m.conversions != null && isFinite(m.conversions)) ? Math.round(m.conversions) : 'N/A';\nconst spend = (m.spend_today != null && isFinite(m.spend_today)) ? '$' + m.spend_today.toFixed(0) : 'N/A';\nlet text;\ntry {\n  text = '\\uD83C\\uDFC6 <b>' + esc(ruleName) + '</b>\\n<code>' + esc(name) + '</code>\\nROI: ' + roi + '  Conv: ' + conv + '  Spend: ' + spend + '\\n' + time;\n} catch (e) {\n  text = String(ruleName) + ' — ' + String(name) + ' (alert build error: ' + e.message + ')';\n}\nconst reply_markup = JSON.stringify({ inline_keyboard: [[{ text: '💤 Snooze 6h', callback_data: 'snooze:' + ruleId + ':' + entityId }]] });\nreturn [{ json: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', reply_markup } }];"
       },
       "id": "30a58c3f-cd71-46b3-ae1a-d2d3fe08190a",
       "name": "Prepare Notify Alert",
