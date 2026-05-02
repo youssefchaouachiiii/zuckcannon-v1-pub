@@ -528,6 +528,68 @@ rulesEngineN8nRouter.get('/logs', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Execute a rule's action live on a single entity. Used by the Telegram
+// "Approve" button to promote a DRY RUN finding into a real action without
+// waiting for the next engine cycle. v1 supports pause only — scale/decrease
+// rules require knowing current budget and applying scale_pct safely, which
+// is owned by the n8n loop; for those, the Telegram alert hides the Approve
+// button so users adjust budget manually via the dashboard.
+rulesEngineN8nRouter.post('/execute-once', async (req, res) => {
+  try {
+    const { rule_id, entity_id } = req.body || {};
+    if (!rule_id || !entity_id) {
+      return res.status(400).json({ error: 'rule_id and entity_id required' });
+    }
+    const rule = await RulesEngineDB.getRuleById(parseInt(rule_id, 10));
+    if (!rule) return res.status(404).json({ error: 'rule not found' });
+
+    if (rule.action !== 'pause') {
+      return res.status(501).json({
+        error: 'execute-once only supports pause rules in this version',
+        rule_action: rule.action,
+        hint: 'Adjust budget manually via the dashboard for scale/decrease rules.',
+      });
+    }
+
+    const cachedCampaigns = await FacebookCacheDB.getCampaigns();
+    const camp = cachedCampaigns.find(c => c.id === entity_id);
+    const entityName = camp ? camp.name : entity_id;
+
+    const tokens = await FacebookAuthDB.listSystemUserTokens();
+    const token = tokens[0]?.access_token;
+    if (!token) return res.status(500).json({ error: 'no FB token available' });
+
+    const fbResp = await fetch(`https://graph.facebook.com/v25.0/${entity_id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: 'PAUSED', access_token: token }),
+    });
+    let fbBody;
+    try { fbBody = await fbResp.json(); } catch { fbBody = {}; }
+    if (!fbResp.ok || fbBody.error) {
+      return res.status(502).json({
+        error: 'FB API rejected pause request',
+        fb_error: fbBody.error || fbBody,
+      });
+    }
+
+    await RulesEngineDB.setPausePending(rule.id, entity_id);
+    await RulesEngineDB.addLog({
+      rule_id: rule.id,
+      entity_type: rule.scope || 'campaign',
+      entity_id,
+      entity_name: entityName,
+      action_taken: 'telegram_approve_pause',
+      trigger_data_json: JSON.stringify({ source: 'telegram', via: 'execute-once' }),
+      is_dry_run: 0,
+    });
+
+    res.json({ ok: true, entity_id, entity_name: entityName, action: 'paused' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Offer performance (for ad performance summary) ---
 rulesEngineN8nRouter.get('/offer-performance', async (req, res) => {
   try {
