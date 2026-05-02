@@ -51,42 +51,42 @@
       "typeVersion": 2,
       "position": [720, 300],
       "parameters": {
-        "jsCode": "const logs = $input.all().map(i => i.json);\n\n// Filter out non-rule events (engine cycle_ran, pull_success, etc.) — only fires.\nconst fires = logs.filter(l =>\n  l.rule_id != null &&\n  (String(l.action_taken || '').startsWith('would_have_') ||\n   ['paused','scale_budgetd','decrease_budgetd','enabled','telegram_snooze','telegram_reenable','telegram_approve_pause'].includes(l.action_taken))\n);\n\nconst parseTrigger = (json) => {\n  if (!json) return {};\n  try { return typeof json === 'string' ? JSON.parse(json) : json; } catch { return {}; }\n};\n\nreturn fires.map(f => {\n  const m = parseTrigger(f.trigger_data_json);\n  const firedIso = new Date(String(f.created_at).replace(' ', 'T') + (String(f.created_at).endsWith('Z') ? '' : 'Z')).toISOString();\n  return {\n    json: {\n      fields: {\n        'Fire ID': f.id,  // unique key for upsert dedup\n        'Fired At': firedIso,\n        'Rule ID': f.rule_id,\n        'Entity Type': f.entity_type || '',\n        'Entity ID': f.entity_id || '',\n        'Entity Name': f.entity_name || '',\n        'Action Taken': f.action_taken || '',\n        'Dry Run': !!f.is_dry_run,\n        'Spend Today': typeof m.spend_today === 'number' ? m.spend_today : null,\n        'Conversions': typeof m.conversions === 'number' ? Math.round(m.conversions) : null,\n        'CPA': typeof m.cpa === 'number' ? m.cpa : null,\n        'ROI %': typeof m.roi === 'number' ? m.roi * 100 : null,\n        'Trigger Snapshot': JSON.stringify(m).slice(0, 4000)\n      }\n    }\n  };\n});"
-      }
-    },
-    {
-      "id": "batch-chunks-f",
-      "name": "Chunk to 10",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [940, 300],
-      "parameters": {
-        "jsCode": "const all = $input.all().map(i => i.json);\nif (!all.length) return [];\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 10) {\n  chunks.push({ json: { records: all.slice(i, i + 10) } });\n}\nreturn chunks;"
+        "jsCode": "const logs = $input.all().map(i => i.json);\n\n// Only rule fires (skip cycle_ran, pull_success, etc.)\nconst fires = logs.filter(l =>\n  l.rule_id != null &&\n  (String(l.action_taken || '').startsWith('would_have_') ||\n   ['paused','scale_budgetd','decrease_budgetd','enabled','telegram_snooze','telegram_reenable','telegram_approve_pause'].includes(l.action_taken))\n);\n\nconst parseTrigger = (json) => {\n  if (!json) return {};\n  try { return typeof json === 'string' ? JSON.parse(json) : json; } catch { return {}; }\n};\n\nreturn fires.map(f => {\n  const m = parseTrigger(f.trigger_data_json);\n  const tsRaw = String(f.created_at || '');\n  const firedIso = new Date(tsRaw.includes('T') ? tsRaw : tsRaw.replace(' ', 'T') + 'Z').toISOString();\n  return {\n    json: {\n      'Fire ID': f.id,\n      'Fired At': firedIso,\n      'Rule ID': f.rule_id,\n      'Entity Type': f.entity_type || '',\n      'Entity ID': f.entity_id || '',\n      'Entity Name': f.entity_name || '',\n      'Action Taken': f.action_taken || '',\n      'Dry Run': !!f.is_dry_run,\n      'Spend Today': typeof m.spend_today === 'number' ? m.spend_today : null,\n      'Conversions': typeof m.conversions === 'number' ? Math.round(m.conversions) : null,\n      'CPA': typeof m.cpa === 'number' ? m.cpa : null,\n      'ROI %': typeof m.roi === 'number' ? m.roi * 100 : null,\n      'Trigger Snapshot': JSON.stringify(m).slice(0, 4000)\n    }\n  };\n});"
       }
     },
     {
       "id": "airtable-upsert-fires",
       "name": "Airtable: Upsert Fires",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1180, 300],
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [960, 300],
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://api.airtable.com/v0/{{ $env.AIRTABLE_BASE_ID }}/{{ $env.AIRTABLE_FIRES_TABLE }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.AIRTABLE_TOKEN }}" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
+        "resource": "record",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ performUpsert: { fieldsToMergeOn: ['Fire ID'] }, records: $json.records, typecast: true }) }}",
+        "table": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_FIRES_TABLE }}",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["Fire ID"],
+          "schema": [],
+          "attemptToConvertTypes": true
+        },
         "options": {
-          "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 250 }
-          }
+          "typecast": true
+        }
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable Personal Access Token"
         }
       }
     }
@@ -99,9 +99,6 @@
       "main": [[{ "node": "Transform for Airtable", "type": "main", "index": 0 }]]
     },
     "Transform for Airtable": {
-      "main": [[{ "node": "Chunk to 10", "type": "main", "index": 0 }]]
-    },
-    "Chunk to 10": {
       "main": [[{ "node": "Airtable: Upsert Fires", "type": "main", "index": 0 }]]
     }
   },

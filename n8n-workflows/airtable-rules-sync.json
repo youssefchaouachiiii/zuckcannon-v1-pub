@@ -19,7 +19,7 @@
       "name": "Get Active Rules",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 300],
+      "position": [460, 220],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/active-rules",
@@ -42,7 +42,7 @@
       "name": "Get Fire Counts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 460],
+      "position": [460, 380],
       "parameters": {
         "method": "GET",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/logs",
@@ -72,44 +72,44 @@
       "name": "Transform for Airtable",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [720, 380],
+      "position": [720, 300],
       "parameters": {
-        "jsCode": "const rules = $('Get Active Rules').all().map(i => i.json);\nconst logs = $('Get Fire Counts').all().map(i => i.json);\nconst now = Date.now();\n\nconst countByRule = {};\nconst countByRule24 = {};\nconst lastFiredByRule = {};\nfor (const log of logs) {\n  if (!log.rule_id) continue;\n  const t = new Date(log.created_at + (log.created_at.endsWith('Z') ? '' : 'Z')).getTime();\n  if (now - t < 7 * 86400000) {\n    countByRule[log.rule_id] = (countByRule[log.rule_id] || 0) + 1;\n    if (now - t < 86400000) {\n      countByRule24[log.rule_id] = (countByRule24[log.rule_id] || 0) + 1;\n    }\n    if (!lastFiredByRule[log.rule_id] || t > lastFiredByRule[log.rule_id]) {\n      lastFiredByRule[log.rule_id] = t;\n    }\n  }\n}\n\nconst formatConditions = (rule) => {\n  const conds = rule.conditions || [];\n  const combinator = (rule.combinator || 'AND').toUpperCase();\n  return conds.map(c => {\n    const lb = c.lookback === 'today' ? '' : ` (${String(c.lookback).replace('last_', '')})`;\n    const op = { gt: '>', lt: '<', gte: '≥', lte: '≤', eq: '=' }[c.operator] || c.operator;\n    return `${c.metric}${lb} ${op} ${c.value}`;\n  }).join(` ${combinator} `);\n};\n\nconst nowIso = new Date().toISOString();\nreturn rules.map(r => ({\n  json: {\n    fields: {\n      'ID': r.id,\n      'Name': r.name || '',\n      'Status': r.is_active ? 'Active' : 'Paused',\n      'Mode': r.is_dry_run ? 'Dry Run' : 'Live',\n      'Scope': r.scope || '',\n      'Action': r.action || '',\n      'Action Params': r.action_params ? JSON.stringify(r.action_params) : '',\n      'Conditions': formatConditions(r),\n      'Combinator': (r.combinator || 'AND').toUpperCase(),\n      'Cooldown (hrs)': r.cooldown_hours || 0,\n      'Alert Level': r.alert_level || 'warning',\n      'Last Fired': lastFiredByRule[r.id] ? new Date(lastFiredByRule[r.id]).toISOString() : null,\n      'Fires (24h)': countByRule24[r.id] || 0,\n      'Fires (7d)': countByRule[r.id] || 0,\n      'Synced At': nowIso\n    }\n  }\n}));"
-      }
-    },
-    {
-      "id": "batch-chunks",
-      "name": "Chunk to 10",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [940, 380],
-      "parameters": {
-        "jsCode": "const all = $input.all().map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 10) {\n  chunks.push({ json: { records: all.slice(i, i + 10) } });\n}\nreturn chunks;"
+        "jsCode": "const rules = $('Get Active Rules').all().map(i => i.json);\nconst logs = $('Get Fire Counts').all().map(i => i.json);\nconst now = Date.now();\n\nconst countByRule = {};\nconst countByRule24 = {};\nconst lastFiredByRule = {};\nfor (const log of logs) {\n  if (!log.rule_id) continue;\n  const tsRaw = String(log.created_at || '');\n  const t = new Date(tsRaw.includes('T') ? tsRaw : tsRaw.replace(' ', 'T') + 'Z').getTime();\n  if (!isFinite(t)) continue;\n  if (now - t < 7 * 86400000) {\n    countByRule[log.rule_id] = (countByRule[log.rule_id] || 0) + 1;\n    if (now - t < 86400000) countByRule24[log.rule_id] = (countByRule24[log.rule_id] || 0) + 1;\n    if (!lastFiredByRule[log.rule_id] || t > lastFiredByRule[log.rule_id]) lastFiredByRule[log.rule_id] = t;\n  }\n}\n\nconst formatConditions = (rule) => {\n  const conds = rule.conditions || [];\n  const combinator = (rule.combinator || 'AND').toUpperCase();\n  return conds.map(c => {\n    const lb = c.lookback === 'today' ? '' : ' (' + String(c.lookback).replace('last_', '') + ')';\n    const op = ({ gt: '>', lt: '<', gte: '>=', lte: '<=', eq: '=' })[c.operator] || c.operator;\n    return c.metric + lb + ' ' + op + ' ' + c.value;\n  }).join(' ' + combinator + ' ');\n};\n\nconst nowIso = new Date().toISOString();\nreturn rules.map(r => ({\n  json: {\n    'ID': r.id,\n    'Name': r.name || '',\n    'Status': r.is_active ? 'Active' : 'Paused',\n    'Mode': r.is_dry_run ? 'Dry Run' : 'Live',\n    'Scope': r.scope || '',\n    'Action': r.action || '',\n    'Action Params': r.action_params ? JSON.stringify(r.action_params) : '',\n    'Conditions': formatConditions(r),\n    'Combinator': (r.combinator || 'AND').toUpperCase(),\n    'Cooldown (hrs)': r.cooldown_hours || 0,\n    'Alert Level': r.alert_level || 'warning',\n    'Last Fired': lastFiredByRule[r.id] ? new Date(lastFiredByRule[r.id]).toISOString() : null,\n    'Fires (24h)': countByRule24[r.id] || 0,\n    'Fires (7d)': countByRule[r.id] || 0,\n    'Synced At': nowIso\n  }\n}));"
       }
     },
     {
       "id": "airtable-upsert",
       "name": "Airtable: Upsert Rules",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1180, 380],
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [960, 300],
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://api.airtable.com/v0/{{ $env.AIRTABLE_BASE_ID }}/{{ $env.AIRTABLE_RULES_TABLE }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.AIRTABLE_TOKEN }}" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
+        "resource": "record",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ performUpsert: { fieldsToMergeOn: ['ID'] }, records: $json.records, typecast: true }) }}",
+        "table": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_RULES_TABLE }}",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["ID"],
+          "schema": [],
+          "attemptToConvertTypes": true
+        },
         "options": {
-          "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 250 }
-          }
+          "typecast": true
+        }
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable Personal Access Token"
         }
       }
     }
@@ -128,9 +128,6 @@
       "main": [[{ "node": "Transform for Airtable", "type": "main", "index": 0 }]]
     },
     "Transform for Airtable": {
-      "main": [[{ "node": "Chunk to 10", "type": "main", "index": 0 }]]
-    },
-    "Chunk to 10": {
       "main": [[{ "node": "Airtable: Upsert Rules", "type": "main", "index": 0 }]]
     }
   },

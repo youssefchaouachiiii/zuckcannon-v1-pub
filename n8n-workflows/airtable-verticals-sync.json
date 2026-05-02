@@ -44,42 +44,42 @@
       "typeVersion": 2,
       "position": [720, 300],
       "parameters": {
-        "jsCode": "const verticals = $input.all().map(i => i.json);\nconst nowIso = new Date().toISOString();\nreturn verticals.map(v => ({\n  json: {\n    fields: {\n      'ID': v.id,\n      'Name': v.name || '',\n      'Tracks LPV': v.tracks_lpv === 1 || v.tracks_lpv === true,\n      'Keyword': v.keyword || '',\n      'Default Schedule ID': v.default_schedule_id || null,\n      'Synced At': nowIso\n    }\n  }\n}));"
+        "jsCode": "const verticals = $input.all().map(i => i.json);\nconst nowIso = new Date().toISOString();\nreturn verticals.map(v => ({\n  json: {\n    'ID': v.id,\n    'Name': v.name || '',\n    'Tracks LPV': v.tracks_lpv === 1 || v.tracks_lpv === true,\n    'Keyword': v.keyword || '',\n    'Default Schedule ID': v.default_schedule_id || null,\n    'Synced At': nowIso\n  }\n}));"
       }
     },
     {
-      "id": "batch-chunks-v",
-      "name": "Chunk to 10",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [940, 300],
-      "parameters": {
-        "jsCode": "const all = $input.all().map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 10) {\n  chunks.push({ json: { records: all.slice(i, i + 10) } });\n}\nreturn chunks;"
-      }
-    },
-    {
-      "id": "airtable-upsert-v",
+      "id": "airtable-upsert-verticals",
       "name": "Airtable: Upsert Verticals",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1180, 300],
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [960, 300],
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://api.airtable.com/v0/{{ $env.AIRTABLE_BASE_ID }}/{{ $env.AIRTABLE_VERTICALS_TABLE }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.AIRTABLE_TOKEN }}" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
+        "resource": "record",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ performUpsert: { fieldsToMergeOn: ['ID'] }, records: $json.records, typecast: true }) }}",
+        "table": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_VERTICALS_TABLE }}",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["ID"],
+          "schema": [],
+          "attemptToConvertTypes": true
+        },
         "options": {
-          "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 250 }
-          }
+          "typecast": true
+        }
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable Personal Access Token"
         }
       }
     }
@@ -92,9 +92,6 @@
       "main": [[{ "node": "Transform for Airtable", "type": "main", "index": 0 }]]
     },
     "Transform for Airtable": {
-      "main": [[{ "node": "Chunk to 10", "type": "main", "index": 0 }]]
-    },
-    "Chunk to 10": {
       "main": [[{ "node": "Airtable: Upsert Verticals", "type": "main", "index": 0 }]]
     }
   },
