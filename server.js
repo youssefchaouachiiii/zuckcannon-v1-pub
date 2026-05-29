@@ -7436,7 +7436,7 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
 });
 
 // Helper function: Create rules on multiple accounts with concurrency control
-async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, ruleConfig, ad_account_ids, concurrency = 2) {
+async function createMultiAccountRulesWithConcurrency(req, userId, ruleConfig, ad_account_ids, concurrency = 2) {
   const results = [];
 
   // Process accounts in batches to control concurrency
@@ -7446,7 +7446,19 @@ async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, r
     const batchResults = await Promise.all(
       batch.map(async (accountId) => {
         try {
-          const result = await createSingleAccountRule(userId, userAccessToken, accountId, ruleConfig);
+          // Resolve the token per-account so one bad account doesn't fail the whole batch
+          const td = await resolveFbToken(req, accountId, { write: true });
+          if (!td?.token) {
+            return {
+              ad_account_id: accountId,
+              success: false,
+              local_rule_id: null,
+              meta_rule_id: null,
+              error: "no_fb_token_for_account",
+              detail: td?.reason,
+            };
+          }
+          const result = await createSingleAccountRule(userId, td.token, accountId, ruleConfig);
           return {
             ad_account_id: accountId,
             success: true,
@@ -7477,15 +7489,6 @@ async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, r
 app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatchRule, async (req, res) => {
   try {
     const userId = req.user.id;
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     const { ad_account_ids, ...ruleConfig } = req.body;
 
@@ -7506,8 +7509,8 @@ app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatch
 
     // Create rules with concurrency control (2 accounts at a time)
     const results = await createMultiAccountRulesWithConcurrency(
+      req,
       userId,
-      userAccessToken,
       ruleConfig,
       ad_account_ids,
       2 // Concurrency limit to avoid rate limiting
@@ -7804,24 +7807,16 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs account only when local_rule_id present
-    const userAccessToken = req.user?.facebook_access_token;
 
     console.log("Toggle status request:", { metaRuleId, status, local_rule_id, userId });
 
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
-
     // Try to get local rule if local_rule_id is provided and not null
-    let rule = null;
-    if (local_rule_id && local_rule_id !== "null") {
-      rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
-      console.log("Local rule found:", rule ? "yes" : "no");
-    }
+    const rule = (local_rule_id && local_rule_id !== "null") ? RulesDB.getRuleById(parseInt(local_rule_id), userId) : null;
+    console.log("Local rule found:", rule ? "yes" : "no");
+
+    const tokenData = await resolveFbToken(req, rule?.ad_account_id ?? null, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule?.ad_account_id ?? null });
+    const userAccessToken = tokenData.token;
 
     // Update in Meta API with ENABLED/DISABLED format
     // Use metaRuleId from URL params (works for both local and non-local rules)
@@ -7890,15 +7885,13 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { local_rule_id } = req.body; // Optional local_rule_id
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs account only when local_rule_id present
-    const userAccessToken = req.user?.facebook_access_token;
 
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    // Fetch local rule up front so we can resolve the token via its ad_account_id
+    const rule = (local_rule_id && local_rule_id !== "null") ? RulesDB.getRuleById(parseInt(local_rule_id), userId) : null;
+
+    const tokenData = await resolveFbToken(req, rule?.ad_account_id ?? null, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule?.ad_account_id ?? null });
+    const userAccessToken = tokenData.token;
 
     // Delete from Meta API using metaRuleId
     const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
@@ -7917,8 +7910,8 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
       });
     }
 
-    // Delete from local database if local_rule_id exists
-    if (local_rule_id && local_rule_id !== "null") {
+    // Delete from local database if the local rule exists
+    if (rule) {
       RulesDB.deleteRule(parseInt(local_rule_id), userId);
     }
 
