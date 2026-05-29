@@ -10,16 +10,26 @@ import { selectFbToken } from './fb-token-selector.js';
  */
 export async function resolveFbToken(req, adAccountId, { write = false } = {}) {
   const oauth = req.user?.facebook_access_token || null;
+  let result;
 
   // Flag-gated writes: before the flag is flipped, behave exactly as today (OAuth session token).
   if (write && process.env.USE_SYSTEM_USER_FOR_WRITES !== 'true') {
-    return oauth ? { token: oauth, type: 'oauth', reason: 'flag_off' } : null;
+    result = oauth ? { token: oauth, type: 'oauth', reason: 'flag_off' } : null;
+  } else {
+    const sel = await selectFbToken(req.user?.id, adAccountId || null);
+    // selectFbToken null → fall back to OAuth session token so the request doesn't
+    // hard-fail before a system user is registered for this account's BM.
+    result = sel?.token ? sel : (oauth ? { token: oauth, type: 'oauth', reason: 'no_system_user' } : null);
   }
 
-  const result = await selectFbToken(req.user?.id, adAccountId || null);
-  if (result?.token) return result;
+  // Observability (never logs the token itself): which identity each ads-op resolves to.
+  console.log(
+    `[fb-token] ${write ? 'WRITE' : 'READ '} acct=${adAccountId ?? '-'} -> ` +
+    (result
+      ? `type=${result.type} bm=${result.bm_id ?? '-'} su=${result.fb_user_id ?? '-'}` +
+        (result.reason ? ` reason=${result.reason}` : '')
+      : 'NULL (no token)')
+  );
 
-  // selectFbToken found nothing — fall back to the OAuth session token so the request
-  // doesn't hard-fail before a system user is registered for this account's BM.
-  return oauth ? { token: oauth, type: 'oauth', reason: 'no_system_user' } : null;
+  return result;
 }
