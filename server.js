@@ -6382,6 +6382,10 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
   try {
     const { creativeId, adAccountId } = req.body;
 
+    const tokenData = await resolveFbToken(req, adAccountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: adAccountId });
+    const userAccessToken = tokenData.token;
+
     // Get creative details
     const creative = await CreativeDB.getById(creativeId);
     if (!creative) {
@@ -6467,7 +6471,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       const fd = new FormData();
       fd.append("source", fs.createReadStream(file.path));
       fd.append("name", file.originalname);
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(upload_url, fd, {
         headers: {
@@ -6497,7 +6501,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       const initResponse = await axios.post(initUrl, {
         upload_phase: "start",
         file_size: fileSize,
-        access_token,
+        access_token: userAccessToken || access_token,
       });
 
       const { upload_session_id, video_id } = initResponse.data;
@@ -6517,7 +6521,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
         fd.append("upload_phase", "transfer");
         fd.append("upload_session_id", upload_session_id);
         fd.append("start_offset", offset.toString());
-        fd.append("access_token", access_token);
+        fd.append("access_token", userAccessToken || access_token);
 
         await axios.post(initUrl, fd, {
           headers: {
@@ -6533,7 +6537,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       await axios.post(initUrl, {
         upload_phase: "finish",
         upload_session_id: upload_session_id,
-        access_token,
+        access_token: userAccessToken || access_token,
         title: file.originalname,
       });
 
@@ -6552,7 +6556,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
     try {
       const fd = new FormData();
       fd.append("source", fs.createReadStream(filePath));
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(imageUrl, fd, {
         headers: {
@@ -6794,6 +6798,10 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
       return res.status(400).json({ error: "Account ID is required" });
     }
 
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
+
     const results = [];
 
     for (const creativeId of creativeIds) {
@@ -6865,8 +6873,8 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
           }
 
           // Upload video and thumbnail
-          const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, account_id);
-          const video_id = await uploadVideoToMeta(fileObj, account_id);
+          const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, account_id, userAccessToken);
+          const video_id = await uploadVideoToMeta(fileObj, account_id, userAccessToken);
 
           // Store Facebook IDs
           await CreativeAccountDB.recordUpload(creative.id, account_id, {
@@ -6888,7 +6896,7 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
           });
         } else {
           // Upload image
-          const imageHash = await uploadImageToMeta(filePath, account_id);
+          const imageHash = await uploadImageToMeta(filePath, account_id, userAccessToken);
 
           // Store Facebook ID
           await CreativeAccountDB.recordUpload(creative.id, account_id, { imageHash });
