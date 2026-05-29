@@ -5554,7 +5554,7 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
               }
 
               // Upload video and thumbnail
-              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId);
+              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId, userAccessToken);
               const video_id = await uploadVideoToMeta(fileObj, accountId, userAccessToken);
 
               // Store Facebook IDs
