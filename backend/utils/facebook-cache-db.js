@@ -366,6 +366,19 @@ export const FacebookCacheDB = {
     }));
   },
 
+  // Lookup helpers used by the rules-engine routes to map an entity ID to its
+  // owning ad account, so the right BM/system-user token can be picked.
+  // Returns the account_id string, or null when the entity isn't cached.
+  async getAccountIdForCampaign(campaignId) {
+    const row = await db.getAsync("SELECT account_id FROM cached_campaigns WHERE id = ? LIMIT 1", campaignId);
+    return row ? row.account_id : null;
+  },
+
+  async getAccountIdForAdset(adsetId) {
+    const row = await db.getAsync("SELECT account_id FROM cached_adsets WHERE id = ? LIMIT 1", adsetId);
+    return row ? row.account_id : null;
+  },
+
   // Pixels
   async savePixels(pixels) {
     const stmt = db.prepare(`
