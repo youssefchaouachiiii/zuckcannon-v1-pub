@@ -35,7 +35,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.runAsync(`DELETE FROM cached_campaigns WHERE id = ?`, [CAMP_ID]);
-  await db.runAsync(`DELETE FROM cached_adsets WHERE id = ?`, [ADSET_ID]);
+  // The no-table test may have dropped cached_adsets; DROP IF EXISTS is safe
+  // whether the table is still present (seeded row goes with it) or already gone.
+  await db.runAsync(`DROP TABLE IF EXISTS cached_adsets`);
 });
 
 describe("FacebookCacheDB.getAccountIdForCampaign", () => {
@@ -59,5 +61,13 @@ describe("FacebookCacheDB.getAccountIdForAdset", () => {
   test("returns null for an unknown adset id", async () => {
     const accountId = await FacebookCacheDB.getAccountIdForAdset("adset_does_not_exist");
     expect(accountId).toBeNull();
+  });
+
+  // Run last: drops the test-only cached_adsets table so we exercise the
+  // missing-table path. The getter must resolve to null, not throw
+  // SQLITE_ERROR: no such table: cached_adsets.
+  test("returns null (does not throw) when cached_adsets table does not exist", async () => {
+    await db.runAsync(`DROP TABLE IF EXISTS cached_adsets`);
+    await expect(FacebookCacheDB.getAccountIdForAdset("whatever")).resolves.toBeNull();
   });
 });
