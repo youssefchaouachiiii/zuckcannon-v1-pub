@@ -213,8 +213,6 @@ describe("SystemUsers", () => {
       fb_user_id: "u_old", business_manager_id: "bm_1", ok: true,
       expires_at: new Date(Date.now() + 60 * 86400 * 1000).toISOString(),
     });
-    // Force a tick so updated_at differs (SQLite CURRENT_TIMESTAMP is second-resolution).
-    await new Promise((r) => setTimeout(r, 1100));
     await FacebookAuthDB.upsertSystemUser({
       fb_user_id: "u_new", business_manager_id: "bm_2", name: "New", access_token: "new_t",
     });
@@ -222,6 +220,18 @@ describe("SystemUsers", () => {
       fb_user_id: "u_new", business_manager_id: "bm_2", ok: true,
       expires_at: new Date(Date.now() + 60 * 86400 * 1000).toISOString(),
     });
+    // Set updated_at explicitly so u_new is unambiguously newer (SQLite
+    // CURRENT_TIMESTAMP is second-resolution, so two upserts can tie).
+    const d = openRawDb();
+    await d.runAsync(
+      "UPDATE system_users SET updated_at = ? WHERE fb_user_id = ?",
+      ["2026-01-01 00:00:00", "u_old"]
+    );
+    await d.runAsync(
+      "UPDATE system_users SET updated_at = ? WHERE fb_user_id = ?",
+      ["2026-02-01 00:00:00", "u_new"]
+    );
+    d.close();
 
     const su = await FacebookAuthDB.getAnyHealthySystemUser();
     expect(su).not.toBeNull();
