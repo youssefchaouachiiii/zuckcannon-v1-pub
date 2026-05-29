@@ -1162,14 +1162,14 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
 }
 
 // Global helper function to upload video to Meta
-async function uploadVideoToMeta(file, adAccountId) {
+async function uploadVideoToMeta(file, adAccountId, userAccessToken = null) {
   const normalizedAccountId = normalizeAdAccountId(adAccountId);
   const fileStats = fs.statSync(file.path);
   const fileSize = fileStats.size;
 
   // Use resumable upload for files > 20MB
   if (fileSize > 20 * 1024 * 1024) {
-    return await uploadLargeVideoToMeta(file, adAccountId);
+    return await uploadLargeVideoToMeta(file, adAccountId, userAccessToken);
   }
 
   // Regular upload for smaller files
@@ -1179,7 +1179,7 @@ async function uploadVideoToMeta(file, adAccountId) {
     const fd = new FormData();
     fd.append("source", fs.createReadStream(file.path));
     fd.append("name", file.originalname);
-    fd.append("access_token", access_token);
+    fd.append("access_token", userAccessToken || access_token);
 
     const response = await axios.post(upload_url, fd, {
       headers: {
@@ -1198,7 +1198,7 @@ async function uploadVideoToMeta(file, adAccountId) {
 }
 
 // Global helper function for large video uploads
-async function uploadLargeVideoToMeta(file, adAccountId) {
+async function uploadLargeVideoToMeta(file, adAccountId, userAccessToken = null) {
   const normalizedAccountId = normalizeAdAccountId(adAccountId);
   const fileStats = fs.statSync(file.path);
   const fileSize = fileStats.size;
@@ -1209,7 +1209,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
     const initResponse = await axios.post(initUrl, {
       upload_phase: "start",
       file_size: fileSize,
-      access_token,
+      access_token: userAccessToken || access_token,
     });
 
     const { upload_session_id, video_id } = initResponse.data;
@@ -1229,7 +1229,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
       fd.append("upload_phase", "transfer");
       fd.append("upload_session_id", upload_session_id);
       fd.append("start_offset", offset.toString());
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       await axios.post(initUrl, fd, {
         headers: {
@@ -1245,7 +1245,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
     await axios.post(initUrl, {
       upload_phase: "finish",
       upload_session_id: upload_session_id,
-      access_token,
+      access_token: userAccessToken || access_token,
       title: file.originalname,
     });
 
@@ -1729,7 +1729,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const fd = new FormData();
       fd.append("source", fs.createReadStream(file.path));
       fd.append("name", file.originalname);
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(upload_url, fd, {
         headers: {
@@ -1761,7 +1761,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const initResponse = await axios.post(initUrl, {
         upload_phase: "start",
         file_size: fileSize,
-        access_token,
+        access_token: userAccessToken || access_token,
       });
 
       const { upload_session_id, video_id, start_offset, end_offset } = initResponse.data;
@@ -1786,7 +1786,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
         fd.append("upload_phase", "transfer");
         fd.append("upload_session_id", upload_session_id);
         fd.append("start_offset", offset.toString());
-        fd.append("access_token", access_token);
+        fd.append("access_token", userAccessToken || access_token);
 
         await axios.post(initUrl, fd, {
           headers: {
@@ -1816,7 +1816,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const finishResponse = await axios.post(initUrl, {
         upload_phase: "finish",
         upload_session_id: upload_session_id,
-        access_token,
+        access_token: userAccessToken || access_token,
         title: file.originalname,
       });
 
@@ -5555,7 +5555,7 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
 
               // Upload video and thumbnail
               const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId);
-              const video_id = await uploadVideoToMeta(fileObj, accountId);
+              const video_id = await uploadVideoToMeta(fileObj, accountId, userAccessToken);
 
               // Store Facebook IDs
               await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
