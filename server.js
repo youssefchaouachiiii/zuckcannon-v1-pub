@@ -4836,7 +4836,12 @@ app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, r
 // Check status of async batch request
 app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (req, res) => {
   const { batch_id } = req.params;
-  // TODO(multi-bm PR2b): route via resolveFbToken — needs no account_id in scope
+  // OAuth by design (PR2b): a Meta async-batch handle is scoped to the token that
+  // CREATED it, so the originating session's OAuth token is the correct reader — a
+  // system-user token that didn't create the batch would 400. NOT routed via
+  // resolveFbToken (with no account it would grab any-healthy system-user = wrong here).
+  // Caveat: if async batches ever get created under system-user tokens, polling them
+  // needs that same token (would require persisting a batch_id->token map at creation).
   const userAccessToken = req.user?.facebook_access_token;
 
   if (!userAccessToken) {
@@ -6351,7 +6356,12 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
 app.post("/api/batch/custom", ensureAuthenticatedAPI, validateRequest.customBatchRequest, async (req, res) => {
   try {
     const { operations } = req.body;
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs arbitrary ops, no account_id
+    // OAuth by design (PR2b): arbitrary caller-supplied Graph ops with no reliable single
+    // ad-account context — different ops may target different accounts/nodes. Routing via
+    // resolveFbToken (null account → any-healthy system-user) would silently mis-route, and
+    // parsing act_<id> out of each relative_url is fragile. The logged-in session's OAuth
+    // token is the safe choice. If system-user routing is ever needed, require an explicit
+    // ad_account_id body param and resolve per-op.
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
