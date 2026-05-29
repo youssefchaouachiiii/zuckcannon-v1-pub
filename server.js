@@ -30,6 +30,7 @@ import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
 import { selectFbToken } from "./backend/utils/fb-token-selector.js";
+import { resolveFbToken } from "./backend/utils/fb-token-resolver.js";
 import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
 import { rulesEngineN8nRouter } from "./backend/routes/rules-engine-n8n.js";
 import { rulesEngineUiRouter } from "./backend/routes/rules-engine-ui.js";
@@ -1335,7 +1336,9 @@ app.get("/api/fetch-google-data", async (req, res) => {
 app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDownload, async (req, res) => {
   const { fileIds, account_id } = req.body;
   const sessionId = req.body.sessionId || createUploadSession();
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!fileIds || !Array.isArray(fileIds)) {
     return res.status(400).json({ error: "File IDs array is required" });
@@ -1897,7 +1900,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       stop_time,
     } = req.body;
 
-    const userAccessToken = req.user.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -2133,7 +2138,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
 });
 
 app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdSet, async (req, res) => {
-  const userAccessToken = req.user.facebook_access_token;
+  const tokenData = await resolveFbToken(req, req.body.account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.body.account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2454,8 +2461,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
 // Create ad set across multiple campaigns
 app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.multiCampaignCreateAdSet, async (req, res) => {
-  const userAccessToken = req.user.facebook_access_token;
   const { account_id, campaign_ids, ...adSetBody } = req.body;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2595,6 +2604,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 
 // Create Campaign in Multiple Ad Accounts
 app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
+  // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
   const userAccessToken = req.user.facebook_access_token;
   const { ad_account_ids, campaign_name, objective, status, special_ad_categories, special_ad_category_country, daily_budget, lifetime_budget, bid_strategy, bid_amount } = req.body;
 
@@ -2763,7 +2773,9 @@ async function fetchAndCacheAdSets(adSetIds, accessToken) {
 
 app.post("/api/duplicate-ad-set", async (req, res) => {
   const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -3704,7 +3716,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
 app.post("/api/duplicate-campaign", async (req, res) => {
   const { campaign_id, deep_copy, status_option, name, account_id } = req.body;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -4753,7 +4767,9 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
 app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, res) => {
   const { account_id } = req.params;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+  const userAccessToken = tokenData.token;
   const isCompleted = req.query.is_completed; // Optional filter
 
   if (!userAccessToken) {
@@ -4795,6 +4811,7 @@ app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, r
 // Check status of async batch request
 app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (req, res) => {
   const { batch_id } = req.params;
+  // TODO(multi-bm PR2b): route via resolveFbToken — needs no account_id in scope
   const userAccessToken = req.user?.facebook_access_token;
 
   if (!userAccessToken) {
@@ -4916,7 +4933,9 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
   try {
     const files = req.files;
     const adAccountId = req.body.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, adAccountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: adAccountId });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -5339,7 +5358,9 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
 app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   const files = req.files;
   const accountId = req.body.account_id;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, accountId, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: accountId });
+  const userAccessToken = tokenData.token;
   const normalizedAccountId = normalizeAdAccountId(accountId);
   const imageUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adimages`;
 
@@ -5449,7 +5470,9 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
   try {
     const files = req.files;
     const accountId = req.body.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, accountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: accountId });
+    const userAccessToken = tokenData.token;
     const normalizedAccountId = normalizeAdAccountId(accountId);
 
     if (!userAccessToken) {
@@ -5621,10 +5644,12 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
   }
 });
 
-app.post("/api/create-ad-creative", (req, res) => {
+app.post("/api/create-ad-creative", async (req, res) => {
   try {
     const { name, page_id, message, headline, type, link, description, account_id, adset_id, assets } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     // Log the link safely
     console.log("Received ad creative request with link length:", link ? link.length : 0);
@@ -5902,7 +5927,9 @@ app.post("/api/create-ad-creative", (req, res) => {
 app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchCreateAds, async (req, res) => {
   try {
     const { account_id, adset_id, page_id, ads } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     // Validation
     if (!userAccessToken) {
@@ -6062,7 +6089,9 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
 app.post("/api/batch/create-ads-only", ensureAuthenticatedAPI, validateRequest.batchCreateAdsOnly, async (req, res) => {
   try {
     const { account_id, ads } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -6124,6 +6153,7 @@ app.post("/api/batch/create-ads-only", ensureAuthenticatedAPI, validateRequest.b
 app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.batchUpdateStatus, async (req, res) => {
   try {
     const { entity_ids, status } = req.body;
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs entity→account derivation (no account_id)
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -6185,6 +6215,7 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
 app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.batchFetchAccounts, async (req, res) => {
   try {
     const { account_ids, fields } = req.body;
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -6252,6 +6283,7 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
 app.post("/api/batch/custom", ensureAuthenticatedAPI, validateRequest.customBatchRequest, async (req, res) => {
   try {
     const { operations } = req.body;
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs arbitrary ops, no account_id
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -6989,14 +7021,9 @@ app.get("/api/rules", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const { account_id } = req.query;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    const tokenData = await resolveFbToken(req, account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!account_id) {
       return res.status(400).json({ error: "account_id is required" });
@@ -7379,16 +7406,11 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
 app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async (req, res) => {
   try {
     const userId = req.user.id;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
-
     const { ad_account_id, ...ruleConfig } = req.body;
+
+    const tokenData = await resolveFbToken(req, ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Use helper function to create rule
     const result = await createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig);
@@ -7447,6 +7469,7 @@ async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, r
 app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatchRule, async (req, res) => {
   try {
     const userId = req.user.id;
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -7509,20 +7532,16 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const existingRule = RulesDB.getRuleById(ruleId, userId);
     if (!existingRule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, existingRule.ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: existingRule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, status } = req.body;
 
@@ -7777,6 +7796,7 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs account only when local_rule_id present
     const userAccessToken = req.user?.facebook_access_token;
 
     console.log("Toggle status request:", { metaRuleId, status, local_rule_id, userId });
@@ -7862,6 +7882,7 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { local_rule_id } = req.body; // Optional local_rule_id
+    // TODO(multi-bm PR2b): route via resolveFbToken — needs account only when local_rule_id present
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -7908,20 +7929,16 @@ app.post("/api/rules/:id/preview", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Call Meta API preview endpoint
     if (!rule.meta_rule_id) {
@@ -7958,20 +7975,16 @@ app.post("/api/rules/:id/execute", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Call Meta API execute endpoint
     if (!rule.meta_rule_id) {
@@ -8029,21 +8042,17 @@ app.get("/api/rules/:id/history", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
     const limit = parseInt(req.query.limit) || 50;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get rule to verify ownership
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Get local execution history
     const localHistory = RulesDB.getExecutionHistory(ruleId, userId, limit);
@@ -8082,15 +8091,10 @@ app.get("/api/rules/:id/history", ensureAuthenticatedAPI, async (req, res) => {
 app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const accountId = req.params.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+    const userAccessToken = tokenData.token;
     const limit = parseInt(req.query.limit) || 100;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get Meta API account-level history
     const metaApiUrl = `https://graph.facebook.com/${api_version}/${accountId}/adrules_history`;
@@ -8126,14 +8130,9 @@ app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async 
 app.get("/api/account/:account_id/users", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const accountId = req.params.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+    const userAccessToken = tokenData.token;
 
     // Format account ID with act_ prefix
     const formattedAccountId = formatAccountId(accountId);
