@@ -435,6 +435,36 @@ describe('POST /api/fb-accounts/system-users/:fbUserId/:bmId/revalidate', () => 
     expect(res.status).toBe(404);
   });
 
+  test('token identity drift: /me.id differs from route fbUserId returns 409 and marks ok=false', async () => {
+    FacebookAuthDB.getSystemUserForBm.mockResolvedValue({
+      fb_user_id: 'sysuser_1',
+      business_manager_id: 'bm_1',
+      access_token: 'SYS_TOKEN',
+    });
+    mockGraphResponses([
+      ['debug_token', { data: { expires_at: 1900000000 } }],
+      ['/me/adaccounts', { data: [
+        { account_id: '111', name: 'Acct One', currency: 'USD', timezone_name: 'UTC',
+          account_status: 1, business: { id: 'bm_1', name: 'SGP' } },
+      ] }],
+      ['/me?', { id: 'sysuser_DIFFERENT', name: 'Swapped User' }],
+    ]);
+
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/sysuser_1/bm_1/revalidate')
+      .send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/token identity drift/i);
+    expect(res.body.error).toMatch(/sysuser_1/);
+    expect(res.body.error).toMatch(/sysuser_DIFFERENT/);
+    expect(FacebookAuthDB.markValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ fb_user_id: 'sysuser_1', business_manager_id: 'bm_1', ok: false })
+    );
+    // Must bail before refreshing ad-account statuses.
+    expect(FacebookAuthDB.upsertAdAccount).not.toHaveBeenCalled();
+  });
+
   test('marks validation ok=false if /me fails', async () => {
     FacebookAuthDB.getSystemUserForBm.mockResolvedValue({
       fb_user_id: 'sysuser_1',

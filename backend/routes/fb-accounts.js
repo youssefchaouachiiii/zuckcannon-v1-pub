@@ -93,16 +93,27 @@ async function fetchMe(accessToken) {
 }
 
 // Step B: discover all ad accounts + their owning BMs.
+// NOTE: cap is intentional for v1 — we read a single page only. Following
+// paging.next (full cursor pagination) is a follow-up; for now we warn loudly
+// if the cap is hit so overflow isn't silently dropped.
 async function fetchAdAccounts(accessToken) {
   const url = `${GRAPH_BASE}/me/adaccounts?fields=account_id,name,currency,timezone_name,account_status,business{id,name}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
   const resp = await axios.get(url);
+  if (resp.data?.paging?.next) {
+    console.warn('[fb-accounts] /me/adaccounts pagination cap (limit=500) hit — additional ad accounts exist beyond the first page and were DROPPED. Full pagination is a v1 follow-up.');
+  }
   return resp.data?.data || [];
 }
 
 // Step C: OAuth-user's BMs (used for authz only).
+// NOTE: cap is intentional for v1 — single page only (see fetchAdAccounts).
+// A dropped BM here would NOT trip the register authz check, so warn loudly.
 async function fetchOauthUserBusinesses(oauthToken) {
   const url = `${GRAPH_BASE}/me/businesses?fields=id,name&limit=200&access_token=${encodeURIComponent(oauthToken)}`;
   const resp = await axios.get(url);
+  if (resp.data?.paging?.next) {
+    console.warn('[fb-accounts] /me/businesses pagination cap (limit=200) hit — additional business managers exist beyond the first page and were DROPPED. A dropped BM will not appear in the authz allow-list. Full pagination is a v1 follow-up.');
+  }
   return resp.data?.data || [];
 }
 
@@ -287,6 +298,24 @@ fbAccountsRouter.post('/system-users/:fbUserId/:bmId/revalidate', async (req, re
     }
     const message = err?.response?.data?.error?.message || 'Token verification failed (/me)';
     return res.status(400).json({ error: message });
+  }
+
+  // Step A2: guard against token identity drift. A rotated/swapped token may
+  // still be live but now resolve to a DIFFERENT user. Treat that as a
+  // validation failure and bail before touching ad-account statuses.
+  if (me.id !== fbUserId) {
+    try {
+      await FacebookAuthDB.markValidation({
+        fb_user_id: fbUserId,
+        business_manager_id: bmId,
+        ok: false,
+      });
+    } catch (markErr) {
+      console.error('[fb-accounts] markValidation(false) failed:', markErr);
+    }
+    return res.status(409).json({
+      error: `token identity drift: stored ${fbUserId}, token resolves to ${me.id}`,
+    });
   }
 
   // Step B: refresh ad-account status
