@@ -2604,16 +2604,8 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 
 // Create Campaign in Multiple Ad Accounts
 app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
-  // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
-  const userAccessToken = req.user.facebook_access_token;
+  // Per-account system-user routing: each account resolves its own write token (per-op).
   const { ad_account_ids, campaign_name, objective, status, special_ad_categories, special_ad_category_country, daily_budget, lifetime_budget, bid_strategy, bid_amount } = req.body;
-
-  if (!userAccessToken) {
-    return res.status(403).json({
-      error: "Facebook account not connected",
-      needsAuth: true,
-    });
-  }
 
   if (!ad_account_ids || ad_account_ids.length === 0) {
     return res.status(400).json({
@@ -2624,74 +2616,104 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
   const results = [];
 
   try {
-    // Create campaign in each ad account using batch API
-    const batchOperations = ad_account_ids.map((accountId) => {
-      const normalizedAccountId = accountId.replace(/^act_/, "");
+    // Resolve a write token per account, then build one batch op per account that has a token.
+    // Accounts with no token are skipped (no op emitted) and recorded as failures; results are
+    // merged back by ad_account_id (NOT array index) since the op list may be shorter than inputs.
+    const skippedFailures = [];
+    const opAccountIds = []; // ad_account_id for each emitted op, in op order (for keying results)
+    let firstResolvedToken = null; // batch-level default (required by util); per-op tokens override it
 
-      // Build campaign payload
-      const campaignPayload = {
-        name: campaign_name,
-        objective: objective,
-        status: status || "PAUSED",
-        access_token: userAccessToken,
-        // Always include special_ad_categories, defaulting to an empty array.
-        // The value must be a JSON string as per Meta API requirements.
-        special_ad_categories: JSON.stringify(special_ad_categories || []),
-      };
+    const perAccountOps = await Promise.all(
+      ad_account_ids.map(async (accountId) => {
+        const td = await resolveFbToken(req, accountId, { write: true });
 
-      // Add special ad category country if provided
-      if (special_ad_category_country && special_ad_category_country.length > 0) {
-        campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
-      }
-
-      // ===== BUDGET MODE LOGIC =====
-      // Determine if campaign-level budget is being used
-      const hasCampaignBudget = !!(daily_budget || lifetime_budget);
-
-      // Set pacing_type only for campaign-level budgets
-      if (hasCampaignBudget) {
-        // Campaign budget: use user selection or default to day_parting
-        const pacingType = req.body.pacing_type || ["day_parting"];
-        campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
-      }
-      // Ad set budget: do not set pacing_type (Meta API restriction)
-
-      if (hasCampaignBudget) {
-        // Campaign-level budget mode (Advantage+ campaign budget)
-        if (daily_budget) {
-          const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
-          campaignPayload.daily_budget = budgetInCents.toString();
+        if (!td?.token) {
+          skippedFailures.push({
+            success: false,
+            ad_account_id: accountId,
+            error: "no_fb_token_for_account",
+            detail: td?.reason,
+          });
+          return null;
         }
 
-        if (lifetime_budget) {
-          const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
-          campaignPayload.lifetime_budget = budgetInCents.toString();
+        if (!firstResolvedToken) firstResolvedToken = td.token;
+        const normalizedAccountId = accountId.replace(/^act_/, "");
+
+        // Build campaign payload
+        const campaignPayload = {
+          name: campaign_name,
+          objective: objective,
+          status: status || "PAUSED",
+          // Per-op token: payload already carries access_token, which overrides the batch default.
+          access_token: td.token,
+          // Always include special_ad_categories, defaulting to an empty array.
+          // The value must be a JSON string as per Meta API requirements.
+          special_ad_categories: JSON.stringify(special_ad_categories || []),
+        };
+
+        // Add special ad category country if provided
+        if (special_ad_category_country && special_ad_category_country.length > 0) {
+          campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
         }
 
-        if (bid_strategy) {
-          campaignPayload.bid_strategy = bid_strategy;
+        // ===== BUDGET MODE LOGIC =====
+        // Determine if campaign-level budget is being used
+        const hasCampaignBudget = !!(daily_budget || lifetime_budget);
 
-          // Add bid amount for bid cap strategies
-          if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
-            const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
-            campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+        // Set pacing_type only for campaign-level budgets
+        if (hasCampaignBudget) {
+          // Campaign budget: use user selection or default to day_parting
+          const pacingType = req.body.pacing_type || ["day_parting"];
+          campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
+        }
+        // Ad set budget: do not set pacing_type (Meta API restriction)
+
+        if (hasCampaignBudget) {
+          // Campaign-level budget mode (Advantage+ campaign budget)
+          if (daily_budget) {
+            const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+            campaignPayload.daily_budget = budgetInCents.toString();
           }
+
+          if (lifetime_budget) {
+            const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+            campaignPayload.lifetime_budget = budgetInCents.toString();
+          }
+
+          if (bid_strategy) {
+            campaignPayload.bid_strategy = bid_strategy;
+
+            // Add bid amount for bid cap strategies
+            if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
+              const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
+              campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+            }
+          }
+        } else {
+          // Ad set-level budget mode
+          // When not using campaign budget, we must explicitly disable budget sharing
+          campaignPayload.is_adset_budget_sharing_enabled = false;
         }
-      } else {
-        // Ad set-level budget mode
-        // When not using campaign budget, we must explicitly disable budget sharing
-        campaignPayload.is_adset_budget_sharing_enabled = false;
-      }
 
-      return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
-    });
+        opAccountIds.push(accountId);
+        return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
+      })
+    );
 
-    // Execute batch request
-    const batchResults = await MetaBatch.executeChunkedBatchRequest(batchOperations, userAccessToken);
+    // Drop skipped (null-token) accounts; only real ops go into the batch.
+    const batchOperations = perAccountOps.filter((op) => op !== null);
 
-    // Process results
+    // Execute batch request. Default token is any resolved token (util requires one);
+    // each op's own access_token in the payload overrides it.
+    const batchResults = batchOperations.length > 0
+      ? await MetaBatch.executeChunkedBatchRequest(batchOperations, firstResolvedToken)
+      : [];
+
+    // Process batch results — keyed by ad_account_id via opAccountIds (NOT input index,
+    // since skipped accounts mean op[i] no longer aligns with ad_account_ids[i]).
     batchResults.forEach((result, index) => {
-      const accountId = ad_account_ids[index];
+      const accountId = opAccountIds[index];
 
       if (result.success && result.data.id) {
         results.push({
@@ -2709,6 +2731,9 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         });
       }
     });
+
+    // Merge in accounts that were skipped because they had no resolvable token.
+    results.push(...skippedFailures);
 
     const successCount = results.filter((r) => r.success).length;
     const failCount = results.filter((r) => !r.success).length;
@@ -6153,15 +6178,6 @@ app.post("/api/batch/create-ads-only", ensureAuthenticatedAPI, validateRequest.b
 app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.batchUpdateStatus, async (req, res) => {
   try {
     const { entity_ids, status } = req.body;
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs entity→account derivation (no account_id)
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     if (!entity_ids || !Array.isArray(entity_ids) || entity_ids.length === 0) {
       return res.status(400).json({ error: "entity_ids array is required" });
@@ -6175,8 +6191,50 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
 
     console.log(`Batch updating ${entity_ids.length} entities to status: ${status}`);
 
-    const results = await MetaBatch.batchUpdateCampaignStatus(entity_ids, status, userAccessToken);
+    // Per-entity system-user routing. entity_ids may be campaign/adset/AD ids and carry no
+    // account in the body, so derive each entity's account from cache (campaign → adset getters).
+    // Ad-level / uncached ids resolve account=null → resolveFbToken(req, null) returns the OAuth
+    // fallback (graceful, no regression). Entities with no token at all are skipped (failure).
+    const entitiesWithTokens = []; // { entityId, token } — one per emitted op
+    const entityFailures = []; // entity_id results for entities we couldn't resolve a token for
 
+    await Promise.all(
+      entity_ids.map(async (id) => {
+        let acct = await FacebookCacheDB.getAccountIdForCampaign(id);
+        if (!acct) acct = await FacebookCacheDB.getAccountIdForAdset(id);
+
+        const td = await resolveFbToken(req, acct ?? null, { write: true });
+
+        if (!td?.token) {
+          entityFailures.push({
+            entity_id: id,
+            success: false,
+            error: acct ? "no_fb_token_for_account" : "no_token",
+          });
+          return;
+        }
+
+        if (!acct) {
+          // Resolved via OAuth fallback (ad-level / uncached) — tag for observability.
+          console.log(`[batch/update-status] entity ${id} resolved via fallback (reason=${td.reason ?? "no_account"})`);
+        }
+        entitiesWithTokens.push({ entityId: id, token: td.token });
+      })
+    );
+
+    const batchResults = entitiesWithTokens.length > 0
+      ? await MetaBatch.batchUpdateCampaignStatus(entitiesWithTokens, status)
+      : [];
+
+    // Key batch results by entity_id via entitiesWithTokens (NOT input index — skipped entities
+    // break op[i] ↔ entity_ids[i] alignment), then merge in the skipped-entity failures.
+    const resolvedResults = batchResults.map((r, i) => ({
+      entity_id: entitiesWithTokens[i].entityId,
+      success: r.success,
+      error: r.error,
+    }));
+
+    const results = [...resolvedResults, ...entityFailures];
     const successCount = results.filter((r) => r.success).length;
 
     res.json({
@@ -6187,11 +6245,7 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
         succeeded: successCount,
         failed: entity_ids.length - successCount,
       },
-      results: results.map((r, i) => ({
-        entity_id: entity_ids[i],
-        success: r.success,
-        error: r.error,
-      })),
+      results,
     });
   } catch (error) {
     console.error("Error in batch status update:", error);
@@ -6215,15 +6269,6 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
 app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.batchFetchAccounts, async (req, res) => {
   try {
     const { account_ids, fields } = req.body;
-    // TODO(multi-bm PR2b): route via resolveFbToken — needs per-account loop (multi-account)
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
       return res.status(400).json({ error: "account_ids array is required" });
@@ -6233,9 +6278,37 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
 
     console.log(`Batch fetching ${account_ids.length} accounts with fields: ${fieldsParam}`);
 
-    const results = await MetaBatch.batchFetchAccountData(account_ids, fieldsParam, userAccessToken);
+    // Per-account system-user routing (read). Reads tolerate OAuth fallback, so most accounts
+    // resolve a token; any account with no token at all is skipped and recorded as a failure.
+    const accountsWithTokens = []; // { accountId, token } — one per emitted op
+    const accountFailures = []; // account_id results for accounts with no resolvable token
 
-    const successCount = results.filter((r) => r.success).length;
+    await Promise.all(
+      account_ids.map(async (accountId) => {
+        const td = await resolveFbToken(req, accountId, { write: false });
+        if (!td?.token) {
+          accountFailures.push({ account_id: accountId, success: false, data: undefined, error: "no_token" });
+          return;
+        }
+        accountsWithTokens.push({ accountId, token: td.token });
+      })
+    );
+
+    const batchResults = accountsWithTokens.length > 0
+      ? await MetaBatch.batchFetchAccountData(accountsWithTokens, fieldsParam)
+      : [];
+
+    // Key batch results by account_id via accountsWithTokens (NOT input index — skipped accounts
+    // break op[i] ↔ account_ids[i] alignment), then merge in the skipped-account failures.
+    const resolvedResults = batchResults.map((r, i) => ({
+      account_id: accountsWithTokens[i].accountId,
+      success: r.success,
+      data: r.data,
+      error: r.error,
+    }));
+
+    const accounts = [...resolvedResults, ...accountFailures];
+    const successCount = accounts.filter((r) => r.success).length;
 
     res.json({
       success: successCount === account_ids.length,
@@ -6245,12 +6318,7 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
         succeeded: successCount,
         failed: account_ids.length - successCount,
       },
-      accounts: results.map((r, i) => ({
-        account_id: account_ids[i],
-        success: r.success,
-        data: r.data,
-        error: r.error,
-      })),
+      accounts,
     });
   } catch (error) {
     console.error("Error in batch account fetch:", error);
