@@ -2858,7 +2858,7 @@
 
   <!-- FB Accounts Modal -->
   <div id="fb-accounts-modal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 700px;">
+    <div class="modal-content" style="max-width: 900px;">
       <div class="modal-header">
         <h2>FB Accounts</h2>
         <span class="close" id="fb-accounts-modal-close" style="cursor:pointer;font-size:24px;line-height:1;user-select:none;">&times;</span>
@@ -2867,13 +2867,15 @@
         <p style="margin-bottom: 16px; color: #666; font-size: 14px;">
           System User tokens authenticate API calls without risking personal Facebook accounts.
           Create a System User in <a href="https://business.facebook.com" target="_blank" style="color:#103dee;">Facebook Business Manager</a>
-          &rarr; Business Settings &rarr; System Users &rarr; Generate Token (scopes: ads_management, ads_read, business_management).
+          &rarr; Business Settings &rarr; System Users &rarr; Generate Token (scopes: ads_management, ads_read, business_management),
+          then paste it below and click <strong>Register</strong>. Registering walks the system user's Meta access &mdash; it
+          auto-detects the Business Manager and ad accounts it can reach and wires them up for you (no container script needed).
         </p>
         <div style="display: flex; gap: 8px; margin-bottom: 20px;">
           <input type="text" id="system-user-token-input"
             placeholder="Paste System User access token..."
             style="flex: 1; padding: 8px 12px; font-size: 14px;" />
-          <button id="verify-token-btn" class="btn-primary">Verify &amp; Save</button>
+          <button id="verify-token-btn" class="btn-primary">Register</button>
         </div>
         <div id="verify-token-status" style="margin-bottom: 16px; font-size: 13px;"></div>
         <div id="fb-accounts-confirm" style="display:none; background:#fff8f8; border:1px solid #f5c6cb; border-radius:4px; padding:14px; margin-top:12px;">
@@ -2883,20 +2885,21 @@
             <button id="fb-accounts-confirm-no" class="btn-secondary btn-sm">Cancel</button>
           </div>
         </div>
-        <h3 style="margin-bottom: 12px;">Connected Business Managers</h3>
+        <h3 style="margin-bottom: 12px;">Registered System Users</h3>
         <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
           <thead>
             <tr style="border-bottom: 1px solid #eee; text-align: left;">
+              <th style="padding: 6px 8px;">System User</th>
               <th style="padding: 6px 8px;">Business Manager</th>
-              <th style="padding: 6px 8px;">ID</th>
+              <th style="padding: 6px 8px;">Ad Accounts</th>
               <th style="padding: 6px 8px;">Token</th>
               <th style="padding: 6px 8px;">Expires</th>
-              <th style="padding: 6px 8px;">Status</th>
-              <th style="padding: 6px 8px;"></th>
+              <th style="padding: 6px 8px;">Validated</th>
+              <th style="padding: 6px 8px;">Actions</th>
             </tr>
           </thead>
           <tbody id="system-user-tokens-body">
-            <tr><td colspan="6" style="padding: 12px 8px; color: #888;">Loading...</td></tr>
+            <tr><td colspan="7" style="padding: 12px 8px; color: #888;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
