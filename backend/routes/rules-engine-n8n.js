@@ -4,6 +4,7 @@ import { RulesEngineDB } from '../db/rules-engine-db.js';
 import { resolveRuleEntities } from '../utils/rules-engine-resolver.js';
 import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
+import { selectFbToken } from '../utils/fb-token-selector.js';
 
 export const rulesEngineN8nRouter = express.Router();
 
@@ -39,6 +40,25 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const cachedCampaigns = await FacebookCacheDB.getCampaigns();
     await RulesEngineDB.autoAssignVerticalLabels(cachedCampaigns);
     const nameMap = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.name]));
+
+    // Per-entity system-user token routing. Each entity's token is resolved via
+    // its ad account → BM → system-user (selectFbToken), memoized per account.
+    // Falls back to defaultToken when the account can't be derived or no
+    // system_user is registered — so single-BM stays behavior-identical.
+    const campaignToAccount = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.account_id]));
+    const tokenByAccount = new Map();
+    const resolveEntityToken = async (entityId) => {
+      // entity is usually a campaign id; could be an adset id
+      let acct = campaignToAccount[entityId]
+        || await FacebookCacheDB.getAccountIdForCampaign(entityId)
+        || await FacebookCacheDB.getAccountIdForAdset(entityId);
+      if (!acct) return defaultToken; // can't derive → fall back (single token), no regression
+      if (!tokenByAccount.has(acct)) {
+        const r = await selectFbToken(null, acct);
+        tokenByAccount.set(acct, (r?.type === 'system_user' && r.token) ? r.token : defaultToken);
+      }
+      return tokenByAccount.get(acct);
+    };
 
     const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
     const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
@@ -114,7 +134,7 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
         return {
           entityId,
           entityName,
-          token: defaultToken,
+          token: await resolveEntityToken(entityId),
           rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
           insights_3d: mergeWindow(fb3d, rt3d),
           insights_7d: mergeWindow(fb7d, rt7d),
@@ -136,14 +156,18 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
           if (!accountIds || accountIds.length === 0) {
             accountIds = [...new Set(cachedCampaigns.map(c => c.account_id).filter(Boolean))];
           }
-          entities = accountIds.map(aid => ({
-            entityId: `act_${aid}`,
-            entityName: `Account ${aid}`,
-            token: defaultToken,
-            rt: null,
-            insights_3d: null,
-            insights_7d: null,
-            campaignIds: cachedCampaigns.filter(c => c.account_id === aid).map(c => c.id),
+          entities = await Promise.all(accountIds.map(async (aid) => {
+            const r = await selectFbToken(null, aid);
+            const token = (r?.type === 'system_user' && r.token) ? r.token : defaultToken;
+            return {
+              entityId: `act_${aid}`,
+              entityName: `Account ${aid}`,
+              token,
+              rt: null,
+              insights_3d: null,
+              insights_7d: null,
+              campaignIds: cachedCampaigns.filter(c => c.account_id === aid).map(c => c.id),
+            };
           }));
         } else {
           const rawEntityIds = await resolveRuleEntities(rule.id);
