@@ -202,8 +202,15 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(paths.uploads));
 
-// Apply rate limiting to API routes
-app.use("/api/", apiRateLimiter);
+// Apply rate limiting to API routes. Internal n8n calls authenticated via
+// x-n8n-secret are trusted and exempt: the rules engine bursts many
+// /api/rules-engine/* calls per cycle from a single n8n IP and would otherwise
+// trip the per-IP limit (429). Public/UI traffic is still rate limited.
+app.use("/api/", (req, res, next) => {
+  const secret = process.env.N8N_SHARED_SECRET;
+  if (secret && req.headers["x-n8n-secret"] === secret) return next();
+  return apiRateLimiter(req, res, next);
+});
 
 // FB Accounts routes (system user tokens)
 app.use("/api/fb-accounts", ensureAuthenticatedAPI, fbAccountsRouter);
