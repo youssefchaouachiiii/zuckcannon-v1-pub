@@ -424,7 +424,7 @@ app.post("/login", ensureNotAuthenticated, loginRateLimiter, (req, res, next) =>
       console.log("Login successful for user:", user.username);
       console.log("Session after login:", {
         sessionID: req.sessionID,
-        user: req.user,
+        userId: req.user?.id,
         isAuthenticated: req.isAuthenticated(),
       });
 
@@ -877,7 +877,11 @@ async function fetchMetaDataFresh(userId, userAccessToken) {
         const error = {
           error_code: "META_DATA_FETCH_FAILED",
           error_message: `${failedPromises.length} promises failed while fetching Meta data.`,
-          error_details: failedPromises,
+          error_details: failedPromises.map((d) =>
+            d.status === "rejected"
+              ? { status: "rejected", reason: d.reason?.response?.data || d.reason?.message || String(d.reason) }
+              : { status: d.status }
+          ),
           timestamp: new Date().toISOString(),
         };
 
@@ -986,7 +990,7 @@ async function fetchUserPages(userAccessToken) {
       return { pages: response.data.data };
     });
   } catch (err) {
-    console.error(`There was an error fetching user pages:`, err);
+    console.error(`There was an error fetching user pages:`, err.response?.data || err.message);
     return { pages: [] };
   }
 }
@@ -1044,7 +1048,7 @@ async function fetchCampaigns(account_id, userAccessToken = null) {
     });
     return campaignResponse.data.data;
   } catch (err) {
-    console.error(`Error fetching campaigns for account ${account_id}:`, err);
+    console.error(`Error fetching campaigns for account ${account_id}:`, err.response?.data || err.message);
     return [];
   }
 }
@@ -5168,7 +5172,7 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
           return { uploadVideo, getImageHash, adAccountId, isNew: creativeResult.isNew };
         }
       } catch (err) {
-        console.log("There was an error inside handleVideoUpload() try catch block.", err);
+        console.log("There was an error inside handleVideoUpload() try catch block.", err.response?.data || err.message);
 
         // Send file error event
         broadcastToSession(sessionId, "file-error", {
@@ -6091,7 +6095,7 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
       rawResults: results,
     });
   } catch (error) {
-    console.error("Error in batch ad creation:", error);
+    console.error("Error in batch ad creation:", error.response?.data || error.message);
     res.status(500).json({
       error: "Failed to process batch ad creation",
       details: error.message,
@@ -6253,7 +6257,7 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
       results,
     });
   } catch (error) {
-    console.error("Error in batch status update:", error);
+    console.error("Error in batch status update:", error.response?.data || error.message);
     res.status(500).json({
       error: "Failed to process batch status update",
       details: error.message,
@@ -6326,7 +6330,7 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
       accounts,
     });
   } catch (error) {
-    console.error("Error in batch account fetch:", error);
+    console.error("Error in batch account fetch:", error.response?.data || error.message);
     res.status(500).json({
       error: "Failed to fetch accounts",
       details: error.message,
@@ -6398,7 +6402,7 @@ app.post("/api/batch/custom", ensureAuthenticatedAPI, validateRequest.customBatc
       results,
     });
   } catch (error) {
-    console.error("Error in custom batch request:", error);
+    console.error("Error in custom batch request:", error.response?.data || error.message);
     res.status(500).json({
       error: "Failed to execute custom batch request",
       details: error.message,

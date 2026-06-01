@@ -14,7 +14,7 @@ export function configurePassport() {
           console.log("No user returned from verifyPassword");
           return done(null, false, { message: "Incorrect username or password." });
         }
-        console.log("User verified:", user);
+        console.log("User verified:", { id: user.id, username: user.username });
         return done(null, user);
       } catch (err) {
         console.error("Passport strategy error:", err);
@@ -41,7 +41,7 @@ export function configurePassport() {
 
           const user = await UserDB.createOrUpdateFacebookUser(profile.id, accessToken, expiresIn, profile);
 
-          console.log("Facebook user authenticated:", user);
+          console.log("Facebook user authenticated:", { id: user.id, username: user.username, facebook_id: user.facebook_id });
           return done(null, user);
         } catch (err) {
           console.error("Facebook OAuth error:", err);
@@ -52,7 +52,7 @@ export function configurePassport() {
   );
 
   passport.serializeUser(function (user, done) {
-    console.log("Serializing user:", user);
+    console.log("Serializing user:", user.id);
     done(null, user.id);
   });
 
