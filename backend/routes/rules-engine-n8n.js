@@ -8,6 +8,28 @@ import { selectFbToken } from '../utils/fb-token-selector.js';
 
 export const rulesEngineN8nRouter = express.Router();
 
+// Per-entity system-user token routing, shared by /active-rules, /active-schedules
+// and /schedules/enforcement. Resolves an entity (campaign or adset id) -> its ad
+// account -> BM -> system-user token via selectFbToken, memoized per account for the
+// life of one request. Falls back to `defaultToken` (legacy systemUserTokens[0]) when
+// the account can't be derived or no healthy system_user is registered, so single-BM
+// behaviour stays byte-identical. `campaignToAccount` is an optional fast-path map
+// (from already-loaded cached campaigns); when omitted, the DB lookups cover it.
+function makeTokenResolver(defaultToken, campaignToAccount = {}) {
+  const tokenByAccount = new Map();
+  return async (entityId) => {
+    const acct = campaignToAccount[entityId]
+      || await FacebookCacheDB.getAccountIdForCampaign(entityId)
+      || await FacebookCacheDB.getAccountIdForAdset(entityId);
+    if (!acct) return defaultToken; // can't derive -> fall back (single token), no regression
+    if (!tokenByAccount.has(acct)) {
+      const r = await selectFbToken(null, acct);
+      tokenByAccount.set(acct, (r?.type === 'system_user' && r.token) ? r.token : defaultToken);
+    }
+    return tokenByAccount.get(acct);
+  };
+}
+
 rulesEngineN8nRouter.get('/health', async (req, res) => {
   try {
     const [lastCycleAt, lastPullSuccessAt, errorCount, tokens] = await Promise.all([
@@ -46,19 +68,7 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     // Falls back to defaultToken when the account can't be derived or no
     // system_user is registered — so single-BM stays behavior-identical.
     const campaignToAccount = Object.fromEntries(cachedCampaigns.map(c => [c.id, c.account_id]));
-    const tokenByAccount = new Map();
-    const resolveEntityToken = async (entityId) => {
-      // entity is usually a campaign id; could be an adset id
-      let acct = campaignToAccount[entityId]
-        || await FacebookCacheDB.getAccountIdForCampaign(entityId)
-        || await FacebookCacheDB.getAccountIdForAdset(entityId);
-      if (!acct) return defaultToken; // can't derive → fall back (single token), no regression
-      if (!tokenByAccount.has(acct)) {
-        const r = await selectFbToken(null, acct);
-        tokenByAccount.set(acct, (r?.type === 'system_user' && r.token) ? r.token : defaultToken);
-      }
-      return tokenByAccount.get(acct);
-    };
+    const resolveEntityToken = makeTokenResolver(defaultToken, campaignToAccount);
 
     const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
     const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
@@ -195,14 +205,20 @@ rulesEngineN8nRouter.get('/active-schedules', async (req, res) => {
     const schedules = await RulesEngineDB.listActiveSchedules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
     const token = systemUserTokens[0]?.access_token || null;
+    const resolveEntityToken = makeTokenResolver(token);
 
     const resolved = await Promise.all(
       schedules.map(async (s) => {
         const campaignRows = await RulesEngineDB.getCampaignsForSchedule(s.id);
+        const campaign_ids = campaignRows.map(r => r.campaign_id);
+        const campaign_tokens = Object.fromEntries(
+          await Promise.all(campaign_ids.map(async (cid) => [cid, await resolveEntityToken(cid)]))
+        );
         return {
           ...s,
           days: JSON.parse(s.days_json),
-          campaign_ids: campaignRows.map(r => r.campaign_id),
+          campaign_ids,
+          campaign_tokens,
           token,
         };
       })
@@ -219,6 +235,7 @@ rulesEngineN8nRouter.get('/schedules/enforcement', async (req, res) => {
     const schedules = await RulesEngineDB.listActiveSchedules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
     const token = systemUserTokens[0]?.access_token || null;
+    const resolveEntityToken = makeTokenResolver(token);
 
     const now = new Date();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -239,9 +256,9 @@ rulesEngineN8nRouter.get('/schedules/enforcement', async (req, res) => {
           // Rules override: don't re-enable if a rule has this campaign paused
           const pending = await RulesEngineDB.isPausePending(null, campaign_id);
           if (pending) continue;
-          actions.push({ campaign_id, action: 'ACTIVE', schedule_name: s.name });
+          actions.push({ campaign_id, action: 'ACTIVE', schedule_name: s.name, token: await resolveEntityToken(campaign_id) });
         } else {
-          actions.push({ campaign_id, action: 'PAUSED', schedule_name: s.name });
+          actions.push({ campaign_id, action: 'PAUSED', schedule_name: s.name, token: await resolveEntityToken(campaign_id) });
         }
       }
     }

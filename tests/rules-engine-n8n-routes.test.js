@@ -205,6 +205,138 @@ describe('POST /daily/fb', () => {
   });
 });
 
+describe('GET /schedules/enforcement attaches per-campaign tokens (multi-BM)', () => {
+  test('each action carries its account-resolved token; top-level fallback present', async () => {
+    // Schedule with 2 campaigns in 2 different ad accounts / BMs.
+    RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([
+      { id: 1, name: 'Day Parting', timezone: 'UTC', days_json: JSON.stringify(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']), start_time: '00:00', end_time: '23:59' },
+    ]);
+    RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([
+      { campaign_id: 'camp_bmA' }, { campaign_id: 'camp_bmB' },
+    ]);
+    RulesEngineDB.isPausePending = jest.fn().mockResolvedValue(false);
+    // Legacy default token (systemUserTokens[0]) — the would-be single token for all.
+    FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([
+      { business_manager_id: 'bm_A', access_token: 'TOKEN_A' },
+    ]);
+    // account derivation: each campaign -> distinct account
+    FacebookCacheDB.getAccountIdForCampaign = jest.fn(async (id) =>
+      id === 'camp_bmA' ? 'actA' : id === 'camp_bmB' ? 'actB' : null);
+    FacebookCacheDB.getAccountIdForAdset = jest.fn().mockResolvedValue(null);
+    // selectFbToken plumbing (selectFbToken is real, drives FacebookAuthDB):
+    FacebookAuthDB.getAdAccount = jest.fn(async (acct) =>
+      acct === 'actA' ? { business_manager_id: 'bm_A' } : { business_manager_id: 'bm_B' });
+    FacebookAuthDB.getSystemUserForBm = jest.fn(async (bm) => ({
+      access_token: bm === 'bm_A' ? 'TOKEN_A' : 'TOKEN_B',
+      fb_user_id: 'u', last_validation_ok: 1, expires_at: null, business_manager_id: bm,
+    }));
+    FacebookAuthDB.getAnyHealthySystemUser = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getValidToken = jest.fn().mockResolvedValue(null);
+
+    const res = await request(app).get('/api/rules-engine/schedules/enforcement');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('token', 'TOKEN_A'); // top-level fallback kept
+    const byCampaign = Object.fromEntries(res.body.actions.map(a => [a.campaign_id, a.token]));
+    expect(byCampaign.camp_bmA).toBe('TOKEN_A');
+    expect(byCampaign.camp_bmB).toBe('TOKEN_B'); // <- this would be TOKEN_A before the fix
+  });
+
+  test('single-BM behaviour unchanged: action token equals top-level token', async () => {
+    RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([
+      { id: 1, name: 'S', timezone: 'UTC', days_json: JSON.stringify(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']), start_time: '00:00', end_time: '23:59' },
+    ]);
+    RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([{ campaign_id: 'camp_1' }]);
+    RulesEngineDB.isPausePending = jest.fn().mockResolvedValue(false);
+    FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([
+      { business_manager_id: 'bm_1', access_token: 'ONLY_TOKEN' },
+    ]);
+    FacebookCacheDB.getAccountIdForCampaign = jest.fn(async () => 'acct1');
+    FacebookCacheDB.getAccountIdForAdset = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getAdAccount = jest.fn(async () => ({ business_manager_id: 'bm_1' }));
+    FacebookAuthDB.getSystemUserForBm = jest.fn(async () => ({ access_token: 'ONLY_TOKEN', fb_user_id: 'u', last_validation_ok: 1, expires_at: null, business_manager_id: 'bm_1' }));
+    FacebookAuthDB.getAnyHealthySystemUser = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getValidToken = jest.fn().mockResolvedValue(null);
+
+    const res = await request(app).get('/api/rules-engine/schedules/enforcement');
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBe('ONLY_TOKEN');
+    expect(res.body.actions.every(a => a.token === 'ONLY_TOKEN')).toBe(true);
+  });
+
+  test('falls back to default token when account cannot be derived', async () => {
+    RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([
+      { id: 1, name: 'S', timezone: 'UTC', days_json: JSON.stringify(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']), start_time: '00:00', end_time: '23:59' },
+    ]);
+    RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([{ campaign_id: 'unknown_camp' }]);
+    RulesEngineDB.isPausePending = jest.fn().mockResolvedValue(false);
+    FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([
+      { business_manager_id: 'bm_1', access_token: 'DEFAULT_TOKEN' },
+    ]);
+    FacebookCacheDB.getAccountIdForCampaign = jest.fn().mockResolvedValue(null);
+    FacebookCacheDB.getAccountIdForAdset = jest.fn().mockResolvedValue(null);
+
+    const res = await request(app).get('/api/rules-engine/schedules/enforcement');
+    expect(res.status).toBe(200);
+    expect(res.body.actions[0].token).toBe('DEFAULT_TOKEN');
+  });
+
+  test('memoizes per account: getAdAccount called once per distinct account', async () => {
+    RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([
+      { id: 1, name: 'S', timezone: 'UTC', days_json: JSON.stringify(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']), start_time: '00:00', end_time: '23:59' },
+    ]);
+    // two campaigns share account actA, one is on actB
+    RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([
+      { campaign_id: 'c1' }, { campaign_id: 'c2' }, { campaign_id: 'c3' },
+    ]);
+    RulesEngineDB.isPausePending = jest.fn().mockResolvedValue(false);
+    FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([
+      { business_manager_id: 'bm_A', access_token: 'TOKEN_A' },
+    ]);
+    FacebookCacheDB.getAccountIdForCampaign = jest.fn(async (id) =>
+      id === 'c3' ? 'actB' : 'actA');
+    FacebookCacheDB.getAccountIdForAdset = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getAdAccount = jest.fn(async (acct) =>
+      ({ business_manager_id: acct === 'actA' ? 'bm_A' : 'bm_B' }));
+    FacebookAuthDB.getSystemUserForBm = jest.fn(async (bm) => ({
+      access_token: bm === 'bm_A' ? 'TOKEN_A' : 'TOKEN_B',
+      fb_user_id: 'u', last_validation_ok: 1, expires_at: null, business_manager_id: bm,
+    }));
+    FacebookAuthDB.getAnyHealthySystemUser = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getValidToken = jest.fn().mockResolvedValue(null);
+
+    const res = await request(app).get('/api/rules-engine/schedules/enforcement');
+    expect(res.status).toBe(200);
+    // 2 distinct accounts -> getAdAccount called exactly twice (not 3x for 3 campaigns)
+    expect(FacebookAuthDB.getAdAccount).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('GET /active-schedules attaches per-campaign tokens', () => {
+  test('campaign_tokens map resolved per account; top-level token kept', async () => {
+    RulesEngineDB.listActiveSchedules = jest.fn().mockResolvedValue([
+      { id: 1, name: 'S', timezone: 'UTC', days_json: JSON.stringify(['Mon']), start_time: '09:00', end_time: '17:00' },
+    ]);
+    RulesEngineDB.getCampaignsForSchedule = jest.fn().mockResolvedValue([
+      { campaign_id: 'camp_bmA' }, { campaign_id: 'camp_bmB' },
+    ]);
+    FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([
+      { business_manager_id: 'bm_A', access_token: 'TOKEN_A' },
+    ]);
+    FacebookCacheDB.getAccountIdForCampaign = jest.fn(async (id) => id === 'camp_bmA' ? 'actA' : 'actB');
+    FacebookCacheDB.getAccountIdForAdset = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getAdAccount = jest.fn(async (acct) => ({ business_manager_id: acct === 'actA' ? 'bm_A' : 'bm_B' }));
+    FacebookAuthDB.getSystemUserForBm = jest.fn(async (bm) => ({ access_token: bm === 'bm_A' ? 'TOKEN_A' : 'TOKEN_B', fb_user_id: 'u', last_validation_ok: 1, expires_at: null, business_manager_id: bm }));
+    FacebookAuthDB.getAnyHealthySystemUser = jest.fn().mockResolvedValue(null);
+    FacebookAuthDB.getValidToken = jest.fn().mockResolvedValue(null);
+
+    const res = await request(app).get('/api/rules-engine/active-schedules');
+    expect(res.status).toBe(200);
+    expect(res.body[0].token).toBe('TOKEN_A'); // fallback field retained
+    expect(res.body[0].campaign_ids).toEqual(['camp_bmA', 'camp_bmB']); // existing field unchanged
+    expect(res.body[0].campaign_tokens).toEqual({ camp_bmA: 'TOKEN_A', camp_bmB: 'TOKEN_B' });
+  });
+});
+
 describe('GET /active-rules includes insights_3d and insights_7d', () => {
   it('each entity has insights_3d and insights_7d fields', async () => {
     RulesEngineDB.listActiveRules.mockResolvedValueOnce([{
