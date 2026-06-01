@@ -30,6 +30,7 @@ import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
 import { selectFbToken } from "./backend/utils/fb-token-selector.js";
+import { resolveFbToken } from "./backend/utils/fb-token-resolver.js";
 import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
 import { rulesEngineN8nRouter } from "./backend/routes/rules-engine-n8n.js";
 import { rulesEngineUiRouter } from "./backend/routes/rules-engine-ui.js";
@@ -1161,14 +1162,14 @@ async function uploadImageToMeta(filePath, adAccountId, userAccessToken = null) 
 }
 
 // Global helper function to upload video to Meta
-async function uploadVideoToMeta(file, adAccountId) {
+async function uploadVideoToMeta(file, adAccountId, userAccessToken = null) {
   const normalizedAccountId = normalizeAdAccountId(adAccountId);
   const fileStats = fs.statSync(file.path);
   const fileSize = fileStats.size;
 
   // Use resumable upload for files > 20MB
   if (fileSize > 20 * 1024 * 1024) {
-    return await uploadLargeVideoToMeta(file, adAccountId);
+    return await uploadLargeVideoToMeta(file, adAccountId, userAccessToken);
   }
 
   // Regular upload for smaller files
@@ -1178,7 +1179,7 @@ async function uploadVideoToMeta(file, adAccountId) {
     const fd = new FormData();
     fd.append("source", fs.createReadStream(file.path));
     fd.append("name", file.originalname);
-    fd.append("access_token", access_token);
+    fd.append("access_token", userAccessToken || access_token);
 
     const response = await axios.post(upload_url, fd, {
       headers: {
@@ -1197,7 +1198,7 @@ async function uploadVideoToMeta(file, adAccountId) {
 }
 
 // Global helper function for large video uploads
-async function uploadLargeVideoToMeta(file, adAccountId) {
+async function uploadLargeVideoToMeta(file, adAccountId, userAccessToken = null) {
   const normalizedAccountId = normalizeAdAccountId(adAccountId);
   const fileStats = fs.statSync(file.path);
   const fileSize = fileStats.size;
@@ -1208,7 +1209,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
     const initResponse = await axios.post(initUrl, {
       upload_phase: "start",
       file_size: fileSize,
-      access_token,
+      access_token: userAccessToken || access_token,
     });
 
     const { upload_session_id, video_id } = initResponse.data;
@@ -1228,7 +1229,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
       fd.append("upload_phase", "transfer");
       fd.append("upload_session_id", upload_session_id);
       fd.append("start_offset", offset.toString());
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       await axios.post(initUrl, fd, {
         headers: {
@@ -1244,7 +1245,7 @@ async function uploadLargeVideoToMeta(file, adAccountId) {
     await axios.post(initUrl, {
       upload_phase: "finish",
       upload_session_id: upload_session_id,
-      access_token,
+      access_token: userAccessToken || access_token,
       title: file.originalname,
     });
 
@@ -1335,7 +1336,9 @@ app.get("/api/fetch-google-data", async (req, res) => {
 app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDownload, async (req, res) => {
   const { fileIds, account_id } = req.body;
   const sessionId = req.body.sessionId || createUploadSession();
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!fileIds || !Array.isArray(fileIds)) {
     return res.status(400).json({ error: "File IDs array is required" });
@@ -1726,7 +1729,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const fd = new FormData();
       fd.append("source", fs.createReadStream(file.path));
       fd.append("name", file.originalname);
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(upload_url, fd, {
         headers: {
@@ -1758,7 +1761,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const initResponse = await axios.post(initUrl, {
         upload_phase: "start",
         file_size: fileSize,
-        access_token,
+        access_token: userAccessToken || access_token,
       });
 
       const { upload_session_id, video_id, start_offset, end_offset } = initResponse.data;
@@ -1783,7 +1786,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
         fd.append("upload_phase", "transfer");
         fd.append("upload_session_id", upload_session_id);
         fd.append("start_offset", offset.toString());
-        fd.append("access_token", access_token);
+        fd.append("access_token", userAccessToken || access_token);
 
         await axios.post(initUrl, fd, {
           headers: {
@@ -1813,7 +1816,7 @@ app.post("/api/download-and-upload-google-files", validateRequest.googleDriveDow
       const finishResponse = await axios.post(initUrl, {
         upload_phase: "finish",
         upload_session_id: upload_session_id,
-        access_token,
+        access_token: userAccessToken || access_token,
         title: file.originalname,
       });
 
@@ -1897,7 +1900,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       stop_time,
     } = req.body;
 
-    const userAccessToken = req.user.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -2133,7 +2138,9 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
 });
 
 app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdSet, async (req, res) => {
-  const userAccessToken = req.user.facebook_access_token;
+  const tokenData = await resolveFbToken(req, req.body.account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.body.account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2454,8 +2461,10 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
 // Create ad set across multiple campaigns
 app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.multiCampaignCreateAdSet, async (req, res) => {
-  const userAccessToken = req.user.facebook_access_token;
   const { account_id, campaign_ids, ...adSetBody } = req.body;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2595,15 +2604,8 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
 
 // Create Campaign in Multiple Ad Accounts
 app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateRequest.multiAccountCreateCampaign, async (req, res) => {
-  const userAccessToken = req.user.facebook_access_token;
+  // Per-account system-user routing: each account resolves its own write token (per-op).
   const { ad_account_ids, campaign_name, objective, status, special_ad_categories, special_ad_category_country, daily_budget, lifetime_budget, bid_strategy, bid_amount } = req.body;
-
-  if (!userAccessToken) {
-    return res.status(403).json({
-      error: "Facebook account not connected",
-      needsAuth: true,
-    });
-  }
 
   if (!ad_account_ids || ad_account_ids.length === 0) {
     return res.status(400).json({
@@ -2614,74 +2616,104 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
   const results = [];
 
   try {
-    // Create campaign in each ad account using batch API
-    const batchOperations = ad_account_ids.map((accountId) => {
-      const normalizedAccountId = accountId.replace(/^act_/, "");
+    // Resolve a write token per account, then build one batch op per account that has a token.
+    // Accounts with no token are skipped (no op emitted) and recorded as failures; results are
+    // merged back by ad_account_id (NOT array index) since the op list may be shorter than inputs.
+    const skippedFailures = [];
+    const opAccountIds = []; // ad_account_id for each emitted op, in op order (for keying results)
+    let firstResolvedToken = null; // batch-level default (required by util); per-op tokens override it
 
-      // Build campaign payload
-      const campaignPayload = {
-        name: campaign_name,
-        objective: objective,
-        status: status || "PAUSED",
-        access_token: userAccessToken,
-        // Always include special_ad_categories, defaulting to an empty array.
-        // The value must be a JSON string as per Meta API requirements.
-        special_ad_categories: JSON.stringify(special_ad_categories || []),
-      };
+    const perAccountOps = await Promise.all(
+      ad_account_ids.map(async (accountId) => {
+        const td = await resolveFbToken(req, accountId, { write: true });
 
-      // Add special ad category country if provided
-      if (special_ad_category_country && special_ad_category_country.length > 0) {
-        campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
-      }
-
-      // ===== BUDGET MODE LOGIC =====
-      // Determine if campaign-level budget is being used
-      const hasCampaignBudget = !!(daily_budget || lifetime_budget);
-
-      // Set pacing_type only for campaign-level budgets
-      if (hasCampaignBudget) {
-        // Campaign budget: use user selection or default to day_parting
-        const pacingType = req.body.pacing_type || ["day_parting"];
-        campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
-      }
-      // Ad set budget: do not set pacing_type (Meta API restriction)
-
-      if (hasCampaignBudget) {
-        // Campaign-level budget mode (Advantage+ campaign budget)
-        if (daily_budget) {
-          const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
-          campaignPayload.daily_budget = budgetInCents.toString();
+        if (!td?.token) {
+          skippedFailures.push({
+            success: false,
+            ad_account_id: accountId,
+            error: "no_fb_token_for_account",
+            detail: td?.reason,
+          });
+          return null;
         }
 
-        if (lifetime_budget) {
-          const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
-          campaignPayload.lifetime_budget = budgetInCents.toString();
+        if (!firstResolvedToken) firstResolvedToken = td.token;
+        const normalizedAccountId = accountId.replace(/^act_/, "");
+
+        // Build campaign payload
+        const campaignPayload = {
+          name: campaign_name,
+          objective: objective,
+          status: status || "PAUSED",
+          // Per-op token: payload already carries access_token, which overrides the batch default.
+          access_token: td.token,
+          // Always include special_ad_categories, defaulting to an empty array.
+          // The value must be a JSON string as per Meta API requirements.
+          special_ad_categories: JSON.stringify(special_ad_categories || []),
+        };
+
+        // Add special ad category country if provided
+        if (special_ad_category_country && special_ad_category_country.length > 0) {
+          campaignPayload.special_ad_category_country = JSON.stringify(special_ad_category_country);
         }
 
-        if (bid_strategy) {
-          campaignPayload.bid_strategy = bid_strategy;
+        // ===== BUDGET MODE LOGIC =====
+        // Determine if campaign-level budget is being used
+        const hasCampaignBudget = !!(daily_budget || lifetime_budget);
 
-          // Add bid amount for bid cap strategies
-          if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
-            const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
-            campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+        // Set pacing_type only for campaign-level budgets
+        if (hasCampaignBudget) {
+          // Campaign budget: use user selection or default to day_parting
+          const pacingType = req.body.pacing_type || ["day_parting"];
+          campaignPayload.pacing_type = JSON.stringify(Array.isArray(pacingType) ? pacingType : [pacingType]);
+        }
+        // Ad set budget: do not set pacing_type (Meta API restriction)
+
+        if (hasCampaignBudget) {
+          // Campaign-level budget mode (Advantage+ campaign budget)
+          if (daily_budget) {
+            const budgetInCents = Math.round(parseFloat(daily_budget) * 100);
+            campaignPayload.daily_budget = budgetInCents.toString();
           }
+
+          if (lifetime_budget) {
+            const budgetInCents = Math.round(parseFloat(lifetime_budget) * 100);
+            campaignPayload.lifetime_budget = budgetInCents.toString();
+          }
+
+          if (bid_strategy) {
+            campaignPayload.bid_strategy = bid_strategy;
+
+            // Add bid amount for bid cap strategies
+            if (bid_amount && (bid_strategy === "LOWEST_COST_WITH_BID_CAP" || bid_strategy === "COST_CAP")) {
+              const bidAmountInCents = Math.round(parseFloat(bid_amount) * 100);
+              campaignPayload.adset_bid_amounts = JSON.stringify({ default: bidAmountInCents });
+            }
+          }
+        } else {
+          // Ad set-level budget mode
+          // When not using campaign budget, we must explicitly disable budget sharing
+          campaignPayload.is_adset_budget_sharing_enabled = false;
         }
-      } else {
-        // Ad set-level budget mode
-        // When not using campaign budget, we must explicitly disable budget sharing
-        campaignPayload.is_adset_budget_sharing_enabled = false;
-      }
 
-      return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
-    });
+        opAccountIds.push(accountId);
+        return MetaBatch.createBatchOperation("POST", `act_${normalizedAccountId}/campaigns`, campaignPayload);
+      })
+    );
 
-    // Execute batch request
-    const batchResults = await MetaBatch.executeChunkedBatchRequest(batchOperations, userAccessToken);
+    // Drop skipped (null-token) accounts; only real ops go into the batch.
+    const batchOperations = perAccountOps.filter((op) => op !== null);
 
-    // Process results
+    // Execute batch request. Default token is any resolved token (util requires one);
+    // each op's own access_token in the payload overrides it.
+    const batchResults = batchOperations.length > 0
+      ? await MetaBatch.executeChunkedBatchRequest(batchOperations, firstResolvedToken)
+      : [];
+
+    // Process batch results — keyed by ad_account_id via opAccountIds (NOT input index,
+    // since skipped accounts mean op[i] no longer aligns with ad_account_ids[i]).
     batchResults.forEach((result, index) => {
-      const accountId = ad_account_ids[index];
+      const accountId = opAccountIds[index];
 
       if (result.success && result.data.id) {
         results.push({
@@ -2699,6 +2731,9 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
         });
       }
     });
+
+    // Merge in accounts that were skipped because they had no resolvable token.
+    results.push(...skippedFailures);
 
     const successCount = results.filter((r) => r.success).length;
     const failCount = results.filter((r) => !r.success).length;
@@ -2763,7 +2798,9 @@ async function fetchAndCacheAdSets(adSetIds, accessToken) {
 
 app.post("/api/duplicate-ad-set", async (req, res) => {
   const { ad_set_id, deep_copy, status_option, name, campaign_id, account_id } = req.body;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -3704,7 +3741,9 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
 
 app.post("/api/duplicate-campaign", async (req, res) => {
   const { campaign_id, deep_copy, status_option, name, account_id } = req.body;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, account_id, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+  const userAccessToken = tokenData.token;
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -4753,7 +4792,9 @@ app.post("/api/duplicate-campaign", async (req, res) => {
 
 app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, res) => {
   const { account_id } = req.params;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+  const userAccessToken = tokenData.token;
   const isCompleted = req.query.is_completed; // Optional filter
 
   if (!userAccessToken) {
@@ -4795,6 +4836,12 @@ app.get("/api/batch-requests/:account_id", ensureAuthenticatedAPI, async (req, r
 // Check status of async batch request
 app.get("/api/batch-request-status/:batch_id", ensureAuthenticatedAPI, async (req, res) => {
   const { batch_id } = req.params;
+  // OAuth by design (PR2b): a Meta async-batch handle is scoped to the token that
+  // CREATED it, so the originating session's OAuth token is the correct reader — a
+  // system-user token that didn't create the batch would 400. NOT routed via
+  // resolveFbToken (with no account it would grab any-healthy system-user = wrong here).
+  // Caveat: if async batches ever get created under system-user tokens, polling them
+  // needs that same token (would require persisting a batch_id->token map at creation).
   const userAccessToken = req.user?.facebook_access_token;
 
   if (!userAccessToken) {
@@ -4916,7 +4963,9 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
   try {
     const files = req.files;
     const adAccountId = req.body.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, adAccountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: adAccountId });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -5339,7 +5388,9 @@ app.post("/api/upload-videos", upload.array("file", 50), validateRequest.uploadF
 app.post("/api/upload-images", upload.array("file", 50), validateRequest.uploadFiles, async (req, res) => {
   const files = req.files;
   const accountId = req.body.account_id;
-  const userAccessToken = req.user?.facebook_access_token;
+  const tokenData = await resolveFbToken(req, accountId, { write: true });
+  if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: accountId });
+  const userAccessToken = tokenData.token;
   const normalizedAccountId = normalizeAdAccountId(accountId);
   const imageUrl = `https://graph.facebook.com/${api_version}/act_${normalizedAccountId}/adimages`;
 
@@ -5449,7 +5500,9 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
   try {
     const files = req.files;
     const accountId = req.body.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, accountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: accountId });
+    const userAccessToken = tokenData.token;
     const normalizedAccountId = normalizeAdAccountId(accountId);
 
     if (!userAccessToken) {
@@ -5531,8 +5584,8 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
               }
 
               // Upload video and thumbnail
-              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId);
-              const video_id = await uploadVideoToMeta(fileObj, accountId);
+              const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, accountId, userAccessToken);
+              const video_id = await uploadVideoToMeta(fileObj, accountId, userAccessToken);
 
               // Store Facebook IDs
               await CreativeAccountDB.recordUpload(creativeResult.creative.id, accountId, {
@@ -5621,10 +5674,12 @@ app.post("/api/upload-creative", upload.array("creatives", 50), validateRequest.
   }
 });
 
-app.post("/api/create-ad-creative", (req, res) => {
+app.post("/api/create-ad-creative", async (req, res) => {
   try {
     const { name, page_id, message, headline, type, link, description, account_id, adset_id, assets } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     // Log the link safely
     console.log("Received ad creative request with link length:", link ? link.length : 0);
@@ -5902,7 +5957,9 @@ app.post("/api/create-ad-creative", (req, res) => {
 app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchCreateAds, async (req, res) => {
   try {
     const { account_id, adset_id, page_id, ads } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     // Validation
     if (!userAccessToken) {
@@ -6062,7 +6119,9 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
 app.post("/api/batch/create-ads-only", ensureAuthenticatedAPI, validateRequest.batchCreateAdsOnly, async (req, res) => {
   try {
     const { account_id, ads } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!userAccessToken) {
       return res.status(403).json({
@@ -6124,14 +6183,6 @@ app.post("/api/batch/create-ads-only", ensureAuthenticatedAPI, validateRequest.b
 app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.batchUpdateStatus, async (req, res) => {
   try {
     const { entity_ids, status } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     if (!entity_ids || !Array.isArray(entity_ids) || entity_ids.length === 0) {
       return res.status(400).json({ error: "entity_ids array is required" });
@@ -6145,8 +6196,50 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
 
     console.log(`Batch updating ${entity_ids.length} entities to status: ${status}`);
 
-    const results = await MetaBatch.batchUpdateCampaignStatus(entity_ids, status, userAccessToken);
+    // Per-entity system-user routing. entity_ids may be campaign/adset/AD ids and carry no
+    // account in the body, so derive each entity's account from cache (campaign → adset getters).
+    // Ad-level / uncached ids resolve account=null → resolveFbToken(req, null) returns the OAuth
+    // fallback (graceful, no regression). Entities with no token at all are skipped (failure).
+    const entitiesWithTokens = []; // { entityId, token } — one per emitted op
+    const entityFailures = []; // entity_id results for entities we couldn't resolve a token for
 
+    await Promise.all(
+      entity_ids.map(async (id) => {
+        let acct = await FacebookCacheDB.getAccountIdForCampaign(id);
+        if (!acct) acct = await FacebookCacheDB.getAccountIdForAdset(id);
+
+        const td = await resolveFbToken(req, acct ?? null, { write: true });
+
+        if (!td?.token) {
+          entityFailures.push({
+            entity_id: id,
+            success: false,
+            error: acct ? "no_fb_token_for_account" : "no_token",
+          });
+          return;
+        }
+
+        if (!acct) {
+          // Resolved via OAuth fallback (ad-level / uncached) — tag for observability.
+          console.log(`[batch/update-status] entity ${id} resolved via fallback (reason=${td.reason ?? "no_account"})`);
+        }
+        entitiesWithTokens.push({ entityId: id, token: td.token });
+      })
+    );
+
+    const batchResults = entitiesWithTokens.length > 0
+      ? await MetaBatch.batchUpdateCampaignStatus(entitiesWithTokens, status)
+      : [];
+
+    // Key batch results by entity_id via entitiesWithTokens (NOT input index — skipped entities
+    // break op[i] ↔ entity_ids[i] alignment), then merge in the skipped-entity failures.
+    const resolvedResults = batchResults.map((r, i) => ({
+      entity_id: entitiesWithTokens[i].entityId,
+      success: r.success,
+      error: r.error,
+    }));
+
+    const results = [...resolvedResults, ...entityFailures];
     const successCount = results.filter((r) => r.success).length;
 
     res.json({
@@ -6157,11 +6250,7 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
         succeeded: successCount,
         failed: entity_ids.length - successCount,
       },
-      results: results.map((r, i) => ({
-        entity_id: entity_ids[i],
-        success: r.success,
-        error: r.error,
-      })),
+      results,
     });
   } catch (error) {
     console.error("Error in batch status update:", error);
@@ -6185,14 +6274,6 @@ app.post("/api/batch/update-status", ensureAuthenticatedAPI, validateRequest.bat
 app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.batchFetchAccounts, async (req, res) => {
   try {
     const { account_ids, fields } = req.body;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
       return res.status(400).json({ error: "account_ids array is required" });
@@ -6202,9 +6283,37 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
 
     console.log(`Batch fetching ${account_ids.length} accounts with fields: ${fieldsParam}`);
 
-    const results = await MetaBatch.batchFetchAccountData(account_ids, fieldsParam, userAccessToken);
+    // Per-account system-user routing (read). Reads tolerate OAuth fallback, so most accounts
+    // resolve a token; any account with no token at all is skipped and recorded as a failure.
+    const accountsWithTokens = []; // { accountId, token } — one per emitted op
+    const accountFailures = []; // account_id results for accounts with no resolvable token
 
-    const successCount = results.filter((r) => r.success).length;
+    await Promise.all(
+      account_ids.map(async (accountId) => {
+        const td = await resolveFbToken(req, accountId, { write: false });
+        if (!td?.token) {
+          accountFailures.push({ account_id: accountId, success: false, data: undefined, error: "no_token" });
+          return;
+        }
+        accountsWithTokens.push({ accountId, token: td.token });
+      })
+    );
+
+    const batchResults = accountsWithTokens.length > 0
+      ? await MetaBatch.batchFetchAccountData(accountsWithTokens, fieldsParam)
+      : [];
+
+    // Key batch results by account_id via accountsWithTokens (NOT input index — skipped accounts
+    // break op[i] ↔ account_ids[i] alignment), then merge in the skipped-account failures.
+    const resolvedResults = batchResults.map((r, i) => ({
+      account_id: accountsWithTokens[i].accountId,
+      success: r.success,
+      data: r.data,
+      error: r.error,
+    }));
+
+    const accounts = [...resolvedResults, ...accountFailures];
+    const successCount = accounts.filter((r) => r.success).length;
 
     res.json({
       success: successCount === account_ids.length,
@@ -6214,12 +6323,7 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
         succeeded: successCount,
         failed: account_ids.length - successCount,
       },
-      accounts: results.map((r, i) => ({
-        account_id: account_ids[i],
-        success: r.success,
-        data: r.data,
-        error: r.error,
-      })),
+      accounts,
     });
   } catch (error) {
     console.error("Error in batch account fetch:", error);
@@ -6252,6 +6356,12 @@ app.post("/api/batch/fetch-accounts", ensureAuthenticatedAPI, validateRequest.ba
 app.post("/api/batch/custom", ensureAuthenticatedAPI, validateRequest.customBatchRequest, async (req, res) => {
   try {
     const { operations } = req.body;
+    // OAuth by design (PR2b): arbitrary caller-supplied Graph ops with no reliable single
+    // ad-account context — different ops may target different accounts/nodes. Routing via
+    // resolveFbToken (null account → any-healthy system-user) would silently mis-route, and
+    // parsing act_<id> out of each relative_url is fragile. The logged-in session's OAuth
+    // token is the safe choice. If system-user routing is ever needed, require an explicit
+    // ad_account_id body param and resolve per-op.
     const userAccessToken = req.user?.facebook_access_token;
 
     if (!userAccessToken) {
@@ -6350,6 +6460,10 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
   try {
     const { creativeId, adAccountId } = req.body;
 
+    const tokenData = await resolveFbToken(req, adAccountId, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: adAccountId });
+    const userAccessToken = tokenData.token;
+
     // Get creative details
     const creative = await CreativeDB.getById(creativeId);
     if (!creative) {
@@ -6435,7 +6549,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       const fd = new FormData();
       fd.append("source", fs.createReadStream(file.path));
       fd.append("name", file.originalname);
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(upload_url, fd, {
         headers: {
@@ -6465,7 +6579,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       const initResponse = await axios.post(initUrl, {
         upload_phase: "start",
         file_size: fileSize,
-        access_token,
+        access_token: userAccessToken || access_token,
       });
 
       const { upload_session_id, video_id } = initResponse.data;
@@ -6485,7 +6599,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
         fd.append("upload_phase", "transfer");
         fd.append("upload_session_id", upload_session_id);
         fd.append("start_offset", offset.toString());
-        fd.append("access_token", access_token);
+        fd.append("access_token", userAccessToken || access_token);
 
         await axios.post(initUrl, fd, {
           headers: {
@@ -6501,7 +6615,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
       await axios.post(initUrl, {
         upload_phase: "finish",
         upload_session_id: upload_session_id,
-        access_token,
+        access_token: userAccessToken || access_token,
         title: file.originalname,
       });
 
@@ -6520,7 +6634,7 @@ app.post("/api/creative-library/upload-to-account", async (req, res) => {
     try {
       const fd = new FormData();
       fd.append("source", fs.createReadStream(filePath));
-      fd.append("access_token", access_token);
+      fd.append("access_token", userAccessToken || access_token);
 
       const response = await axios.post(imageUrl, fd, {
         headers: {
@@ -6762,6 +6876,10 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
       return res.status(400).json({ error: "Account ID is required" });
     }
 
+    const tokenData = await resolveFbToken(req, account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
+
     const results = [];
 
     for (const creativeId of creativeIds) {
@@ -6833,8 +6951,8 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
           }
 
           // Upload video and thumbnail
-          const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, account_id);
-          const video_id = await uploadVideoToMeta(fileObj, account_id);
+          const thumbnail_image_hash = await uploadImageToMeta(thumbnailPath, account_id, userAccessToken);
+          const video_id = await uploadVideoToMeta(fileObj, account_id, userAccessToken);
 
           // Store Facebook IDs
           await CreativeAccountDB.recordUpload(creative.id, account_id, {
@@ -6856,7 +6974,7 @@ app.post("/api/upload-library-creatives", validateRequest.uploadLibraryCreatives
           });
         } else {
           // Upload image
-          const imageHash = await uploadImageToMeta(filePath, account_id);
+          const imageHash = await uploadImageToMeta(filePath, account_id, userAccessToken);
 
           // Store Facebook ID
           await CreativeAccountDB.recordUpload(creative.id, account_id, { imageHash });
@@ -6989,14 +7107,9 @@ app.get("/api/rules", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const { account_id } = req.query;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    const tokenData = await resolveFbToken(req, account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: account_id });
+    const userAccessToken = tokenData.token;
 
     if (!account_id) {
       return res.status(400).json({ error: "account_id is required" });
@@ -7379,16 +7492,11 @@ async function createSingleAccountRule(userId, userAccessToken, ad_account_id, r
 app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async (req, res) => {
   try {
     const userId = req.user.id;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
-
     const { ad_account_id, ...ruleConfig } = req.body;
+
+    const tokenData = await resolveFbToken(req, ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Use helper function to create rule
     const result = await createSingleAccountRule(userId, userAccessToken, ad_account_id, ruleConfig);
@@ -7406,7 +7514,7 @@ app.post("/api/rules", ensureAuthenticatedAPI, validateRequest.createRule, async
 });
 
 // Helper function: Create rules on multiple accounts with concurrency control
-async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, ruleConfig, ad_account_ids, concurrency = 2) {
+async function createMultiAccountRulesWithConcurrency(req, userId, ruleConfig, ad_account_ids, concurrency = 2) {
   const results = [];
 
   // Process accounts in batches to control concurrency
@@ -7416,7 +7524,19 @@ async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, r
     const batchResults = await Promise.all(
       batch.map(async (accountId) => {
         try {
-          const result = await createSingleAccountRule(userId, userAccessToken, accountId, ruleConfig);
+          // Resolve the token per-account so one bad account doesn't fail the whole batch
+          const td = await resolveFbToken(req, accountId, { write: true });
+          if (!td?.token) {
+            return {
+              ad_account_id: accountId,
+              success: false,
+              local_rule_id: null,
+              meta_rule_id: null,
+              error: "no_fb_token_for_account",
+              detail: td?.reason,
+            };
+          }
+          const result = await createSingleAccountRule(userId, td.token, accountId, ruleConfig);
           return {
             ad_account_id: accountId,
             success: true,
@@ -7447,14 +7567,6 @@ async function createMultiAccountRulesWithConcurrency(userId, userAccessToken, r
 app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatchRule, async (req, res) => {
   try {
     const userId = req.user.id;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     const { ad_account_ids, ...ruleConfig } = req.body;
 
@@ -7475,8 +7587,8 @@ app.post("/api/rules/batch", ensureAuthenticatedAPI, validateRequest.createBatch
 
     // Create rules with concurrency control (2 accounts at a time)
     const results = await createMultiAccountRulesWithConcurrency(
+      req,
       userId,
-      userAccessToken,
       ruleConfig,
       ad_account_ids,
       2 // Concurrency limit to avoid rate limiting
@@ -7509,20 +7621,16 @@ app.put("/api/rules/:id", ensureAuthenticatedAPI, validateRequest.updateRule, as
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const existingRule = RulesDB.getRuleById(ruleId, userId);
     if (!existingRule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, existingRule.ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: existingRule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     const { name, entity_type, entity_ids, conditions, action, rule_type, schedule, status } = req.body;
 
@@ -7777,23 +7885,16 @@ app.patch("/api/rules/:id/status", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { status, local_rule_id } = req.body; // ENABLED or DISABLED (Meta format), and optional local_rule_id
-    const userAccessToken = req.user?.facebook_access_token;
 
     console.log("Toggle status request:", { metaRuleId, status, local_rule_id, userId });
 
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
-
     // Try to get local rule if local_rule_id is provided and not null
-    let rule = null;
-    if (local_rule_id && local_rule_id !== "null") {
-      rule = RulesDB.getRuleById(parseInt(local_rule_id), userId);
-      console.log("Local rule found:", rule ? "yes" : "no");
-    }
+    const rule = (local_rule_id && local_rule_id !== "null") ? RulesDB.getRuleById(parseInt(local_rule_id), userId) : null;
+    console.log("Local rule found:", rule ? "yes" : "no");
+
+    const tokenData = await resolveFbToken(req, rule?.ad_account_id ?? null, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule?.ad_account_id ?? null });
+    const userAccessToken = tokenData.token;
 
     // Update in Meta API with ENABLED/DISABLED format
     // Use metaRuleId from URL params (works for both local and non-local rules)
@@ -7862,14 +7963,13 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
     const userId = req.user.id;
     const metaRuleId = req.params.id; // Now receives meta_rule_id from frontend
     const { local_rule_id } = req.body; // Optional local_rule_id
-    const userAccessToken = req.user?.facebook_access_token;
 
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    // Fetch local rule up front so we can resolve the token via its ad_account_id
+    const rule = (local_rule_id && local_rule_id !== "null") ? RulesDB.getRuleById(parseInt(local_rule_id), userId) : null;
+
+    const tokenData = await resolveFbToken(req, rule?.ad_account_id ?? null, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule?.ad_account_id ?? null });
+    const userAccessToken = tokenData.token;
 
     // Delete from Meta API using metaRuleId
     const metaApiUrl = `https://graph.facebook.com/${api_version}/${metaRuleId}`;
@@ -7888,8 +7988,8 @@ app.delete("/api/rules/:id", ensureAuthenticatedAPI, async (req, res) => {
       });
     }
 
-    // Delete from local database if local_rule_id exists
-    if (local_rule_id && local_rule_id !== "null") {
+    // Delete from local database if the local rule exists
+    if (rule) {
       RulesDB.deleteRule(parseInt(local_rule_id), userId);
     }
 
@@ -7908,20 +8008,16 @@ app.post("/api/rules/:id/preview", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Call Meta API preview endpoint
     if (!rule.meta_rule_id) {
@@ -7958,20 +8054,16 @@ app.post("/api/rules/:id/execute", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get existing rule
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: true });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Call Meta API execute endpoint
     if (!rule.meta_rule_id) {
@@ -8029,21 +8121,17 @@ app.get("/api/rules/:id/history", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const userId = req.user.id;
     const ruleId = parseInt(req.params.id);
-    const userAccessToken = req.user?.facebook_access_token;
     const limit = parseInt(req.query.limit) || 50;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get rule to verify ownership
     const rule = RulesDB.getRuleById(ruleId, userId);
     if (!rule) {
       return res.status(404).json({ error: "Rule not found" });
     }
+
+    const tokenData = await resolveFbToken(req, rule.ad_account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: rule.ad_account_id });
+    const userAccessToken = tokenData.token;
 
     // Get local execution history
     const localHistory = RulesDB.getExecutionHistory(ruleId, userId, limit);
@@ -8082,15 +8170,10 @@ app.get("/api/rules/:id/history", ensureAuthenticatedAPI, async (req, res) => {
 app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const accountId = req.params.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
+    const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+    const userAccessToken = tokenData.token;
     const limit = parseInt(req.query.limit) || 100;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
 
     // Get Meta API account-level history
     const metaApiUrl = `https://graph.facebook.com/${api_version}/${accountId}/adrules_history`;
@@ -8126,14 +8209,9 @@ app.get("/api/rules/account/:account_id/history", ensureAuthenticatedAPI, async 
 app.get("/api/account/:account_id/users", ensureAuthenticatedAPI, async (req, res) => {
   try {
     const accountId = req.params.account_id;
-    const userAccessToken = req.user?.facebook_access_token;
-
-    if (!userAccessToken) {
-      return res.status(403).json({
-        error: "Facebook account not connected",
-        needsAuth: true,
-      });
-    }
+    const tokenData = await resolveFbToken(req, req.params.account_id, { write: false });
+    if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.params.account_id });
+    const userAccessToken = tokenData.token;
 
     // Format account ID with act_ prefix
     const formattedAccountId = formatAccountId(accountId);

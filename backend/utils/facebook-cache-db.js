@@ -253,6 +253,14 @@ async function migrateDatabase() {
   }
 }
 
+// Returns true when a table with the given name exists in the database.
+// Used by the account-id getters so a foundation method can be called safely
+// before a later PR adds the table it reads (return null instead of throwing).
+async function tableExists(name) {
+  const row = await db.getAsync(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`, name);
+  return !!row;
+}
+
 // Cache operations
 export const FacebookCacheDB = {
   // Ad Accounts
@@ -364,6 +372,21 @@ export const FacebookCacheDB = {
       ...JSON.parse(row.data),
       last_fetched: row.last_fetched,
     }));
+  },
+
+  // Lookup helpers used by the rules-engine routes to map an entity ID to its
+  // owning ad account, so the right BM/system-user token can be picked.
+  // Returns the account_id string, or null when the entity isn't cached.
+  async getAccountIdForCampaign(campaignId) {
+    if (!(await tableExists("cached_campaigns"))) return null;
+    const row = await db.getAsync("SELECT account_id FROM cached_campaigns WHERE id = ? LIMIT 1", campaignId);
+    return row ? row.account_id : null;
+  },
+
+  async getAccountIdForAdset(adsetId) {
+    if (!(await tableExists("cached_adsets"))) return null;
+    const row = await db.getAsync("SELECT account_id FROM cached_adsets WHERE id = ? LIMIT 1", adsetId);
+    return row ? row.account_id : null;
   },
 
   // Pixels

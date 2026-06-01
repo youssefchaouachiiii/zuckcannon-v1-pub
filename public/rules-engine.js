@@ -1238,7 +1238,7 @@ function closeRulesEnginePanel() {
 async function updateSetupChecklist() {
   try {
     const [tokens, verticals, rules, schedules] = await Promise.all([
-      fetch('/api/fb-accounts/tokens').then(r => r.json()),
+      fetch('/api/fb-accounts/system-users').then(r => r.json()),
       fetch('/api/rules-engine/ui/verticals').then(r => r.json()),
       fetch('/api/rules-engine/ui/rules').then(r => r.json()),
       fetch('/api/rules-engine/ui/schedules').then(r => r.json()),

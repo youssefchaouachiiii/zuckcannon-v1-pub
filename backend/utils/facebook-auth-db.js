@@ -102,10 +102,75 @@ async function initializeDatabase() {
     )
   `);
 
+  // ---- Multi-BM schema (additive; alongside legacy tables above) ----
+  // Business Managers: top-level org unit for per-ad-account → BM → system-user routing.
+  await db.runAsync(`
+    CREATE TABLE IF NOT EXISTS business_managers (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL,
+      role                TEXT NOT NULL DEFAULT 'launching'
+                            CHECK (role IN ('tm', 'launching', 'archived')),
+      status              TEXT NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active', 'disabled', 'restricted', 'unknown')),
+      notes               TEXT,
+      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_business_managers_role   ON business_managers(role)`);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_business_managers_status ON business_managers(status)`);
+
+  // System Users: per-BM system-user tokens (composite PK: fb_user_id + BM).
+  await db.runAsync(`
+    CREATE TABLE IF NOT EXISTS system_users (
+      fb_user_id          TEXT NOT NULL,
+      business_manager_id TEXT NOT NULL,
+      name                TEXT NOT NULL,
+      access_token        TEXT NOT NULL,
+      expires_at          DATETIME,
+      last_validated_at   DATETIME,
+      last_validation_ok  INTEGER DEFAULT 0,
+      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (fb_user_id, business_manager_id),
+      FOREIGN KEY (business_manager_id) REFERENCES business_managers(id) ON DELETE CASCADE
+    )
+  `);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_system_users_bm      ON system_users(business_manager_id)`);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_system_users_expires ON system_users(expires_at)`);
+
+  // Ad Accounts (BM-scoped, new schema).
+  await db.runAsync(`
+    CREATE TABLE IF NOT EXISTS ad_accounts (
+      id                  TEXT PRIMARY KEY,
+      account_id          TEXT NOT NULL,
+      business_manager_id TEXT NOT NULL,
+      name                TEXT NOT NULL,
+      currency            TEXT,
+      timezone_name       TEXT,
+      status              TEXT NOT NULL DEFAULT 'unknown'
+                            CHECK (status IN ('active', 'disabled', 'restricted', 'unknown')),
+      last_synced_at      DATETIME,
+      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (business_manager_id) REFERENCES business_managers(id) ON DELETE CASCADE
+    )
+  `);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_ad_accounts_bm     ON ad_accounts(business_manager_id)`);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_ad_accounts_status ON ad_accounts(status)`);
+
   console.log("Facebook auth database initialized");
 }
 
 await initializeDatabase();
+
+// Normalize an ad account ID. Accepts either `act_123` or `123`.
+// Returns { id: 'act_123', accountId: '123' }.
+function normalizeAdAccountId(input) {
+  const s = String(input);
+  if (s.startsWith("act_")) return { id: s, accountId: s.slice(4) };
+  return { id: `act_${s}`, accountId: s };
+}
 
 export const FacebookAuthDB = {
   // Token management
@@ -321,6 +386,160 @@ export const FacebookAuthDB = {
       db.runAsync("DELETE FROM facebook_ad_accounts WHERE user_id = ?", [userId]),
       db.runAsync("DELETE FROM facebook_pages WHERE user_id = ?", [userId]),
     ]);
+  },
+
+  // ==== Multi-BM schema methods (additive; new tables only) ====
+
+  // ---- Business Managers ----
+  async upsertBusinessManager({ id, name, role = "launching", status = "active", notes = null }) {
+    return await db.runAsync(
+      `INSERT INTO business_managers (id, name, role, status, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         role = excluded.role,
+         status = excluded.status,
+         notes = excluded.notes,
+         updated_at = CURRENT_TIMESTAMP`,
+      [id, name, role, status, notes]
+    );
+  },
+
+  async listBusinessManagers({ role, status } = {}) {
+    const where = [];
+    const params = [];
+    if (role) {
+      where.push("role = ?");
+      params.push(role);
+    }
+    if (status) {
+      where.push("status = ?");
+      params.push(status);
+    }
+    const sql = `SELECT * FROM business_managers ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY name ASC`;
+    return await db.allAsync(sql, params);
+  },
+
+  async getBusinessManager(id) {
+    return (await db.getAsync(`SELECT * FROM business_managers WHERE id = ?`, [id])) || null;
+  },
+
+  // ---- System Users ----
+  async upsertSystemUser({ fb_user_id, business_manager_id, name, access_token, expires_at = null }) {
+    return await db.runAsync(
+      `INSERT INTO system_users
+         (fb_user_id, business_manager_id, name, access_token, expires_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(fb_user_id, business_manager_id) DO UPDATE SET
+         name = excluded.name,
+         access_token = excluded.access_token,
+         expires_at = excluded.expires_at,
+         updated_at = CURRENT_TIMESTAMP`,
+      [fb_user_id, business_manager_id, name, access_token, expires_at]
+    );
+  },
+
+  async getSystemUserForBm(business_manager_id) {
+    return (
+      (await db.getAsync(
+        `SELECT * FROM system_users
+         WHERE business_manager_id = ?
+         ORDER BY last_validation_ok DESC, updated_at DESC
+         LIMIT 1`,
+        [business_manager_id]
+      )) || null
+    );
+  },
+
+  async listSystemUsers() {
+    return await db.allAsync(
+      `SELECT * FROM system_users ORDER BY business_manager_id ASC, fb_user_id ASC`,
+      []
+    );
+  },
+
+  async getAnyHealthySystemUser() {
+    return (
+      (await db.getAsync(
+        `SELECT * FROM system_users
+         WHERE last_validation_ok = 1
+           AND (expires_at IS NULL OR expires_at > ?)
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [new Date().toISOString()]
+      )) || null
+    );
+  },
+
+  async deleteSystemUser(fb_user_id, business_manager_id) {
+    return await db.runAsync(
+      `DELETE FROM system_users WHERE fb_user_id = ? AND business_manager_id = ?`,
+      [fb_user_id, business_manager_id]
+    );
+  },
+
+  async markValidation({ fb_user_id, business_manager_id, ok, expires_at }) {
+    if (expires_at !== undefined) {
+      return await db.runAsync(
+        `UPDATE system_users
+         SET last_validated_at = CURRENT_TIMESTAMP,
+             last_validation_ok = ?,
+             expires_at = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE fb_user_id = ? AND business_manager_id = ?`,
+        [ok ? 1 : 0, expires_at, fb_user_id, business_manager_id]
+      );
+    }
+    return await db.runAsync(
+      `UPDATE system_users
+       SET last_validated_at = CURRENT_TIMESTAMP,
+           last_validation_ok = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE fb_user_id = ? AND business_manager_id = ?`,
+      [ok ? 1 : 0, fb_user_id, business_manager_id]
+    );
+  },
+
+  async getExpiringSystemUsers(daysAhead = 7) {
+    const cutoff = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+    return await db.allAsync(
+      `SELECT * FROM system_users
+       WHERE expires_at IS NOT NULL AND expires_at <= ?
+       ORDER BY expires_at ASC`,
+      [cutoff]
+    );
+  },
+
+  // ---- Ad Accounts (BM-scoped, new schema) ----
+  async upsertAdAccount({ id, account_id, business_manager_id, name, currency = null, timezone_name = null, status = "unknown" }) {
+    return await db.runAsync(
+      `INSERT INTO ad_accounts
+         (id, account_id, business_manager_id, name, currency, timezone_name, status, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET
+         account_id = excluded.account_id,
+         business_manager_id = excluded.business_manager_id,
+         name = excluded.name,
+         currency = excluded.currency,
+         timezone_name = excluded.timezone_name,
+         status = excluded.status,
+         updated_at = CURRENT_TIMESTAMP`,
+      [id, account_id, business_manager_id, name, currency, timezone_name, status]
+    );
+  },
+
+  async getAdAccount(idOrAccountId) {
+    const { id, accountId } = normalizeAdAccountId(idOrAccountId);
+    return (
+      (await db.getAsync(`SELECT * FROM ad_accounts WHERE id = ? OR account_id = ? LIMIT 1`, [id, accountId])) || null
+    );
+  },
+
+  async listAdAccountsForBm(business_manager_id) {
+    return await db.allAsync(
+      `SELECT * FROM ad_accounts WHERE business_manager_id = ? ORDER BY name ASC`,
+      [business_manager_id]
+    );
   },
 };
 

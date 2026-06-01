@@ -291,18 +291,22 @@ export async function batchCreateCreativesAndAds(accountId, adsData, accessToken
 }
 
 /**
- * Update multiple campaign statuses in batch
- * @param {Array} campaignIds - Array of campaign IDs
+ * Update multiple entity statuses in batch, each with its own per-op access token.
+ * Meta honors mixed per-op tokens in a single batch, so multi-account/-BM routing
+ * is achieved by setting each operation's own token (no batch splitting).
+ * @param {Array<{entityId: string, token: string}>} entitiesWithTokens - Entities + their resolved tokens
  * @param {string} status - New status (ACTIVE, PAUSED, etc.)
- * @param {string} accessToken - Access token
- * @returns {Promise<Array>} Array of update results
+ * @returns {Promise<Array>} Array of update results (index-aligned to entitiesWithTokens)
  */
-export async function batchUpdateCampaignStatus(campaignIds, status, accessToken) {
-  const operations = campaignIds.map((campaignId, index) => {
-    return createBatchOperation("POST", `${campaignId}`, { status }, `update-campaign-${index}`);
+export async function batchUpdateCampaignStatus(entitiesWithTokens, status) {
+  const operations = entitiesWithTokens.map(({ entityId, token }, index) => {
+    // Per-op token via createBatchOperation's accessToken arg (overrides batch default).
+    return createBatchOperation("POST", `${entityId}`, { status }, `update-campaign-${index}`, null, token);
   });
 
-  return executeChunkedBatchRequest(operations, accessToken);
+  // Default token: use the first resolved token as the batch-level fallback (per-op tokens win).
+  const defaultToken = entitiesWithTokens[0]?.token;
+  return executeChunkedBatchRequest(operations, defaultToken);
 }
 
 /**
@@ -335,19 +339,23 @@ export async function batchUploadImages(accountId, imagePaths, accessToken) {
 }
 
 /**
- * Fetch data from multiple accounts in batch
- * @param {Array} accountIds - Array of account IDs
+ * Fetch data from multiple accounts in batch, each with its own per-op access token.
+ * Meta honors mixed per-op tokens in a single batch, so per-account routing is
+ * achieved by setting each operation's own token (no batch splitting).
+ * @param {Array<{accountId: string, token: string}>} accountsWithTokens - Accounts + their resolved tokens
  * @param {string} fields - Fields to fetch
- * @param {string} accessToken - Access token
- * @returns {Promise<Array>} Array of account data
+ * @returns {Promise<Array>} Array of account data (index-aligned to accountsWithTokens)
  */
-export async function batchFetchAccountData(accountIds, fields, accessToken) {
-  const operations = accountIds.map((accountId, index) => {
+export async function batchFetchAccountData(accountsWithTokens, fields) {
+  const operations = accountsWithTokens.map(({ accountId, token }, index) => {
     const normalizedAccountId = accountId.replace(/^act_/, "");
-    return createBatchOperation("GET", `act_${normalizedAccountId}?fields=${fields}`, null, `fetch-account-${index}`);
+    // Per-op token via createBatchOperation's accessToken arg (overrides batch default).
+    return createBatchOperation("GET", `act_${normalizedAccountId}?fields=${fields}`, null, `fetch-account-${index}`, null, token);
   });
 
-  return executeChunkedBatchRequest(operations, accessToken);
+  // Default token: use the first resolved token as the batch-level fallback (per-op tokens win).
+  const defaultToken = accountsWithTokens[0]?.token;
+  return executeChunkedBatchRequest(operations, defaultToken);
 }
 
 /**
