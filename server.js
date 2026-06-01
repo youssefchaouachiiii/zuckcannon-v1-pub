@@ -29,6 +29,7 @@ import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
 import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
+import { redactAxiosError } from "./backend/utils/redact-axios-error.js";
 import { selectFbToken } from "./backend/utils/fb-token-selector.js";
 import { resolveFbToken } from "./backend/utils/fb-token-resolver.js";
 import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
@@ -245,7 +246,7 @@ axios.interceptors.response.use(
     if (error.response && error.config.url && error.config.url.includes("graph.facebook.com")) {
       trackRateLimitFromResponse(error.response);
     }
-    return Promise.reject(error);
+    return Promise.reject(redactAxiosError(error));
   }
 );
 
