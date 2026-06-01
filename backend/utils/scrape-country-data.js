@@ -1,8 +1,8 @@
 const fs = require('fs');
 const https = require('https');
 
-// Replace with your actual access token
-const ACCESS_TOKEN = 'EAARVcSEqf2EBPItmtP7nXOw8ikhBTNTJgzPj30oF0AhNHVcQneYYNDpkheCotRnWDPmZCjvCZB0EZAI3KuwdSf3LJcBZCHq1HFVFCFkgT0NRP2W3a62Ah6B40f5nQc3kCZBZCA9d6WSNrtPL3BXC6gJGwHIsX4aYK7tRlZAN3OvHZBYKGb6MOxfOD7rV4ZBkZAATrh8Syg70G6VeVvZBOE38Mb2SqqbEztY6fH6pqBy9qcuzXxfPMC1lHbnygZDZD';
+// Set META_ACCESS_TOKEN in your environment (.env) before running this script.
+const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
 const BASE_URL = 'https://graph.facebook.com/v23.0';
 
 // Helper function to make API requests
