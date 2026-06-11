@@ -155,6 +155,9 @@ async function initializeDatabase() {
     offer_name TEXT,
     recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  await db.runAsync(`ALTER TABLE redtrack_snapshots ADD COLUMN campaign_id TEXT`).catch(() => {});
+  await db.runAsync(`DROP INDEX IF EXISTS idx_rt_snap_cid`).catch(() => {});
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_rt_snap_cid ON redtrack_snapshots(campaign_id)`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS rt_offers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +178,9 @@ async function initializeDatabase() {
     roi REAL DEFAULT 0,
     UNIQUE(campaign_name, date)
   )`);
+  await db.runAsync(`ALTER TABLE redtrack_daily ADD COLUMN campaign_id TEXT`).catch(() => {});
+  await db.runAsync(`DROP INDEX IF EXISTS idx_rt_daily_cid_date`).catch(() => {});
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_rt_daily_cid_date ON redtrack_daily(campaign_id, date)`).catch(() => {});
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS fb_daily (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -631,34 +637,59 @@ export const RulesEngineDB = {
 
   // --- RedTrack Snapshots ---
   async upsertRedtrackSnapshot(campaignName, data) {
+    const campaignId = data.campaign_id ?? null;
+    const params = [campaignId, campaignName, data.roi ?? 0, data.revenue ?? 0,
+      data.profit ?? 0, data.conversions ?? 0, data.offer_name ?? null];
+    // single name-keyed upsert: campaign_id is a stamped attribute (COALESCE-preserved), never a conflict key
     return db.runAsync(
-      `INSERT INTO redtrack_snapshots (campaign_name, roi, revenue, profit, conversions, offer_name, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `INSERT INTO redtrack_snapshots (campaign_id, campaign_name, roi, revenue, profit, conversions, offer_name, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(campaign_name) DO UPDATE SET
+         campaign_id=COALESCE(excluded.campaign_id, redtrack_snapshots.campaign_id),
          roi=excluded.roi, revenue=excluded.revenue, profit=excluded.profit,
          conversions=excluded.conversions, offer_name=excluded.offer_name,
          recorded_at=CURRENT_TIMESTAMP`,
-      [campaignName, data.roi ?? 0, data.revenue ?? 0, data.profit ?? 0,
-       data.conversions ?? 0, data.offer_name ?? null]
+      params
     );
   },
   async getAllRedtrackSnapshots() {
     return db.allAsync(`SELECT * FROM redtrack_snapshots`);
+  },
+  // Stamp the FB campaign id (sub3) onto existing name-keyed rows by EXACT name.
+  // UPDATE-by-name only (never the INSERT path) -- truncated/url-encoded twin rows
+  // whose name doesn't match stay campaign_id=NULL, so they never enter the
+  // id-keyed SUM and can't double-count. The (campaign_id IS NULL OR campaign_id<>?)
+  // guard makes a re-stamp of an already-correct row a no-op write.
+  async stampRtCampaignId(campaignName, campaignId) {
+    await db.runAsync(
+      `UPDATE redtrack_snapshots SET campaign_id=?
+       WHERE LOWER(campaign_name)=LOWER(?) AND (campaign_id IS NULL OR campaign_id<>?)`,
+      [campaignId, campaignName, campaignId]
+    );
+    await db.runAsync(
+      `UPDATE redtrack_daily SET campaign_id=?
+       WHERE LOWER(campaign_name)=LOWER(?) AND (campaign_id IS NULL OR campaign_id<>?)`,
+      [campaignId, campaignName, campaignId]
+    );
   },
   async pruneRedtrackSnapshots() {
     return db.runAsync(`DELETE FROM redtrack_snapshots WHERE recorded_at < datetime('now', '-2 hours')`);
   },
 
   // --- Daily Snapshots ---
-  async upsertRtDaily(campaignName, date, { revenue, profit, conversions, cost }) {
+  async upsertRtDaily(campaignName, date, { revenue, profit, conversions, cost, campaign_id }) {
     const roi = cost > 0 ? profit / cost : 0;
+    const campaignId = campaign_id ?? null;
+    const params = [campaignId, campaignName, date, revenue, profit, conversions, cost, roi];
+    // single name-keyed upsert: campaign_id is a stamped attribute (COALESCE-preserved), never a conflict key
     return db.runAsync(
-      `INSERT INTO redtrack_daily (campaign_name, date, revenue, profit, conversions, cost, roi)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO redtrack_daily (campaign_id, campaign_name, date, revenue, profit, conversions, cost, roi)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(campaign_name, date) DO UPDATE SET
+         campaign_id=COALESCE(excluded.campaign_id, redtrack_daily.campaign_id),
          revenue=excluded.revenue, profit=excluded.profit,
          conversions=excluded.conversions, cost=excluded.cost, roi=excluded.roi`,
-      [campaignName, date, revenue, profit, conversions, cost, roi]
+      params
     );
   },
 
@@ -671,6 +702,23 @@ export const RulesEngineDB = {
        FROM redtrack_daily
        WHERE LOWER(campaign_name)=LOWER(?) AND date >= date('now', ? || ' days')`,
       [campaignName, `-${days}`]
+    );
+  },
+
+  // id-first RT daily window. A stamped row is matched ONLY by campaign_id; a
+  // NULL-id row ONLY by exact name — the (campaign_id IS NULL AND name=?) guard
+  // means no row is ever counted by both, so nothing double-counts. With no
+  // stamped ids this is identical to getRtDailyWindow (id branch matches nothing).
+  async getRtDailyByIdWindow(campaignId, campaignName, days) {
+    return db.getAsync(
+      `SELECT
+        SUM(revenue) as revenue, SUM(profit) as profit,
+        SUM(conversions) as conversions, SUM(cost) as cost,
+        CASE WHEN SUM(cost) > 0 THEN SUM(profit) / SUM(cost) ELSE 0 END as roi
+       FROM redtrack_daily
+       WHERE (campaign_id=? OR (campaign_id IS NULL AND LOWER(campaign_name)=LOWER(?)))
+         AND date >= date('now', ? || ' days')`,
+      [campaignId, campaignName, `-${days}`]
     );
   },
 

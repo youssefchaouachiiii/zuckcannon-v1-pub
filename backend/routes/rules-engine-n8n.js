@@ -71,7 +71,11 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const resolveEntityToken = makeTokenResolver(defaultToken, campaignToAccount);
 
     const rtSnaps = await RulesEngineDB.getAllRedtrackSnapshots();
-    const rtMap = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
+    const rtByName = Object.fromEntries(rtSnaps.map(r => [r.campaign_name.trim().toLowerCase(), r]));
+    // id-keyed map for the sub3 (FB campaign id) join; skip NULL-id rows so an
+    // unstamped row never collides on key. Empty today (all campaign_id NULL) →
+    // every lookup misses → falls back to rtByName = current behavior.
+    const rtById = Object.fromEntries(rtSnaps.filter(r => r.campaign_id).map(r => [String(r.campaign_id), r]));
 
     // Verticals where lp_views isn't meaningful (redirect-link offers like
     // EDU). Rules that condition on lp_views / lp_conv_rate skip campaigns
@@ -97,14 +101,16 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     const resolvePerCampaignEntities = async (entityIds) => {
       return Promise.all(entityIds.map(async (entityId) => {
         const entityName = nameMap[entityId] || entityId;
-        const rt = rtMap[entityName.trim().toLowerCase()] || null;
         const nameLower = entityName.trim().toLowerCase();
+        // id-first (sub3 == FB campaign id), name fallback. With no stamped ids
+        // rtById is empty → resolves by name exactly as before.
+        const rt = rtById[String(entityId)] ?? rtByName[nameLower] ?? null;
 
         const [fb3d, rt3d, fb7d, rt7d] = await Promise.all([
           RulesEngineDB.getFbDailyWindow(entityId, 3),
-          RulesEngineDB.getRtDailyWindow(nameLower, 3),
+          RulesEngineDB.getRtDailyByIdWindow(entityId, nameLower, 3),
           RulesEngineDB.getFbDailyWindow(entityId, 7),
-          RulesEngineDB.getRtDailyWindow(nameLower, 7),
+          RulesEngineDB.getRtDailyByIdWindow(entityId, nameLower, 7),
         ]);
 
         const mergeWindow = (fb, rt) => {
@@ -141,13 +147,18 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
           };
         };
 
+        const insights_3d = mergeWindow(fb3d, rt3d);
+        const insights_7d = mergeWindow(fb7d, rt7d);
         return {
           entityId,
           entityName,
           token: await resolveEntityToken(entityId),
           rt: rt ? { roi: rt.roi, revenue: rt.revenue, profit: rt.profit, conversions: rt.conversions, offer_name: rt.offer_name } : null,
-          insights_3d: mergeWindow(fb3d, rt3d),
-          insights_7d: mergeWindow(fb7d, rt7d),
+          insights_3d,
+          insights_7d,
+          // untracked: FB is spending real money but neither id nor name matched
+          // any RedTrack row (silent-miss detector). Returned only; no consumer yet.
+          untracked: rt === null && insights_3d === null && insights_7d === null && (fb7d && fb7d.spend >= 100),
         };
       }));
     };
@@ -351,13 +362,14 @@ rulesEngineN8nRouter.post('/daily/redtrack', async (req, res) => {
   try {
     const items = Array.isArray(req.body) ? req.body : [req.body];
     let count = 0;
-    for (const { campaign_name, date, revenue, profit, conversions, cost } of items) {
+    for (const { campaign_id, campaign_name, date, revenue, profit, conversions, cost } of items) {
       if (!campaign_name || !date) continue;
       await RulesEngineDB.upsertRtDaily(campaign_name, date, {
         revenue: revenue || 0,
         profit: profit || 0,
         conversions: conversions || 0,
         cost: cost || 0,
+        campaign_id: campaign_id ?? null,
       });
       count++;
     }
@@ -448,6 +460,25 @@ rulesEngineN8nRouter.post('/campaigns/names', async (req, res) => {
       if (id && name) await FacebookCacheDB.upsertCampaignName(id, name);
     }
     res.json({ ok: true, count: names.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stamp the FB campaign id (sub3) onto existing name-keyed RedTrack rows.
+// Fed ONLY by the separate daily "RT Campaign-ID Map Sync" workflow (not the
+// /snapshots/redtrack or /daily/redtrack feeds). EXACT-name match only -- sub3
+// validated /^120\d{15}$/ so a coarse 24-hex RT campaign_id can never be written.
+rulesEngineN8nRouter.post('/map/rt-campaign-ids', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body) ? req.body : [];
+    let stamped = 0;
+    for (const { campaign_name, campaign_id } of items) {
+      if (!campaign_name || !/^120\d{15}$/.test(String(campaign_id || ''))) continue;
+      await RulesEngineDB.stampRtCampaignId(campaign_name, String(campaign_id));
+      stamped++;
+    }
+    res.json({ ok: true, stamped, received: items.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
