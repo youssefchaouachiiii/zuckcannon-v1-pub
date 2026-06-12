@@ -96,6 +96,21 @@ describe('RulesEngineDB - daily snapshots', () => {
     expect(row.conversions).toBeCloseTo(12);
   });
 
+  it('upsertRtDaily inherits campaign_id from an already-stamped same-name row', async () => {
+    // prior daily row stamped (e.g. by the one-off sub3 migration)
+    await RulesEngineDB.upsertRtDaily('Renamed Camp', '2026-04-20', {
+      revenue: 100, profit: 20, conversions: 2, cost: 80, campaign_id: '120200000000000001',
+    });
+    // nightly sync inserts a new date with no campaign_id
+    await RulesEngineDB.upsertRtDaily('Renamed Camp', '2026-04-21', {
+      revenue: 200, profit: 40, conversions: 4, cost: 160,
+    });
+    const row = await RulesEngineDB._db.getAsync(
+      `SELECT campaign_id FROM redtrack_daily WHERE campaign_name='Renamed Camp' AND date='2026-04-21'`
+    );
+    expect(row.campaign_id).toBe('120200000000000001');
+  });
+
   it('getRtDailyWindow sums rows within window', async () => {
     await RulesEngineDB.upsertRtDaily('Camp A', '2026-04-21', { revenue: 400, profit: 80, conversions: 8, cost: 320 });
     await RulesEngineDB.upsertRtDaily('Camp A', '2026-04-22', { revenue: 600, profit: 120, conversions: 12, cost: 480 });

@@ -364,3 +364,65 @@ describe('GET /active-rules includes insights_3d and insights_7d', () => {
     expect(entity.insights_7d).toBeNull();
   });
 });
+
+describe('GET /active-rules sums RT snapshot aliases sharing one campaign_id', () => {
+  it('a renamed campaign with two RT aliases gets summed today metrics, not last-alias-wins', async () => {
+    RulesEngineDB.listActiveRules.mockResolvedValueOnce([{
+      id: 1, name: 'Test Rule', scope: 'campaign',
+      conditions_json: '[]', action: 'pause',
+      action_params_json: null, cooldown_hours: 4,
+      is_active: 1, is_dry_run: 0, created_at: '2026-01-01',
+      combinator: 'AND', alert_level: 'warning',
+    }]);
+    RulesEngineDB.getAssignmentsForRule.mockResolvedValueOnce([
+      { entity_type: 'campaign', entity_id: 'camp_dual' },
+    ]);
+    RulesEngineDB.getAllRedtrackSnapshots.mockResolvedValueOnce([
+      { campaign_name: 'CHW - $23 - SAC', campaign_id: 'camp_dual',
+        roi: 0.246, revenue: 100, profit: 19.76, conversions: 4, offer_name: 'CHW CPL' },
+      { campaign_name: 'CHW - $25 - SAC', campaign_id: 'camp_dual',
+        roi: 0.19, revenue: 300, profit: 47.74, conversions: 12, offer_name: 'CHW CPL' },
+    ]);
+
+    const res = await request(app)
+      .get('/api/rules-engine/active-rules')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    const rt = res.body[0].entities[0].rt;
+    expect(rt.revenue).toBe(400);
+    expect(rt.conversions).toBe(16);
+    expect(rt.profit).toBeCloseTo(67.5, 5);
+    // roi recomputed from summed numbers: profit / (revenue - profit)
+    expect(rt.roi).toBeCloseTo(67.5 / 332.5, 5);
+  });
+});
+
+describe('GET /active-rules 3d/7d windows use max(RT cost, FB spend) floor', () => {
+  it('when FB gross spend exceeds RT cost (EDU undercount), insights use FB spend and recomputed ROI/CPA', async () => {
+    RulesEngineDB.listActiveRules.mockResolvedValueOnce([{
+      id: 1, name: 'Test Rule', scope: 'campaign',
+      conditions_json: '[]', action: 'pause',
+      action_params_json: null, cooldown_hours: 4,
+      is_active: 1, is_dry_run: 0, created_at: '2026-01-01',
+      combinator: 'AND', alert_level: 'warning',
+    }]);
+    RulesEngineDB.getAssignmentsForRule.mockResolvedValueOnce([
+      { entity_type: 'campaign', entity_id: 'camp_edu' },
+    ]);
+    // RT cost (70) understates FB gross spend (100) — the redirect-link case
+    RulesEngineDB.getFbDailyWindow = jest.fn().mockResolvedValue({ spend: 100, link_clicks: 0, lp_views: 0 });
+    RulesEngineDB.getRtDailyByIdWindow = jest.fn().mockResolvedValue({ cost: 70, revenue: 100, profit: 30, conversions: 4, roi: 0.428571 });
+    RulesEngineDB.listVerticalsWithLpvOff = jest.fn().mockResolvedValue([]);
+    RulesEngineDB.listAllVerticalLabels = jest.fn().mockResolvedValue([]);
+
+    const res = await request(app)
+      .get('/api/rules-engine/active-rules')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    const w = res.body[0].entities[0].insights_3d;
+    expect(w.spend).toBe(100);          // max(70, 100) — FB gross floor, not RT cost
+    expect(w.profit).toBeCloseTo(0, 5); // revenue 100 - spend 100
+    expect(w.roi).toBeCloseTo(0, 5);    // recomputed, NOT raw rt.roi 0.4286
+    expect(w.cpa).toBeCloseTo(25, 5);   // 100 / 4 conversions, not 70/4
+  });
+});

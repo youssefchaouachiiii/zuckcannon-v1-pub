@@ -680,11 +680,19 @@ export const RulesEngineDB = {
   async upsertRtDaily(campaignName, date, { revenue, profit, conversions, cost, campaign_id }) {
     const roi = cost > 0 ? profit / cost : 0;
     const campaignId = campaign_id ?? null;
-    const params = [campaignId, campaignName, date, revenue, profit, conversions, cost, roi];
-    // single name-keyed upsert: campaign_id is a stamped attribute (COALESCE-preserved), never a conflict key
+    // single name-keyed upsert: campaign_id is a stamped attribute (COALESCE-preserved), never a conflict key.
+    // When the feed sends no campaign_id (the nightly daily sync never does),
+    // inherit the stamp from any already-stamped same-name row (snapshots or
+    // prior daily rows) — otherwise each nightly insert is born NULL and
+    // renamed/dual-alias campaigns silently drop out of the id-joined windows.
+    const params = [campaignId, campaignName, campaignName, campaignName, date, revenue, profit, conversions, cost, roi];
     return db.runAsync(
       `INSERT INTO redtrack_daily (campaign_id, campaign_name, date, revenue, profit, conversions, cost, roi)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (
+         COALESCE(?,
+           (SELECT campaign_id FROM redtrack_snapshots WHERE LOWER(campaign_name)=LOWER(?) AND campaign_id IS NOT NULL LIMIT 1),
+           (SELECT campaign_id FROM redtrack_daily WHERE LOWER(campaign_name)=LOWER(?) AND campaign_id IS NOT NULL LIMIT 1)
+         ), ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(campaign_name, date) DO UPDATE SET
          campaign_id=COALESCE(excluded.campaign_id, redtrack_daily.campaign_id),
          revenue=excluded.revenue, profit=excluded.profit,

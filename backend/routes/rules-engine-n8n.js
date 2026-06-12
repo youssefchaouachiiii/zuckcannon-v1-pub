@@ -75,7 +75,24 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     // id-keyed map for the sub3 (FB campaign id) join; skip NULL-id rows so an
     // unstamped row never collides on key. Empty today (all campaign_id NULL) →
     // every lookup misses → falls back to rtByName = current behavior.
-    const rtById = Object.fromEntries(rtSnaps.filter(r => r.campaign_id).map(r => [String(r.campaign_id), r]));
+    // A renamed FB campaign can carry several RT aliases stamped to one id —
+    // SUM their today numbers (plain Object.fromEntries kept only the last
+    // alias, undercounting revenue/conversions for dual-name campaigns).
+    const rtById = {};
+    for (const r of rtSnaps) {
+      if (!r.campaign_id) continue;
+      const key = String(r.campaign_id);
+      const acc = rtById[key];
+      if (!acc) {
+        rtById[key] = { ...r };
+      } else {
+        acc.revenue = (acc.revenue || 0) + (r.revenue || 0);
+        acc.profit = (acc.profit || 0) + (r.profit || 0);
+        acc.conversions = (acc.conversions || 0) + (r.conversions || 0);
+        const cost = acc.revenue - acc.profit;
+        acc.roi = cost > 0 ? acc.profit / cost : 0;
+      }
+    }
 
     // Verticals where lp_views isn't meaningful (redirect-link offers like
     // EDU). Rules that condition on lp_views / lp_conv_rate skip campaigns
@@ -123,14 +140,16 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
           // evaluating against zeros (prevents false fires when fb_daily is
           // stale and RT has no row either).
           if (rtCost === 0 && fbSpend === 0 && conversions === 0) return null;
-          // Prefer RT cost for spend when RT has data — RT tracks spend
-          // independently of FB and is the source of truth for multi-day
-          // windows. Falling back to fb.spend kept CPA at $0 when fb_daily
-          // sync was partial.
-          const spend = rtCost > 0 ? rtCost : fbSpend;
+          // Conservative cost floor: max(RT cost, FB gross spend). RT cost
+          // covers only tracked-click spend and structurally understates FB
+          // gross (~7% for LP funnels, ~30% for redirect-link EDU), which
+          // inflated 3d/7d ROI and understated CPA on those campaigns. Mirrors
+          // the today path; degrades gracefully — if fb_daily is partial
+          // (fbSpend 0) it uses rtCost, and the guard above handles all-zero.
+          const spend = Math.max(rtCost, fbSpend);
           const revenue = rt ? (rt.revenue || 0) : (fbObj.revenue || 0);
-          const profit = rt ? (rt.profit || 0) : (revenue - spend);
-          const roi = rt && rt.roi != null ? rt.roi : (spend > 0 ? profit / spend : 0);
+          const profit = revenue - spend;
+          const roi = spend > 0 ? profit / spend : 0;
           const cpa = conversions > 0 ? spend / conversions : 0;
           const link_clicks = fbObj.link_clicks || 0;
           const lp_views = fbObj.lp_views || 0;
