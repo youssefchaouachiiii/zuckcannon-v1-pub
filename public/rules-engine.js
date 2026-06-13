@@ -524,7 +524,7 @@ async function editRule(id) {
   JSON.parse(rule.conditions_json).forEach(c => addConditionRow(c));
   const combinator = rule.combinator || 'AND';
   document.querySelectorAll('input[name="rule-combinator"]').forEach(r => { r.checked = r.value === combinator; });
-  const storedParams = rule.action_params ? (typeof rule.action_params === 'string' ? JSON.parse(rule.action_params) : rule.action_params) : null;
+  const storedParams = rule.action_params_json ? (typeof rule.action_params_json === 'string' ? JSON.parse(rule.action_params_json) : rule.action_params_json) : null;
   renderActionParams(rule.action, storedParams);
   document.getElementById('rule-editor').style.display = 'block';
   document.getElementById('rule-editor-title').textContent = 'Edit Rule';
