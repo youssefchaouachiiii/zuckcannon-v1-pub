@@ -65,7 +65,7 @@ const RULE_TEMPLATES = [
       { metric: 'spend_today', operator: 'gt', value: 200, lookback: 'today' },
     ],
     action: 'scale_budget', cooldown_hours: 48,
-    action_params: { scale_pct: 20, cap: 500 },
+    action_params: { scale_pct: 20, max_budget: 500 },
   },
   {
     name: 'Burst Spend',

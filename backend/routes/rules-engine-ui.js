@@ -90,7 +90,7 @@ const RULE_TEMPLATES = [
       { metric: 'conversions', operator: 'gte', value: 5, lookback: 'last_3d' },
       { metric: 'spend_today', operator: 'gt', value: 200, lookback: 'today' },
     ],
-    action_params: { scale_pct: 20, cap: 500 },
+    action_params: { scale_pct: 20, max_budget: 500 },
     params: { cpa_threshold: 25, min_conversions: 5, spend_threshold: 200, cap: 500 },
   },
   {
