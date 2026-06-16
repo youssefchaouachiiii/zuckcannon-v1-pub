@@ -71,8 +71,9 @@ export function configurePassport() {
 
 // Middleware to check if user is authenticated
 export function ensureAuthenticated(req, res, next) {
-  // Bypass auth in development mode
-  if (process.env.NODE_ENV === "development") {
+  // Bypass auth ONLY when explicitly enabled — never implicitly via NODE_ENV
+  // (a single env typo / `npm run dev` in prod must not disable auth).
+  if (process.env.ALLOW_AUTH_BYPASS === "true") {
     return next();
   }
 
@@ -84,8 +85,8 @@ export function ensureAuthenticated(req, res, next) {
 
 // Middleware for API endpoints - returns 401 instead of redirecting
 export function ensureAuthenticatedAPI(req, res, next) {
-  // Bypass auth in development mode
-  if (process.env.NODE_ENV === "development") {
+  // Bypass auth ONLY when explicitly enabled — never implicitly via NODE_ENV.
+  if (process.env.ALLOW_AUTH_BYPASS === "true") {
     return next();
   }
 
@@ -97,8 +98,8 @@ export function ensureAuthenticatedAPI(req, res, next) {
 
 // Middleware to check if user is not authenticated (for login page)
 export function ensureNotAuthenticated(req, res, next) {
-  // In development, don't redirect authenticated users away from login
-  if (process.env.NODE_ENV === "development") {
+  // Bypass ONLY when explicitly enabled — never implicitly via NODE_ENV.
+  if (process.env.ALLOW_AUTH_BYPASS === "true") {
     return next();
   }
 

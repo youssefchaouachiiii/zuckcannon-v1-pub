@@ -73,6 +73,15 @@ const app = express();
 const PORT = process.env.PORT || 6969;
 const isProduction = process.env.NODE_ENV === "production";
 
+// Auth bypass is opt-in via an explicit flag (NOT NODE_ENV). Warn loudly if on,
+// so it can never be silently active in production.
+if (process.env.ALLOW_AUTH_BYPASS === "true") {
+  console.warn(
+    "\n⚠️  ALLOW_AUTH_BYPASS=true — ALL authentication is DISABLED. " +
+      "This must NEVER be set in production.\n"
+  );
+}
+
 // Security Configuration
 // Enable trust proxy for production (when behind a reverse proxy like Nginx)
 if (isProduction) {
@@ -471,7 +480,8 @@ app.post("/logout", (req, res) => {
 });
 
 app.get("/api/auth/status", (req, res) => {
-  const isDevelopment = process.env.NODE_ENV === "development";
+  // Reflects the auth-bypass flag (not NODE_ENV) so status matches the guards.
+  const isDevelopment = process.env.ALLOW_AUTH_BYPASS === "true";
 
   // console.log("Auth status check:", {
   //   authenticated: isDevelopment ? true : req.isAuthenticated(),
