@@ -382,6 +382,91 @@ describe('POST /api/fb-accounts/system-users/register', () => {
       expect.objectContaining({ id: 'act_222', status: 'unknown' })
     );
   });
+
+  test('resolves system user id from debug_token when token lacks public_profile (/me has no id)', async () => {
+    // A System User token generated WITHOUT public_profile: /me returns 200 but
+    // omits id (and name). The identity must come from debug_token's user_id —
+    // otherwise fb_user_id is null and the DB write (NOT NULL) crashes.
+    mockGraphResponses([
+      ['debug_token', { data: { user_id: 'su_from_debug', expires_at: 1900000000 } }],
+      ['/me/businesses', { data: [{ id: 'bm_1', name: 'SGP BM' }] }],
+      ['/me/adaccounts', { data: [
+        { account_id: '111', name: 'Acct One', currency: 'USD', timezone_name: 'UTC', account_status: 1, business: { id: 'bm_1', name: 'SGP BM' } },
+      ] }],
+      ['/me?', {}], // no public_profile → no id, no name
+    ]);
+
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/register')
+      .send({ access_token: 'NO_PUBLIC_PROFILE_TOKEN' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.system_user.id).toBe('su_from_debug');
+    expect(FacebookAuthDB.upsertSystemUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fb_user_id: 'su_from_debug',
+        business_manager_id: 'bm_1',
+        access_token: 'NO_PUBLIC_PROFILE_TOKEN',
+      })
+    );
+    // system_users.name is NOT NULL — must be a non-empty fallback even when /me gives none
+    const suArg = FacebookAuthDB.upsertSystemUser.mock.calls[0][0];
+    expect(typeof suArg.name).toBe('string');
+    expect(suArg.name.length).toBeGreaterThan(0);
+  });
+
+  test('400 + ZERO DB writes when neither debug_token nor /me yields an id (orphan-row regression)', async () => {
+    mockGraphResponses([
+      ['debug_token', { data: {} }], // no user_id
+      ['/me/businesses', { data: [{ id: 'bm_1', name: 'SGP' }] }],
+      ['/me/adaccounts', { data: [
+        { account_id: '111', name: 'A', currency: 'USD', timezone_name: 'UTC', account_status: 1, business: { id: 'bm_1', name: 'SGP' } },
+      ] }],
+      ['/me?', {}], // no id
+    ]);
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/register')
+      .send({ access_token: 'NO_ID_TOKEN' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/could not resolve/i);
+    // The original bug wrote an orphan business_managers row before crashing — assert none.
+    expect(FacebookAuthDB.upsertBusinessManager).not.toHaveBeenCalled();
+    expect(FacebookAuthDB.upsertSystemUser).not.toHaveBeenCalled();
+    expect(FacebookAuthDB.upsertAdAccount).not.toHaveBeenCalled();
+    expect(FacebookAuthDB.markValidation).not.toHaveBeenCalled();
+  });
+
+  test('400 when debug_token reports is_valid:false (dead token with a user_id)', async () => {
+    mockGraphResponses([
+      ['debug_token', { data: { user_id: 'su_1', is_valid: false } }],
+      ['/me/businesses', { data: [{ id: 'bm_1', name: 'SGP' }] }],
+      ['/me/adaccounts', { data: [
+        { account_id: '111', name: 'A', currency: 'USD', timezone_name: 'UTC', account_status: 1, business: { id: 'bm_1', name: 'SGP' } },
+      ] }],
+      ['/me?', { id: 'su_1', name: 'SU' }],
+    ]);
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/register')
+      .send({ access_token: 'DEAD_TOKEN' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid|is_valid/i);
+    expect(FacebookAuthDB.upsertSystemUser).not.toHaveBeenCalled();
+  });
+
+  test('422 (not a silent 200 no-op) when the token has no ad accounts under any BM', async () => {
+    mockGraphResponses([
+      ['debug_token', { data: { user_id: 'su_1', expires_at: 1900000000 } }],
+      ['/me/businesses', { data: [{ id: 'bm_1', name: 'SGP' }] }],
+      ['/me/adaccounts', { data: [] }], // no ad accounts assigned to the system user
+      ['/me?', { id: 'su_1', name: 'SU' }],
+    ]);
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/register')
+      .send({ access_token: 'NO_ADACCT_TOKEN' });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/no ad accounts/i);
+    expect(FacebookAuthDB.upsertSystemUser).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/fb-accounts/system-users/:fbUserId/:bmId/revalidate', () => {
@@ -486,6 +571,72 @@ describe('POST /api/fb-accounts/system-users/:fbUserId/:bmId/revalidate', () => 
     expect(FacebookAuthDB.markValidation).toHaveBeenCalledWith(
       expect.objectContaining({ fb_user_id: 'sysuser_1', business_manager_id: 'bm_1', ok: false })
     );
+  });
+
+  test('no false drift when token lacks public_profile: identity resolved via debug_token', async () => {
+    FacebookAuthDB.getSystemUserForBm.mockResolvedValue({
+      fb_user_id: 'su_1',
+      business_manager_id: 'bm_1',
+      access_token: 'NO_PP_TOKEN',
+      name: 'SU One',
+    });
+    mockGraphResponses([
+      ['debug_token', { data: { user_id: 'su_1', expires_at: 1900000000 } }],
+      ['/me/adaccounts', { data: [
+        { account_id: '111', name: 'Acct', currency: 'USD', timezone_name: 'UTC', account_status: 1, business: { id: 'bm_1', name: 'SGP' } },
+      ] }],
+      ['/me?', {}], // no public_profile → /me has no id; must NOT be read as drift
+    ]);
+
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/su_1/bm_1/revalidate')
+      .send({});
+
+    expect(res.status).toBe(200); // debug_token user_id matches stored fb_user_id → no drift
+    expect(res.body.expires_at).toMatch(/^20\d\d-/);
+    expect(FacebookAuthDB.markValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ fb_user_id: 'su_1', business_manager_id: 'bm_1', ok: true })
+    );
+  });
+
+  test('inconclusive (422, NOT marked healthy) when identity cannot be confirmed at all', async () => {
+    FacebookAuthDB.getSystemUserForBm.mockResolvedValue({
+      fb_user_id: 'su_1', business_manager_id: 'bm_1', access_token: 'NO_PP_TOKEN', name: 'SU',
+    });
+    axiosModule.get.mockImplementation((url) => {
+      if (url.includes('debug_token')) return Promise.reject(new Error('debug_token down'));
+      if (url.includes('/me/adaccounts')) return Promise.resolve({ data: { data: [] } });
+      if (url.includes('/me?')) return Promise.resolve({ data: {} }); // no id (no public_profile)
+      return Promise.reject(new Error('unmocked: ' + url));
+    });
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/su_1/bm_1/revalidate')
+      .send({});
+    expect(res.status).toBe(422);
+    // Must NOT mark the row healthy on an unverified identity.
+    const okCall = FacebookAuthDB.markValidation.mock.calls.find((c) => c[0].ok === true);
+    expect(okCall).toBeUndefined();
+  });
+
+  test('does not wipe stored expires_at when debug_token is transiently down', async () => {
+    FacebookAuthDB.getSystemUserForBm.mockResolvedValue({
+      fb_user_id: 'su_1', business_manager_id: 'bm_1', access_token: 'PP_TOKEN', name: 'SU',
+    });
+    axiosModule.get.mockImplementation((url) => {
+      if (url.includes('debug_token')) return Promise.reject(new Error('debug_token down'));
+      if (url.includes('/me/adaccounts')) return Promise.resolve({ data: { data: [
+        { account_id: '111', name: 'A', currency: 'USD', timezone_name: 'UTC', account_status: 1, business: { id: 'bm_1', name: 'SGP' } },
+      ] } });
+      if (url.includes('/me?')) return Promise.resolve({ data: { id: 'su_1', name: 'SU' } }); // has id
+      return Promise.reject(new Error('unmocked: ' + url));
+    });
+    const res = await request(app)
+      .post('/api/fb-accounts/system-users/su_1/bm_1/revalidate')
+      .send({});
+    expect(res.status).toBe(200);
+    const okCall = FacebookAuthDB.markValidation.mock.calls.find((c) => c[0].ok === true);
+    expect(okCall).toBeDefined();
+    expect(okCall[0].expires_at).toBeUndefined(); // not overwritten to null
   });
 });
 

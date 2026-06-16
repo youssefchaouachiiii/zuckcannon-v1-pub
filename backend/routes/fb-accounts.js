@@ -117,14 +117,23 @@ async function fetchOauthUserBusinesses(oauthToken) {
   return resp.data?.data || [];
 }
 
-// Step D: expiry. Failure is non-fatal — return null + log.
-async function fetchTokenExpiry(accessToken) {
+// Token introspection via the APP access token (app_id|app_secret). Unlike /me —
+// which only returns id/name when the token carries `public_profile` (system-user
+// tokens frequently don't) — debug_token returns the token's `user_id` and expiry
+// regardless of the token's own scopes, so it is the authoritative identity source.
+// Returns the debug `data` object, or null on failure (non-fatal — caller falls
+// back to /me).
+function appAccessToken() {
+  return `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`;
+}
+
+async function fetchDebugToken(accessToken) {
   try {
-    const url = `${GRAPH_BASE}/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(accessToken)}`;
+    const url = `${GRAPH_BASE}/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(appAccessToken())}`;
     const resp = await axios.get(url);
-    return expiresAtToIso(resp.data?.data?.expires_at);
+    return resp.data?.data || null; // { user_id, expires_at, is_valid, scopes, ... }
   } catch (err) {
-    console.warn('[fb-accounts] debug_token failed; proceeding with expires_at=null:', err?.message || err);
+    console.warn('[fb-accounts] debug_token (app token) failed:', err?.message || err);
     return null;
   }
 }
@@ -144,7 +153,7 @@ function collectBusinessManagers(adAccounts) {
 // Step E: persist registration. All DB mutations live here so the partial-
 // write boundary is explicit. The underlying upserts are idempotent, so the
 // caller (or the operator) can re-run register safely.
-async function persistRegistration({ me, businessManagers, adAccounts, accessToken, expiresAt }) {
+async function persistRegistration({ fbUserId, name, businessManagers, adAccounts, accessToken, expiresAt }) {
   for (const bm of businessManagers) {
     await FacebookAuthDB.upsertBusinessManager({
       id: bm.id,
@@ -153,14 +162,14 @@ async function persistRegistration({ me, businessManagers, adAccounts, accessTok
       status: 'active',
     });
     await FacebookAuthDB.upsertSystemUser({
-      fb_user_id: me.id,
+      fb_user_id: fbUserId,
       business_manager_id: bm.id,
-      name: me.name,
+      name,
       access_token: accessToken,
       expires_at: expiresAt,
     });
     await FacebookAuthDB.markValidation({
-      fb_user_id: me.id,
+      fb_user_id: fbUserId,
       business_manager_id: bm.id,
       ok: true,
       expires_at: expiresAt,
@@ -204,7 +213,8 @@ fbAccountsRouter.post('/system-users/register', async (req, res) => {
     });
   }
 
-  // Step A: /me
+  // Step A: /me — validates the token resolves; supplies id+name only when the
+  // token carries public_profile (system-user tokens frequently don't).
   let me;
   try {
     me = await fetchMe(access_token);
@@ -212,6 +222,28 @@ fbAccountsRouter.post('/system-users/register', async (req, res) => {
     const message = err?.response?.data?.error?.message || 'Token verification failed (/me)';
     return res.status(400).json({ error: message });
   }
+
+  // Step A2: authoritative identity + expiry via debug_token (app access token).
+  // /me omits id/name without public_profile, so debug_token's user_id is the
+  // source of truth; fall back to /me only if debug_token is unavailable.
+  const dbg = await fetchDebugToken(access_token);
+  // A dead/revoked token can still echo a user_id — reject is_valid:false up front.
+  if (dbg && dbg.is_valid === false) {
+    return res.status(400).json({
+      error: 'This token is reported invalid by Meta (is_valid:false) — it may be expired ' +
+             'or revoked. Re-generate the System User token.',
+    });
+  }
+  const fbUserId = dbg?.user_id || me?.id || null;
+  if (!fbUserId) {
+    return res.status(400).json({
+      error: 'Could not resolve the system user id from this token. /me returned no id ' +
+             '(token likely lacks public_profile) and debug_token returned no user_id. ' +
+             'Re-generate the System User token, or verify META_APP_ID/META_APP_SECRET.',
+    });
+  }
+  const suName = me?.name || `System User ${fbUserId}`;
+  const expiresAt = expiresAtToIso(dbg?.expires_at);
 
   // Step B: /me/adaccounts
   let adAccounts;
@@ -223,6 +255,12 @@ fbAccountsRouter.post('/system-users/register', async (req, res) => {
   }
 
   const bms = collectBusinessManagers(adAccounts);
+  if (bms.size === 0) {
+    return res.status(422).json({
+      error: 'This token sees no ad accounts under any Business Manager — nothing to register. ' +
+             'Assign ad accounts (and their owning BM) to this system user in Meta, then retry.',
+    });
+  }
 
   // Step C: authz via OAuth user's /me/businesses (must run before any write)
   let oauthBusinesses;
@@ -242,13 +280,11 @@ fbAccountsRouter.post('/system-users/register', async (req, res) => {
     });
   }
 
-  // Step D: expiry (non-fatal)
-  const expiresAt = await fetchTokenExpiry(access_token);
-
   // Step E: persist. See persistRegistration for the partial-write contract.
   try {
     await persistRegistration({
-      me,
+      fbUserId,
+      name: suName,
       businessManagers: [...bms.values()],
       adAccounts,
       accessToken: access_token,
@@ -262,7 +298,7 @@ fbAccountsRouter.post('/system-users/register', async (req, res) => {
   }
 
   return res.json({
-    system_user: { id: me.id, name: me.name },
+    system_user: { id: fbUserId, name: suName },
     business_managers: [...bms.values()],
     ad_accounts_wired: adAccounts.filter((a) => a.business && a.business.id).length,
     expires_at: expiresAt,
@@ -300,10 +336,32 @@ fbAccountsRouter.post('/system-users/:fbUserId/:bmId/revalidate', async (req, re
     return res.status(400).json({ error: message });
   }
 
-  // Step A2: guard against token identity drift. A rotated/swapped token may
-  // still be live but now resolve to a DIFFERENT user. Treat that as a
-  // validation failure and bail before touching ad-account statuses.
-  if (me.id !== fbUserId) {
+  // Step A2: resolve the token's identity via debug_token (app token), since /me
+  // omits id without public_profile.
+  const dbg = await fetchDebugToken(accessToken);
+  // A dead/revoked token can still echo a user_id — treat is_valid:false as failure.
+  if (dbg && dbg.is_valid === false) {
+    try {
+      await FacebookAuthDB.markValidation({ fb_user_id: fbUserId, business_manager_id: bmId, ok: false });
+    } catch (markErr) {
+      console.error('[fb-accounts] markValidation(false) failed:', markErr);
+    }
+    return res.status(401).json({ error: 'Token is reported invalid by Meta (is_valid:false) — expired or revoked.' });
+  }
+  const resolvedId = dbg?.user_id || me?.id || null;
+  // If neither debug_token nor /me yields an id, the identity is UNCONFIRMABLE.
+  // Do not mark the row healthy on an unverified identity — return inconclusive and
+  // leave the existing validation state untouched (a transient debug_token blip must
+  // not flip a token to healthy OR unhealthy).
+  if (!resolvedId) {
+    return res.status(422).json({
+      error: 'Revalidation inconclusive: could not confirm the token identity ' +
+             '(debug_token unavailable and token has no public_profile). Try again shortly.',
+    });
+  }
+  // Guard against token identity drift: a rotated/swapped token may still be live
+  // but resolve to a DIFFERENT user.
+  if (resolvedId !== fbUserId) {
     try {
       await FacebookAuthDB.markValidation({
         fb_user_id: fbUserId,
@@ -314,7 +372,7 @@ fbAccountsRouter.post('/system-users/:fbUserId/:bmId/revalidate', async (req, re
       console.error('[fb-accounts] markValidation(false) failed:', markErr);
     }
     return res.status(409).json({
-      error: `token identity drift: stored ${fbUserId}, token resolves to ${me.id}`,
+      error: `token identity drift: stored ${fbUserId}, token resolves to ${resolvedId}`,
     });
   }
 
@@ -326,8 +384,10 @@ fbAccountsRouter.post('/system-users/:fbUserId/:bmId/revalidate', async (req, re
     console.warn('[fb-accounts] revalidate: /me/adaccounts failed:', err?.message || err);
   }
 
-  // Step D: expiry
-  const expiresAt = await fetchTokenExpiry(accessToken);
+  // Step D: expiry (from the debug_token call above). undefined when debug_token was
+  // unavailable, so markValidation leaves a previously-stored expiry intact instead
+  // of wiping it to NULL.
+  const expiresAt = dbg ? expiresAtToIso(dbg.expires_at) : undefined;
 
   // Persist
   try {
@@ -345,10 +405,10 @@ fbAccountsRouter.post('/system-users/:fbUserId/:bmId/revalidate', async (req, re
   }
 
   return res.json({
-    system_user: { id: me.id, name: me.name },
+    system_user: { id: fbUserId, name: me?.name || stored.name || `System User ${fbUserId}` },
     business_managers: [{ id: bmId }],
     ad_accounts_wired: adAccounts.filter((a) => a.business && a.business.id === bmId).length,
-    expires_at: expiresAt,
+    expires_at: expiresAt ?? null,
     validated_at: new Date().toISOString(),
   });
 });
