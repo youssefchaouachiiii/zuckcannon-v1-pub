@@ -57,7 +57,10 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
   try {
     const rules = await RulesEngineDB.listActiveRules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
-    const defaultToken = systemUserTokens[0]?.access_token || null;
+    // FIX: defaultToken must come from the maintained system_users table (where the FB
+    // Accounts UI writes renewals), not the legacy/stale system_user_tokens table.
+    const healthyDefault = await FacebookAuthDB.getAnyHealthySystemUser();
+    const defaultToken = healthyDefault?.access_token || systemUserTokens[0]?.access_token || null;
 
     const cachedCampaigns = await FacebookCacheDB.getCampaigns();
     await RulesEngineDB.autoAssignVerticalLabels(cachedCampaigns);
@@ -234,7 +237,9 @@ rulesEngineN8nRouter.get('/active-schedules', async (req, res) => {
   try {
     const schedules = await RulesEngineDB.listActiveSchedules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
-    const token = systemUserTokens[0]?.access_token || null;
+    // FIX: prefer a healthy system_users token (renewals land there, not system_user_tokens)
+    const healthyDefault = await FacebookAuthDB.getAnyHealthySystemUser();
+    const token = healthyDefault?.access_token || systemUserTokens[0]?.access_token || null;
     const resolveEntityToken = makeTokenResolver(token);
 
     const resolved = await Promise.all(
@@ -264,7 +269,9 @@ rulesEngineN8nRouter.get('/schedules/enforcement', async (req, res) => {
   try {
     const schedules = await RulesEngineDB.listActiveSchedules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
-    const token = systemUserTokens[0]?.access_token || null;
+    // FIX: prefer a healthy system_users token (renewals land there, not system_user_tokens)
+    const healthyDefault = await FacebookAuthDB.getAnyHealthySystemUser();
+    const token = healthyDefault?.access_token || systemUserTokens[0]?.access_token || null;
     const resolveEntityToken = makeTokenResolver(token);
 
     const now = new Date();
