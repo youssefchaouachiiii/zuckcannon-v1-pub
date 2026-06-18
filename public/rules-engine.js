@@ -209,6 +209,7 @@ const RULE_TEMPLATES = [
     conditions: [
       { metric: 'link_clicks', operator: 'gt', value: 100, lookback: 'today' },
       { metric: 'lp_views', operator: 'lt', value: 15, lookback: 'today' },
+      { metric: 'conversions', operator: 'eq', value: 0, lookback: 'today' },
     ],
   },
   {
