@@ -36,6 +36,7 @@ import { describeActor } from "./backend/utils/fb-actor.js";
 import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
 import { rulesEngineN8nRouter } from "./backend/routes/rules-engine-n8n.js";
 import { rulesEngineUiRouter } from "./backend/routes/rules-engine-ui.js";
+import { fbRulesSync } from "./backend/utils/fb-rules-sync.js";
 
 // ffmpeg set up
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -8391,3 +8392,17 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   const startupMessage = `<b>✅ Server Started Successfully</b>\n<b>Port:</b> ${PORT}\n<b>Environment:</b> ${process.env.NODE_ENV || "development"}\n<b>Time:</b> ${new Date().toLocaleString()}`;
   sendTelegramNotification(startupMessage, false);
 });
+
+// Light periodic mirror of FB-native automated rules (serialized inside syncAllFbRules).
+// Interval kept modest — VPS is shared with prod n8n. Default 4h.
+const FB_RULES_SYNC_MS = Number(process.env.FB_RULES_SYNC_MS || 4 * 60 * 60 * 1000);
+if (process.env.FB_RULES_SYNC_DISABLED !== "true") {
+  setTimeout(() => {
+    fbRulesSync.syncAllFbRules().then(r => console.log(`[fb-rules-sync] startup: ${r.synced.length} accounts, ${r.errors.length} errors`))
+      .catch(e => console.error("[fb-rules-sync] startup failed", e.message));
+  }, 30_000); // delay so boot + cache warm first
+  setInterval(() => {
+    fbRulesSync.syncAllFbRules().then(r => console.log(`[fb-rules-sync] tick: ${r.synced.length} accounts, ${r.errors.length} errors`))
+      .catch(e => console.error("[fb-rules-sync] tick failed", e.message));
+  }, FB_RULES_SYNC_MS);
+}

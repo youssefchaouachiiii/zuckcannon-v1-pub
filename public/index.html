@@ -2930,7 +2930,10 @@
         <div id="re-tab-rules" class="re-tab-content">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="margin:0;">Rules</h3>
-            <button id="new-rule-btn" class="btn-primary">+ New Rule</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button id="new-rule-btn" class="btn-primary">+ New Rule</button>
+              <button class="btn-secondary" onclick="syncFbRules()">Sync FB rules</button>
+            </div>
           </div>
           <div id="rule-editor" style="display:none;background:#f9f9f9;border:1px solid #eee;border-radius:6px;padding:16px;margin-bottom:16px;">
             <h4 id="rule-editor-title" style="margin:0 0 12px 0;">New Rule</h4>
@@ -3043,11 +3046,11 @@
             <thead>
               <tr style="border-bottom:2px solid #eee;text-align:left;">
                 <th style="padding:8px;">Name</th><th style="padding:8px;">Scope</th>
-                <th style="padding:8px;">Action</th><th style="padding:8px;">Status</th>
+                <th style="padding:8px;">Action</th><th style="text-align:left;padding:8px;">Applied to</th><th style="padding:8px;">Status</th>
                 <th style="padding:8px;"></th>
               </tr>
             </thead>
-            <tbody id="rules-body"><tr><td colspan="5" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
+            <tbody id="rules-body"><tr><td colspan="6" style="padding:12px 8px;color:#888;">Loading...</td></tr></tbody>
           </table>
         </div>
         <!-- SCHEDULES TAB -->

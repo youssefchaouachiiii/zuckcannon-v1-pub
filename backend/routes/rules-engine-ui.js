@@ -2,6 +2,9 @@
 import express from 'express';
 import { RulesEngineDB } from '../db/rules-engine-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
+import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
+import { buildAppliedTo } from '../utils/applied-to.js';
+import { fbRulesSync } from '../utils/fb-rules-sync.js';
 
 export const rulesEngineUiRouter = express.Router();
 
@@ -144,10 +147,26 @@ rulesEngineUiRouter.post('/rules/from-template', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// helper (exported for unit testing)
+export async function attachAppliedTo(rules) {
+  const [accountBm, campaignAccount] = await Promise.all([
+    FacebookAuthDB.getAccountBmMap(),
+    FacebookCacheDB.getCampaignAccountMap(),
+  ]);
+  const out = [];
+  for (const r of rules) {
+    const assignments = await RulesEngineDB.getAssignmentsForRule(r.id);
+    out.push({ ...r, applied_to: buildAppliedTo(assignments, { accountBm, campaignAccount }) });
+  }
+  return out;
+}
+
 // --- Rules CRUD ---
 rulesEngineUiRouter.get('/rules', async (req, res) => {
-  try { res.json(await RulesEngineDB.listAllRules()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const rules = await RulesEngineDB.listAllRules();
+    res.json(await attachAppliedTo(rules));
+  } catch (err) { res.status(500).json({ error: 'Failed to list rules' }); }
 });
 
 rulesEngineUiRouter.get('/rules/:id', async (req, res) => {
@@ -499,4 +518,40 @@ rulesEngineUiRouter.delete('/tags/global', async (req, res) => {
     await RulesEngineDB.removeTagGlobally(tag);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- FB Native Rules Mirror ---
+rulesEngineUiRouter.get('/fb-rules', async (req, res) => {
+  try {
+    const rules = await RulesEngineDB.listAllFbNativeRules();
+    const synced_at_max = rules.reduce((m, r) => (r.synced_at > m ? r.synced_at : m), '');
+    res.json({ rules, synced_at_max });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list FB rules' });
+  }
+});
+
+rulesEngineUiRouter.post('/fb-rules/sync', async (req, res) => {
+  try {
+    const { account_id } = req.body || {};
+    if (account_id) return res.json(await fbRulesSync.syncFbRulesForAccount(account_id));
+    res.json(await fbRulesSync.syncAllFbRules());
+  } catch (err) {
+    res.status(err.code === 'no_system_user' || err.code === 'no_bm_for_account' ? 403 : 500)
+      .json({ error: err.message, code: err.code });
+  }
+});
+
+rulesEngineUiRouter.patch('/fb-rules/:metaRuleId/status', async (req, res) => {
+  try {
+    const rule = await RulesEngineDB.getFbNativeRule(req.params.metaRuleId);
+    if (!rule) return res.status(404).json({ error: 'FB rule not found in mirror' });
+    const enabled = req.body?.enabled === true;
+    const { status } = await fbRulesSync.setFbRuleStatus(rule.meta_rule_id, rule.account_id, enabled);
+    await RulesEngineDB.upsertFbNativeRule({ ...rule, status, raw_json: rule.raw_json || '{}' });
+    res.json({ status });
+  } catch (err) {
+    res.status(err.code === 'no_system_user' || err.code === 'no_bm_for_account' ? 403 : 500)
+      .json({ error: err.message, code: err.code });
+  }
 });

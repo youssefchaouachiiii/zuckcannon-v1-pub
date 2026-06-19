@@ -389,6 +389,15 @@ export const FacebookCacheDB = {
     return row ? row.account_id : null;
   },
 
+  async getCampaignAccountMap() {
+    const rows = await db.allAsync('SELECT id, account_id FROM cached_campaigns');
+    const map = {};
+    for (const r of rows) {
+      map[String(r.id)] = String(r.account_id).replace(/^act_/, '');
+    }
+    return map;
+  },
+
   // Pixels
   async savePixels(pixels) {
     const stmt = db.prepare(`

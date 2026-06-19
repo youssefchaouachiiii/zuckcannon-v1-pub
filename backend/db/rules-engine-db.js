@@ -96,6 +96,23 @@ async function initializeDatabase() {
     PRIMARY KEY (campaign_id, label_type, label_value)
   )`);
 
+  await db.runAsync(`CREATE TABLE IF NOT EXISTS fb_native_rules (
+    meta_rule_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    bm_id TEXT,
+    bm_name TEXT,
+    name TEXT,
+    status TEXT,
+    action_summary TEXT,
+    condition_summary TEXT,
+    schedule_summary TEXT,
+    applied_to_json TEXT,
+    created_by TEXT,
+    raw_json TEXT,
+    synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  await db.runAsync(`CREATE INDEX IF NOT EXISTS idx_fb_native_rules_account ON fb_native_rules(account_id)`);
+
   await db.runAsync(`CREATE TABLE IF NOT EXISTS schedules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -394,6 +411,37 @@ export const RulesEngineDB = {
       [labelType, labelValue]
     );
   },
+
+  // --- FB Native Rules ---
+  async upsertFbNativeRule(r) {
+    await db.runAsync(`
+      INSERT INTO fb_native_rules
+        (meta_rule_id, account_id, bm_id, bm_name, name, status, action_summary,
+         condition_summary, schedule_summary, applied_to_json, created_by, raw_json, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(meta_rule_id) DO UPDATE SET
+        account_id=excluded.account_id, bm_id=excluded.bm_id, bm_name=excluded.bm_name,
+        name=excluded.name, status=excluded.status, action_summary=excluded.action_summary,
+        condition_summary=excluded.condition_summary, schedule_summary=excluded.schedule_summary,
+        applied_to_json=excluded.applied_to_json, created_by=excluded.created_by,
+        raw_json=excluded.raw_json, synced_at=CURRENT_TIMESTAMP
+    `, [r.meta_rule_id, r.account_id, r.bm_id, r.bm_name, r.name, r.status, r.action_summary,
+        r.condition_summary, r.schedule_summary, r.applied_to_json, r.created_by, r.raw_json]);
+  },
+  async listAllFbNativeRules() {
+    return db.allAsync('SELECT * FROM fb_native_rules ORDER BY bm_name, account_id, name');
+  },
+  async listFbNativeRulesByAccount(accountId) {
+    return db.allAsync('SELECT * FROM fb_native_rules WHERE account_id = ? ORDER BY name',
+      [String(accountId).replace(/^act_/, '')]);
+  },
+  async getFbNativeRule(metaRuleId) {
+    return (await db.getAsync('SELECT * FROM fb_native_rules WHERE meta_rule_id = ?', [metaRuleId])) || null;
+  },
+  async deleteFbNativeRule(metaRuleId) {
+    await db.runAsync('DELETE FROM fb_native_rules WHERE meta_rule_id = ?', [metaRuleId]);
+  },
+
   async bulkSetLabelByPattern(pattern, labelType, labelValue, campaignList) {
     const regex = new RegExp(pattern, 'i');
     const matching = campaignList.filter(c => regex.test(c.name));
