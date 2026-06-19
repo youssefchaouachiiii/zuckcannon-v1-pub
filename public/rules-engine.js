@@ -349,6 +349,30 @@ async function loadRules() {
         </td>
       </tr>
     `).join('');
+    try {
+      const fb = await (await fetch('/api/rules-engine/ui/fb-rules')).json();
+      const syncedLabel = fb.synced_at_max ? `synced ${fb.synced_at_max} UTC` : 'not synced yet';
+      const fbRows = (fb.rules || []).map(r => {
+        const applied = `${r.bm_name ? r.bm_name + ' · ' : ''}Ad Account ${r.account_id}` +
+          (r.applied_to_json ? ` · ${(JSON.parse(r.applied_to_json).count) || 0} ${(JSON.parse(r.applied_to_json).entity_type || 'CAMPAIGN').toLowerCase()}` : '');
+        const enabled = r.status === 'ENABLED';
+        const acctNum = String(r.account_id).replace(/^act_/, '');
+        return `<tr style="border-bottom:1px solid #f0f0f0;background:#fbfdff;">
+          <td style="padding:8px;">${escapeHtml(r.name || '')} <span title="Managed in Facebook — single source of truth" style="background:#e7f0ff;color:#1d4ed8;padding:1px 5px;border-radius:3px;font-size:10px;">FB</span></td>
+          <td style="padding:8px;color:#888;">${escapeHtml((JSON.parse(r.applied_to_json || '{}').entity_type || 'campaign').toLowerCase())}</td>
+          <td style="padding:8px;">${escapeHtml(r.action_summary || '')}</td>
+          <td style="padding:8px;">${escapeHtml(applied)}</td>
+          <td style="padding:8px;">
+            <label style="font-size:11px;cursor:pointer;"><input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleFbRule('${escapeHtml(r.meta_rule_id)}', this.checked)"> ${enabled ? 'Enabled' : 'Disabled'}</label>
+            <div style="font-size:10px;color:#aaa;">${escapeHtml(syncedLabel)}</div>
+          </td>
+          <td style="padding:8px;white-space:nowrap;">
+            <a class="btn-sm" href="https://adsmanager.facebook.com/adsmanager/manage/rules?act=${encodeURIComponent(acctNum)}" target="_blank" rel="noopener">View in Facebook ↗</a>
+          </td>
+        </tr>`;
+      }).join('');
+      if (fbRows) tbody.insertAdjacentHTML('beforeend', fbRows);
+    } catch (e) { /* FB mirror is best-effort; engine rows still render */ }
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="6" style="padding:12px 8px;color:#dc3545;">Failed to load rules.</td></tr>';
   }
@@ -1268,6 +1292,26 @@ async function updateSetupChecklist() {
     // Silently ignore — checklist is non-critical
   }
 }
+
+async function toggleFbRule(metaRuleId, enabled) {
+  const res = await fetch(`/api/rules-engine/ui/fb-rules/${encodeURIComponent(metaRuleId)}/status`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    window.showError?.(j.code === 'no_system_user' ? 'No system user for this account — cannot toggle.' : 'Failed to toggle FB rule.');
+    await loadRules(); // revert UI to server truth
+    return;
+  }
+  await loadRules();
+}
+async function syncFbRules() {
+  window.showSuccess?.('Syncing FB rules…', 2000);
+  await fetch('/api/rules-engine/ui/fb-rules/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  await loadRules();
+}
+window.toggleFbRule = toggleFbRule;
+window.syncFbRules = syncFbRules;
 
 // Expose globals
 window.addCondition = addCondition;
