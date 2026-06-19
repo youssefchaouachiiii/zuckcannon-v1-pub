@@ -4,6 +4,7 @@ import { RulesEngineDB } from '../db/rules-engine-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
 import { buildAppliedTo } from '../utils/applied-to.js';
+import { fbRulesSync } from '../utils/fb-rules-sync.js';
 
 export const rulesEngineUiRouter = express.Router();
 
@@ -520,4 +521,40 @@ rulesEngineUiRouter.delete('/tags/global', async (req, res) => {
     await RulesEngineDB.removeTagGlobally(tag);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- FB Native Rules Mirror ---
+rulesEngineUiRouter.get('/fb-rules', async (req, res) => {
+  try {
+    const rules = await RulesEngineDB.listAllFbNativeRules();
+    const synced_at_max = rules.reduce((m, r) => (r.synced_at > m ? r.synced_at : m), '');
+    res.json({ rules, synced_at_max });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list FB rules' });
+  }
+});
+
+rulesEngineUiRouter.post('/fb-rules/sync', async (req, res) => {
+  try {
+    const { account_id } = req.body || {};
+    if (account_id) return res.json(await fbRulesSync.syncFbRulesForAccount(account_id));
+    res.json(await fbRulesSync.syncAllFbRules());
+  } catch (err) {
+    res.status(err.code === 'no_system_user' || err.code === 'no_bm_for_account' ? 403 : 500)
+      .json({ error: err.message, code: err.code });
+  }
+});
+
+rulesEngineUiRouter.patch('/fb-rules/:metaRuleId/status', async (req, res) => {
+  try {
+    const rule = await RulesEngineDB.getFbNativeRule(req.params.metaRuleId);
+    if (!rule) return res.status(404).json({ error: 'FB rule not found in mirror' });
+    const enabled = req.body?.enabled === true;
+    const { status } = await fbRulesSync.setFbRuleStatus(rule.meta_rule_id, rule.account_id, enabled);
+    await RulesEngineDB.upsertFbNativeRule({ ...rule, status, raw_json: rule.raw_json || '{}' });
+    res.json({ status });
+  } catch (err) {
+    res.status(err.code === 'no_system_user' || err.code === 'no_bm_for_account' ? 403 : 500)
+      .json({ error: err.message, code: err.code });
+  }
 });

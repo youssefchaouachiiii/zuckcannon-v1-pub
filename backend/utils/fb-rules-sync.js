@@ -36,35 +36,37 @@ export function normalizeFbRule(api, { account_id, bm_id, bm_name }) {
   };
 }
 
-export async function syncFbRulesForAccount(accountId) {
-  const { token, bm_id, bm_name } = await resolveSystemUserTokenForAccount(accountId);
-  const acct = String(accountId).replace(/^act_/, '');
-  const url = `${GRAPH}/act_${acct}/adrules_library`;
-  const resp = await axios.get(url, {
-    params: { fields: 'id,name,evaluation_spec,execution_spec,schedule_spec,status,created_by', access_token: token },
-  });
-  const rules = resp.data?.data || [];
-  for (const r of rules) {
-    await RulesEngineDB.upsertFbNativeRule(normalizeFbRule(r, { account_id: acct, bm_id, bm_name }));
-  }
-  return { account_id: acct, count: rules.length };
-}
+export const fbRulesSync = {
+  async syncFbRulesForAccount(accountId) {
+    const { token, bm_id, bm_name } = await resolveSystemUserTokenForAccount(accountId);
+    const acct = String(accountId).replace(/^act_/, '');
+    const url = `${GRAPH}/act_${acct}/adrules_library`;
+    const resp = await axios.get(url, {
+      params: { fields: 'id,name,evaluation_spec,execution_spec,schedule_spec,status,created_by', access_token: token },
+    });
+    const rules = resp.data?.data || [];
+    for (const r of rules) {
+      await RulesEngineDB.upsertFbNativeRule(normalizeFbRule(r, { account_id: acct, bm_id, bm_name }));
+    }
+    return { account_id: acct, count: rules.length };
+  },
 
-export async function syncAllFbRules() {
-  const map = await FacebookAuthDB.getAccountBmMap();
-  const synced = [];
-  const errors = [];
-  // SERIALIZED — VPS infra constraint (no fan-out).
-  for (const accountId of Object.keys(map)) {
-    try { synced.push(await syncFbRulesForAccount(accountId)); }
-    catch (e) { errors.push({ account_id: accountId, code: e.code || 'error', message: e.message }); }
-  }
-  return { synced, errors };
-}
+  async syncAllFbRules() {
+    const map = await FacebookAuthDB.getAccountBmMap();
+    const synced = [];
+    const errors = [];
+    // SERIALIZED — VPS infra constraint (no fan-out).
+    for (const accountId of Object.keys(map)) {
+      try { synced.push(await fbRulesSync.syncFbRulesForAccount(accountId)); }
+      catch (e) { errors.push({ account_id: accountId, code: e.code || 'error', message: e.message }); }
+    }
+    return { synced, errors };
+  },
 
-export async function setFbRuleStatus(metaRuleId, accountId, enabled) {
-  const { token } = await resolveSystemUserTokenForAccount(accountId);
-  const status = enabled ? 'ENABLED' : 'DISABLED';
-  await axios.post(`${GRAPH}/${metaRuleId}`, null, { params: { status, access_token: token } });
-  return { status };
-}
+  async setFbRuleStatus(metaRuleId, accountId, enabled) {
+    const { token } = await resolveSystemUserTokenForAccount(accountId);
+    const status = enabled ? 'ENABLED' : 'DISABLED';
+    await axios.post(`${GRAPH}/${metaRuleId}`, null, { params: { status, access_token: token } });
+    return { status };
+  },
+};
