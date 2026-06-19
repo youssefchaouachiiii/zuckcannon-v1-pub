@@ -328,7 +328,7 @@ async function loadRules() {
     if (!res.ok) throw new Error('Server error');
     const rules = await res.json();
     if (rules.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:12px 8px;color:#888;">No rules yet. Use a template above.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:12px 8px;color:#888;">No rules yet. Use a template above.</td></tr>';
       return;
     }
     tbody.innerHTML = rules.map(r => `
@@ -336,6 +336,9 @@ async function loadRules() {
         <td style="padding:8px;">${escapeHtml(r.name)}</td>
         <td style="padding:8px;">${escapeHtml(r.scope)}</td>
         <td style="padding:8px;">${escapeHtml(r.action)}</td>
+        <td style="padding:8px;" title="${escapeHtml((r.applied_to?.detail || []).map(d => (d.bm_name ? d.bm_name + ' · ' : '') + d.account_name).join('\n'))}">
+          ${escapeHtml(r.applied_to?.inline || 'Unassigned')}
+        </td>
         <td style="padding:8px;">
           ${r.is_dry_run ? '<span style="background:#fff3cd;color:#856404;padding:2px 6px;border-radius:3px;font-size:11px;">DRY RUN</span> ' : ''}
           ${r.is_active ? '<span style="background:#d4edda;color:#155724;padding:2px 6px;border-radius:3px;font-size:11px;">Active</span>' : '<span style="background:#e2e3e5;color:#383d41;padding:2px 6px;border-radius:3px;font-size:11px;">Inactive</span>'}
@@ -347,7 +350,7 @@ async function loadRules() {
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:12px 8px;color:#dc3545;">Failed to load rules.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:12px 8px;color:#dc3545;">Failed to load rules.</td></tr>';
   }
 }
 
