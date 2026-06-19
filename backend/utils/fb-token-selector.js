@@ -75,6 +75,31 @@ export async function selectFbToken(userId, adAccountId) {
   return null;
 }
 
+/**
+ * Resolves a system-user token for an account, with hard-fail (no OAuth fallback).
+ *
+ * This function:
+ *   1. Looks up the account in the BM map.
+ *   2. Resolves the BM's system-user token.
+ *   3. Returns the token, or throws if either lookup fails.
+ *
+ * NEVER returns an OAuth token. NEVER falls back to OAuth. If no system user exists, throws.
+ *
+ * @param {string|number} accountId  Can be 'act_123' or '123'; will strip 'act_' prefix.
+ * @returns {Promise<{ token: string, bm_id: string, bm_name: string }>}
+ * @throws {Error} with `.code='no_bm_for_account'` if account not found, or
+ *                 with `.code='no_system_user'` and `.bm_name` if no system-user token.
+ */
+export async function resolveSystemUserTokenForAccount(accountId) {
+  const acct = String(accountId).replace(/^act_/, '');
+  const map = await FacebookAuthDB.getAccountBmMap();
+  const bm = map[acct];
+  if (!bm) { const e = new Error(`No BM mapped for account ${acct}`); e.code = 'no_bm_for_account'; throw e; }
+  const tok = await FacebookAuthDB.getSystemUserToken(bm.bm_id);
+  if (!tok?.access_token) { const e = new Error(`No system user for BM ${bm.bm_name}`); e.code = 'no_system_user'; e.bm_name = bm.bm_name; throw e; }
+  return { token: tok.access_token, bm_id: bm.bm_id, bm_name: bm.bm_name };
+}
+
 function isHealthy(systemUser) {
   if (!systemUser) return false;
   if (systemUser.last_validation_ok !== 1) return false;
