@@ -553,7 +553,7 @@ export const FacebookAuthDB = {
     const map = {};
     for (const r of rows) {
       const key = String(r.account_id).replace(/^act_/, '');
-      map[key] = { bm_id: String(r.bm_id), bm_name: r.bm_name };
+      map[key] = { bm_id: String(r.bm_id), bm_name: String(r.bm_name ?? '') };
     }
     return map;
   },
