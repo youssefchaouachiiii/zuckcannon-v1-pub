@@ -41,4 +41,20 @@ describe('fb-rules routes', () => {
     expect(res.body.status).toBe('DISABLED');
     expect(up).toHaveBeenCalled();
   });
+
+  test('POST /fb-rules/sync → 403 with code when no system user', async () => {
+    const err = new Error('no su'); err.code = 'no_system_user';
+    jest.spyOn(sync, 'syncFbRulesForAccount').mockRejectedValue(err);
+    const res = await request(app()).post('/api/rules-engine/ui/fb-rules/sync').send({ account_id: '101' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('no_system_user');
+  });
+
+  test('POST /fb-rules/sync → 200 happy path (syncAllFbRules)', async () => {
+    jest.spyOn(sync, 'syncAllFbRules').mockResolvedValue({ synced: [{ account_id: '101', count: 2 }], errors: [] });
+    const res = await request(app()).post('/api/rules-engine/ui/fb-rules/sync').send({});
+    expect(res.status).toBe(200);
+    expect(res.body.synced.length).toBe(1);
+    expect(res.body.errors.length).toBe(0);
+  });
 });
