@@ -104,8 +104,19 @@ async function initializeDatabase() {
     end_time TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'America/New_York',
     is_active INTEGER DEFAULT 1,
+    is_dry_run INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  // Migration: add is_dry_run to pre-existing schedules tables. DEFAULT 1 means
+  // every existing schedule becomes dry-run (no live FB flip) until explicitly
+  // switched to LIVE via the UI toggle. Idempotent — runs on each startup.
+  {
+    const cols = await db.allAsync(`PRAGMA table_info(schedules)`);
+    if (!cols.some(c => c.name === 'is_dry_run')) {
+      await db.runAsync(`ALTER TABLE schedules ADD COLUMN is_dry_run INTEGER NOT NULL DEFAULT 1`);
+    }
+  }
 
   await db.runAsync(`CREATE TABLE IF NOT EXISTS schedule_assignments (
     schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
@@ -398,9 +409,9 @@ export const RulesEngineDB = {
   // --- Schedules ---
   async createSchedule(data) {
     const { lastID } = await db.runAsync(
-      `INSERT INTO schedules (name, days_json, start_time, end_time, timezone, is_active)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [data.name, data.days_json, data.start_time, data.end_time, data.timezone, data.is_active ?? 1]
+      `INSERT INTO schedules (name, days_json, start_time, end_time, timezone, is_active, is_dry_run)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [data.name, data.days_json, data.start_time, data.end_time, data.timezone, data.is_active ?? 1, data.is_dry_run ?? 1]
     );
     return db.getAsync('SELECT * FROM schedules WHERE id = ?', [lastID]);
   },
@@ -412,8 +423,8 @@ export const RulesEngineDB = {
   },
   async updateSchedule(id, data) {
     await db.runAsync(
-      `UPDATE schedules SET name=?, days_json=?, start_time=?, end_time=?, timezone=?, is_active=? WHERE id=?`,
-      [data.name, data.days_json, data.start_time, data.end_time, data.timezone, data.is_active, id]
+      `UPDATE schedules SET name=?, days_json=?, start_time=?, end_time=?, timezone=?, is_active=?, is_dry_run=? WHERE id=?`,
+      [data.name, data.days_json, data.start_time, data.end_time, data.timezone, data.is_active, data.is_dry_run ?? 1, id]
     );
     return db.getAsync('SELECT * FROM schedules WHERE id = ?', [id]);
   },

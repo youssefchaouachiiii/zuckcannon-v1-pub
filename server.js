@@ -32,6 +32,7 @@ import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
 import { redactAxiosError } from "./backend/utils/redact-axios-error.js";
 import { selectFbToken } from "./backend/utils/fb-token-selector.js";
 import { resolveFbToken } from "./backend/utils/fb-token-resolver.js";
+import { describeActor } from "./backend/utils/fb-actor.js";
 import { fbAccountsRouter } from "./backend/routes/fb-accounts.js";
 import { rulesEngineN8nRouter } from "./backend/routes/rules-engine-n8n.js";
 import { rulesEngineUiRouter } from "./backend/routes/rules-engine-ui.js";
@@ -2142,6 +2143,7 @@ app.post("/api/create-campaign", ensureAuthenticatedAPI, validateRequest.createC
       campaign: newCampaign,
       pacing_type: newCampaign.pacing_type || pacingType,
       message: `Campaign "${name}" created successfully`,
+      acted_as: await describeActor(tokenData),
     });
   } catch (error) {
     console.error("Error creating campaign:", error.response?.data || error.message);
@@ -2163,6 +2165,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
   const tokenData = await resolveFbToken(req, req.body.account_id, { write: true });
   if (!tokenData?.token) return res.status(403).json({ error: 'no_fb_token_for_account', detail: tokenData?.reason, ad_account: req.body.account_id });
   const userAccessToken = tokenData.token;
+  const acted_as = await describeActor(tokenData);
 
   if (!userAccessToken) {
     return res.status(403).json({
@@ -2456,7 +2459,7 @@ app.post("/api/create-ad-set", ensureAuthenticatedAPI, validateRequest.createAdS
 
       // return the adset info for the creative upload section
       console.log(`Successfully created ad set ${req.body.name} in act_${req.body.account_id}`);
-      res.status(200).json(response.data);
+      res.status(200).json({ ...response.data, acted_as });
     } catch (err) {
       console.log("There was an error creating your ad set.");
       console.log("Facebook API Error:", JSON.stringify(err.response?.data, null, 2));
@@ -2599,6 +2602,7 @@ app.post("/api/create-ad-set-multiple", ensureAuthenticatedAPI, validateRequest.
       failed_adsets: failed_adsets,
       total_created: created_adsets.length,
       total_failed: failed_adsets.length,
+      acted_as: await describeActor(tokenData),
     });
   } catch (error) {
     console.error("Error creating multi-campaign ad sets:", error.response?.data || error.message);
@@ -2636,6 +2640,7 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
   }
 
   const results = [];
+  const actorByAccount = {}; // ad_account_id -> anti-ban actor proof (describeActor), surfaced per result
 
   try {
     // Resolve a write token per account, then build one batch op per account that has a token.
@@ -2655,11 +2660,13 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
             ad_account_id: accountId,
             error: "no_fb_token_for_account",
             detail: td?.reason,
+            acted_as: await describeActor(td),
           });
           return null;
         }
 
         if (!firstResolvedToken) firstResolvedToken = td.token;
+        actorByAccount[accountId] = await describeActor(td);
         const normalizedAccountId = accountId.replace(/^act_/, "");
 
         // Build campaign payload
@@ -2742,6 +2749,7 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
           success: true,
           ad_account_id: accountId,
           campaign_id: result.data.id,
+          acted_as: actorByAccount[accountId],
         });
       } else {
         console.error(`Failed to create campaign in account ${accountId}:`, result.error);
@@ -2750,6 +2758,7 @@ app.post("/api/create-campaign-multiple", ensureAuthenticatedAPI, validateReques
           success: false,
           ad_account_id: accountId,
           error: result.error,
+          acted_as: actorByAccount[accountId],
         });
       }
     });
@@ -3383,6 +3392,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
             id: newAdSetId,
             original_id: ad_set_id,
             message: "Ad set created successfully, but no ads could be duplicated (no creatives found)",
+            acted_as: await describeActor(tokenData),
           });
         }
 
@@ -3462,6 +3472,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           return res.json({
             success: true,
             partial: true,
+            acted_as: await describeActor(tokenData),
             mode: "cross_account_sync_batch",
             id: newAdSetId,
             original_id: ad_set_id,
@@ -3490,6 +3501,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           // Complete success
           return res.json({
             success: true,
+            acted_as: await describeActor(tokenData),
             mode: "cross_account_sync_batch",
             id: newAdSetId,
             original_id: ad_set_id,
@@ -3507,6 +3519,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
         id: newAdSetId,
         original_id: ad_set_id,
         message: "Ad set created successfully in target account",
+        acted_as: await describeActor(tokenData),
       });
     } else if (needsAsync) {
       // ASYNC/BATCH REQUEST FOR AD SET - Manual approach:
@@ -3687,6 +3700,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
       // STEP 4: RETURN SUCCESS WITH TRACKING INFO
       return res.json({
         success: true,
+        acted_as: await describeActor(tokenData),
         mode: "async_manual_chunked",
         id: newAdSetId,
         original_id: ad_set_id,
@@ -3748,6 +3762,7 @@ app.post("/api/duplicate-ad-set", async (req, res) => {
           original_id: ad_set_id,
           success: true,
           mode: "sync",
+          acted_as: await describeActor(tokenData),
         });
       } else {
         res.status(400).json({ error: "Failed to duplicate ad set" });
@@ -3977,6 +3992,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         mode: "sync",
         id: newCampaignId,
         message: "Campaign duplicated synchronously (no children detected)",
+        acted_as: await describeActor(tokenData),
       });
     }
 
@@ -4802,6 +4818,7 @@ app.post("/api/duplicate-campaign", async (req, res) => {
         adFailureCount === 0
           ? `Campaign duplicated successfully! Duplicating ${filteredAdOps.length} ads in ${adChunks.length} batches (${adsSkipped} skipped due to 50-ad limit). Check Meta Ads Manager after 1–5 minutes.`
           : `Campaign partially duplicated with errors. ${adChunks.length - adFailureCount}/${adChunks.length} ad batches queued, ${adFailureCount} failed. Check logs for details.`,
+      acted_as: await describeActor(tokenData),
     });
   } catch (err) {
     console.error("❌ Error duplicating campaign:", err.response?.data || err.message);
@@ -5741,7 +5758,9 @@ app.post("/api/create-ad-creative", async (req, res) => {
         return result;
       });
 
-      res.status(200).json(serializedResponse);
+      // Wrap in an object so we can carry the anti-ban actor proof alongside the per-ad results.
+      // Consumers normalize with `Array.isArray(data) ? data : data.results` (back-compat safe).
+      res.status(200).json({ results: serializedResponse, acted_as: await describeActor(tokenData) });
     }
 
     createAdCreativePromises();
@@ -6111,6 +6130,7 @@ app.post("/api/batch/create-ads", ensureAuthenticatedAPI, validateRequest.batchC
         error: r.error,
       })),
       rawResults: results,
+      acted_as: await describeActor(tokenData),
     });
   } catch (error) {
     console.error("Error in batch ad creation:", error.response?.data || error.message);
@@ -6778,7 +6798,7 @@ app.post("/api/creative-batches", async (req, res) => {
       return res.status(400).json({ error: "Batch name is required" });
     }
 
-    const batchId = await BatchDB.create(name, description);
+    const { id: batchId } = await BatchDB.create(name, description);
     const batch = await BatchDB.getById(batchId);
 
     res.json({ batch });

@@ -25,9 +25,6 @@
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
         </svg>
       </button>
-      <button class="rules-btn" title="Automated Rules">
-        <p>Manage Rules</p>
-      </button>
       <button class="create-multi-account-campaign-btn" title="Create Campaign for Multiple Ad Accounts">
         <p>+ Create Campaign (Multi-Account)</p>
       </button>
@@ -3082,6 +3079,12 @@
               <input type="time" id="schedule-start" value="08:00" />
               <span style="margin:0 6px;">to</span>
               <input type="time" id="schedule-end" value="20:00" />
+            </div>
+            <div style="margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="schedule-dry-run" checked />
+                <span><strong>Dry run</strong> — log the on/off decision only, do <em>not</em> change campaign status on Facebook. Uncheck to go LIVE.</span>
+              </label>
             </div>
             <div style="display:flex;gap:8px;">
               <button onclick="saveSchedule()" class="btn-primary">Save</button>

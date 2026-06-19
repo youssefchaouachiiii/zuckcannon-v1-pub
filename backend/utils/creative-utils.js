@@ -65,7 +65,7 @@ export async function processCreative(file, adAccountId) {
         mimeType
       )
       
-      const creativeId = await CreativeDB.create({
+      const { id: creativeId } = await CreativeDB.create({
         fileHash,
         fileName,
         originalName: file.originalname,
@@ -74,7 +74,7 @@ export async function processCreative(file, adAccountId) {
         fileSize: file.size,
         thumbnailPath: null // Will be updated after thumbnail creation
       })
-      
+
       creative = await CreativeDB.getById(creativeId)
       
       return {

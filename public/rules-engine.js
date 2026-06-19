@@ -663,8 +663,11 @@ async function loadSchedules() {
     ));
     tbody.innerHTML = schedules.map((s, i) => {
       const days = JSON.parse(s.days_json).map(d => DAY_NAMES[d]).join(', ');
+      const modeBadge = s.is_dry_run === 0
+        ? '<span style="background:#f8d7da;color:#842029;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">● LIVE</span>'
+        : '<span style="background:#fff3cd;color:#856404;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">DRY RUN</span>';
       return `<tr style="border-bottom:1px solid #f0f0f0;">
-        <td style="padding:8px;">${escapeHtml(s.name)}</td>
+        <td style="padding:8px;">${escapeHtml(s.name)}${modeBadge}</td>
         <td style="padding:8px;">${escapeHtml(days)}</td>
         <td style="padding:8px;">${escapeHtml(s.start_time)} – ${escapeHtml(s.end_time)} ET</td>
         <td style="padding:8px;"><button class="btn-secondary btn-sm sched-assign-btn" data-sched-id="${s.id}" data-sched-name="${escapeHtml(s.name)}">${counts[i]} campaign(s)</button></td>
@@ -692,6 +695,7 @@ async function editSchedule(id) {
   document.querySelectorAll('.day-picker input').forEach(el => { el.checked = days.includes(parseInt(el.value)); });
   document.getElementById('schedule-start').value = s.start_time;
   document.getElementById('schedule-end').value = s.end_time;
+  document.getElementById('schedule-dry-run').checked = s.is_dry_run !== 0;
   document.getElementById('schedule-editor').style.display = 'block';
 }
 
@@ -702,6 +706,7 @@ async function saveSchedule() {
     days, start_time: document.getElementById('schedule-start').value,
     end_time: document.getElementById('schedule-end').value,
     timezone: 'America/New_York', is_active: 1,
+    is_dry_run: document.getElementById('schedule-dry-run').checked ? 1 : 0,
   };
   const url = editingScheduleId ? `/api/rules-engine/ui/schedules/${editingScheduleId}` : '/api/rules-engine/ui/schedules';
   const method = editingScheduleId ? 'PUT' : 'POST';
@@ -1096,6 +1101,7 @@ function initRulesEnginePanel() {
     document.getElementById('schedule-name').value = '';
     document.getElementById('schedule-start').value = '';
     document.getElementById('schedule-end').value = '';
+    document.getElementById('schedule-dry-run').checked = true;
     document.querySelectorAll('.day-picker input').forEach(cb => cb.checked = false);
   });
 

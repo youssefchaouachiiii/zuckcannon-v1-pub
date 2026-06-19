@@ -1498,8 +1498,12 @@ class SingleSelectGroup {
       createButton.disabled = false;
     }
 
-    const existingConfig = appState.getState().adSetConfig;
-    if (existingConfig && existingConfig.id) {
+    // Always strip stale listeners before re-init. cloneNode() drops event listeners, so the
+    // new CustomDropdown() below binds exactly ONE click handler. Previously this only ran when
+    // editing an existing config (existingConfig.id); on a fresh re-entry the old handlers stayed
+    // and a new one stacked on top — an even number of click handlers makes the open/close toggle
+    // cancel itself, so the dropdown stopped opening after the first time.
+    {
       const dropdowns = document.querySelectorAll(".adset-config .custom-dropdown");
 
       dropdowns.forEach((dropdown) => {
@@ -1791,7 +1795,8 @@ class SingleSelectGroup {
       });
 
       if (response.ok) {
-        window.showSuccess(`Ad set has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
+        const data = await response.json();
+        window.showSuccess(`Ad set has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes` + actorProofLine(data.acted_as), 4000);
       }
 
       if (!response.ok) {
@@ -2343,7 +2348,7 @@ class UploadForm {
           const failedCampaignsText = failed_adsets.map((f) => `Campaign ID: ${f.campaign_id}`).join(", ");
           window.showError(`Partially complete: ${total_created} ad sets created, ${total_failed} failed. Failed on campaigns: ${failedCampaignsText}`, 8000);
         } else {
-          window.showSuccess(`${total_created} ad sets created successfully!`, 5000);
+          window.showSuccess(`${total_created} ad sets created successfully!` + actorProofLine(data.acted_as), 5000);
         }
 
         // Hide config and show success or next step
@@ -3202,7 +3207,7 @@ SingleSelectGroup.prototype.duplicateCampaign = async function (campaignId, newN
 
     // Show success message
     if (window.showSuccess) {
-      window.showSuccess(`Campaign "${newName}" has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes`, 4000);
+      window.showSuccess(`Campaign "${newName}" has been successfully duplicated, check at Meta Ads Manager after 1–5 minutes` + actorProofLine(data.acted_as), 4000);
     }
 
     // Trigger background refresh to update cache without page reload
@@ -4724,9 +4729,11 @@ class FileUploadHandler {
           return response.json();
         })
         .then((data) => {
+          // Normalize: backend now returns { results, acted_as }; older shape was a bare array.
+          const list = Array.isArray(data) ? data : data.results || [];
           // Check the response to see if any ads failed
-          const successful = data.filter((result) => result.status === "fulfilled");
-          const failed = data.filter((result) => result.status === "rejected");
+          const successful = list.filter((result) => result.status === "fulfilled");
+          const failed = list.filter((result) => result.status === "rejected");
 
           if (successful.length === 0) {
             // All ads failed - extract error messages
@@ -4763,7 +4770,7 @@ class FileUploadHandler {
             // Some ads failed
             const successCount = successful.length;
             const failCount = failed.length;
-            const totalCount = data.length;
+            const totalCount = list.length;
 
             // Extract error messages
             const errorMessages = failed.map((f) => {
@@ -4836,6 +4843,7 @@ class FileUploadHandler {
     let totalSuccess = 0;
     let totalFailed = 0;
     const errors = [];
+    const actorProofs = []; // anti-ban actor(s) across all per-ad-set create-ad-creative calls
 
     try {
       // Create ads for each ad set sequentially to avoid overwhelming the API
@@ -4870,10 +4878,13 @@ class FileUploadHandler {
           }
 
           const data = await response.json();
+          // Normalize: backend now returns { results, acted_as }; older shape was a bare array.
+          const list = Array.isArray(data) ? data : data.results || [];
+          if (data && data.acted_as) actorProofs.push({ success: true, acted_as: data.acted_as });
 
           // Count successes and failures for this ad set
-          const successful = data.filter((result) => result.status === "fulfilled");
-          const failed = data.filter((result) => result.status === "rejected");
+          const successful = list.filter((result) => result.status === "fulfilled");
+          const failed = list.filter((result) => result.status === "rejected");
 
           totalSuccess += successful.length;
           totalFailed += failed.length;
@@ -4898,10 +4909,11 @@ class FileUploadHandler {
         console.log(`[createAdsForMultipleCampaigns] Completed: ${totalSuccess} ads created, ${totalFailed} failed`);
 
         // Show summary notification
+        const actorLine = actorSummaryFromResults(actorProofs);
         if (totalFailed === 0) {
-          window.showSuccess?.(`✅ Created ${totalSuccess} ads across ${createdAdSets.length} ad sets!`, 5000);
+          window.showSuccess?.(`✅ Created ${totalSuccess} ads across ${createdAdSets.length} ad sets!` + actorLine, 5000);
         } else {
-          window.showError?.(`⚠️ Created ${totalSuccess} ads, but ${totalFailed} failed. Check details below.`, 8000);
+          window.showError?.(`⚠️ Created ${totalSuccess} ads, but ${totalFailed} failed. Check details below.` + actorLine, 8000);
         }
       } else {
         // All failed
@@ -7886,7 +7898,7 @@ async function handleCampaignCreation() {
     }
 
     if (window.showSuccess) {
-      window.showSuccess(`Campaign "${name}" has been successfully created!`, 4000);
+      window.showSuccess(`Campaign "${name}" has been successfully created!` + actorProofLine(data.acted_as), 4000);
     }
 
     // Trigger background refresh
@@ -8210,7 +8222,7 @@ function openCreateCampaignDialog() {
 
         // Show success message
         if (window.showSuccess) {
-          window.showSuccess(`Campaign "${name}" has been successfully created!`, 4000);
+          window.showSuccess(`Campaign "${name}" has been successfully created!` + actorProofLine(data.acted_as), 4000);
         }
 
         // Trigger background refresh
@@ -8779,6 +8791,30 @@ function updateOverallProgress(completed, total) {
 }
 
 // Show bulk results
+// --- Anti-ban proof helpers: surface the REAL executing FB identity (system user), never your account ---
+function actorProofLine(actedAs) {
+  if (!actedAs) return "";
+  if (actedAs.is_system_user) {
+    return ` — executed by System User: ${actedAs.system_user_name} (${actedAs.bm_name}), not your account`;
+  }
+  return ` — ⚠ ran via your OWN account (no system user for this account)`;
+}
+function actorSummaryFromResults(results) {
+  // Accept both result shapes: top-level acted_as (multi-account create) and nested data.acted_as (bulk upload).
+  const actors = (results || [])
+    .filter((r) => r && r.success)
+    .map((r) => r.acted_as || (r.data && r.data.acted_as))
+    .filter(Boolean);
+  const sys = actors.filter((a) => a.is_system_user);
+  if (sys.length === 0) {
+    return actors.length ? " — ⚠ ran via your OWN account (no system user)" : "";
+  }
+  const seen = new Map();
+  sys.forEach((a) => seen.set(a.fb_user_id + "|" + a.bm_id, a));
+  const names = [...seen.values()].map((a) => `${a.system_user_name} (${a.bm_name})`);
+  return ` — executed via System User(s): ${names.join(", ")}, not your account`;
+}
+
 function showBulkResults(results) {
   showBulkStep(3);
 
@@ -8840,6 +8876,15 @@ function showBulkResults(results) {
 
       resultsList.appendChild(item);
     });
+  }
+
+  // Anti-ban proof: which system user(s) actually executed the bulk writes
+  const actorLine = actorSummaryFromResults(results);
+  if (actorLine) {
+    window.showSuccess(
+      `Bulk upload: ${totalAds} ad(s) across ${accountCount} account(s)${actorLine}`,
+      8000,
+    );
   }
 }
 
@@ -10522,8 +10567,8 @@ class AutomatedRulesManager {
 // Initialize Automated Rules Manager
 const automatedRulesManager = new AutomatedRulesManager();
 
-// Bind rules button click
-document.querySelector(".rules-btn").addEventListener("click", () => {
+// Bind rules button click (Manage Rules tab removed from header; guard so init never throws)
+document.querySelector(".rules-btn")?.addEventListener("click", () => {
   automatedRulesManager.openModal();
 });
 
@@ -11623,7 +11668,7 @@ async function processBulkAdSetDuplication(account) {
     if (isPartialSuccess) {
       statusSpan.textContent = "Partial Success";
       statusSpan.className = "account-progress-status partial";
-      detailsDiv.textContent = `⚠️ Ad Set created: ${data.id}\n${data.adsSucceeded}/${data.adsAttempted} ads created successfully`;
+      detailsDiv.textContent = `⚠️ Ad Set created: ${data.id}\n${data.adsSucceeded}/${data.adsAttempted} ads created successfully` + actorProofLine(data.acted_as);
       detailsDiv.style.whiteSpace = "pre-line";
 
       return {
@@ -11638,7 +11683,7 @@ async function processBulkAdSetDuplication(account) {
     } else {
       statusSpan.textContent = "Success";
       statusSpan.className = "account-progress-status success";
-      detailsDiv.textContent = `✓ Ad Set created: ${data.id}`;
+      detailsDiv.textContent = `✓ Ad Set created: ${data.id}` + actorProofLine(data.acted_as);
 
       return {
         account,
@@ -12432,8 +12477,10 @@ function setupMultiCampaignAdSetModal() {
         });
 
         const data = await response.json();
-        const successful = data.filter((r) => r.status === "fulfilled").length;
-        const failed = data.filter((r) => r.status === "rejected").length;
+        // Normalize: backend now returns { results, acted_as }; older shape was a bare array.
+        const list = Array.isArray(data) ? data : data.results || [];
+        const successful = list.filter((r) => r.status === "fulfilled").length;
+        const failed = list.filter((r) => r.status === "rejected").length;
 
         totalSuccess += successful;
         totalFailed += failed;
@@ -12969,9 +13016,9 @@ function setupMultiCampaignAdSetModal() {
             errorMessage += `Campaign ${failure.campaign_id}:\n${errorMsg}${errorCode}${fbtrace}\n\n`;
           });
 
-          window.showError?.(errorMessage, 12000);
+          window.showError?.(errorMessage + actorProofLine(data.acted_as), 12000);
         } else {
-          window.showSuccess?.(`✅ ${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!`, 3000);
+          window.showSuccess?.(`✅ ${total_created} ad set${total_created > 1 ? "s" : ""} created successfully!` + actorProofLine(data.acted_as), 3000);
         }
 
         // Update success count in Step 3 UI
@@ -14090,8 +14137,9 @@ function setupMultiAccountCampaignModal() {
         const failCount = result.results?.filter((r) => !r.success).length || 0;
         const failedResults = result.results?.filter((r) => !r.success) || [];
 
+        const actorLine = actorSummaryFromResults(result.results);
         if (failCount === 0) {
-          window.showSuccess?.(`✅ Campaign created successfully in ${successCount} account(s)`, 5000);
+          window.showSuccess?.(`✅ Campaign created successfully in ${successCount} account(s)` + actorLine, 5000);
         } else {
           // Build detailed error message with original error structure
           let errorMessage = `⚠️ Partial Success: Campaign created in ${successCount} account(s), failed in ${failCount}\n\n`;
@@ -14104,7 +14152,7 @@ function setupMultiAccountCampaignModal() {
             errorMessage += `Account ${failure.ad_account_id}:\n${errorMsg}${errorCode}${fbtrace}\n\n`;
           });
 
-          window.showError?.(errorMessage, 12000);
+          window.showError?.(errorMessage + (actorLine ? `\n${actorLine.replace(/^ — /, "")}` : ""), 12000);
         }
 
         closeModal();

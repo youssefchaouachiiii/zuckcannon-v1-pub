@@ -90,7 +90,7 @@ const RULE_TEMPLATES = [
       { metric: 'conversions', operator: 'gte', value: 5, lookback: 'last_3d' },
       { metric: 'spend_today', operator: 'gt', value: 200, lookback: 'today' },
     ],
-    action_params: { scale_pct: 20, max_budget: 500 },
+    action_params: { scale_pct: 20, cap: 500 },
     params: { cpa_threshold: 25, min_conversions: 5, spend_threshold: 200, cap: 500 },
   },
   {
@@ -245,6 +245,7 @@ rulesEngineUiRouter.post('/schedules', async (req, res) => {
       end_time: req.body.end_time,
       timezone: req.body.timezone || 'America/New_York',
       is_active: req.body.is_active ?? 1,
+      is_dry_run: req.body.is_dry_run ?? 1,
     });
     res.status(201).json(s);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -259,6 +260,7 @@ rulesEngineUiRouter.put('/schedules/:id', async (req, res) => {
       end_time: req.body.end_time,
       timezone: req.body.timezone || 'America/New_York',
       is_active: req.body.is_active ?? 1,
+      is_dry_run: req.body.is_dry_run ?? 1,
     });
     res.json(s);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -274,17 +276,12 @@ rulesEngineUiRouter.delete('/schedules/:id', async (req, res) => {
 rulesEngineUiRouter.get('/schedules/:id/campaigns', async (req, res) => {
   try {
     const schedId = parseInt(req.params.id);
-    // Direct assignments
+    // Direct assignments only — this is what the Schedule Check workflow actually
+    // enforces (getCampaignsForSchedule reads schedule_assignments). Vertical
+    // default_schedule_id is coverage/intent, NOT enforced, so it is excluded here
+    // to keep the displayed count honest about what the engine will act on.
     const rows = await RulesEngineDB.getCampaignsForSchedule(schedId);
     const campaignIds = new Set(rows.map(r => r.campaign_id));
-    // Also include campaigns from verticals using this schedule as default
-    const verticals = await RulesEngineDB.listVerticals();
-    for (const v of verticals) {
-      if (v.default_schedule_id === schedId) {
-        const vCamps = await RulesEngineDB.getCampaignsByVertical(v.name);
-        vCamps.forEach(r => campaignIds.add(r.campaign_id));
-      }
-    }
     const allCached = await FacebookCacheDB.getCampaigns();
     const seen = new Set();
     const campaigns = [];
