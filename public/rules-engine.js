@@ -353,17 +353,18 @@ async function loadRules() {
       const fb = await (await fetch('/api/rules-engine/ui/fb-rules')).json();
       const syncedLabel = fb.synced_at_max ? `synced ${fb.synced_at_max} UTC` : 'not synced yet';
       const fbRows = (fb.rules || []).map(r => {
+        const appliedTo = JSON.parse(r.applied_to_json || '{}');
         const applied = `${r.bm_name ? r.bm_name + ' · ' : ''}Ad Account ${r.account_id}` +
-          (r.applied_to_json ? ` · ${(JSON.parse(r.applied_to_json).count) || 0} ${(JSON.parse(r.applied_to_json).entity_type || 'CAMPAIGN').toLowerCase()}` : '');
+          (r.applied_to_json ? ` · ${appliedTo.count || 0} ${(appliedTo.entity_type || 'CAMPAIGN').toLowerCase()}` : '');
         const enabled = r.status === 'ENABLED';
         const acctNum = String(r.account_id).replace(/^act_/, '');
         return `<tr style="border-bottom:1px solid #f0f0f0;background:#fbfdff;">
           <td style="padding:8px;">${escapeHtml(r.name || '')} <span title="Managed in Facebook — single source of truth" style="background:#e7f0ff;color:#1d4ed8;padding:1px 5px;border-radius:3px;font-size:10px;">FB</span></td>
-          <td style="padding:8px;color:#888;">${escapeHtml((JSON.parse(r.applied_to_json || '{}').entity_type || 'campaign').toLowerCase())}</td>
+          <td style="padding:8px;color:#888;">${escapeHtml((appliedTo.entity_type || 'campaign').toLowerCase())}</td>
           <td style="padding:8px;">${escapeHtml(r.action_summary || '')}</td>
           <td style="padding:8px;">${escapeHtml(applied)}</td>
           <td style="padding:8px;">
-            <label style="font-size:11px;cursor:pointer;"><input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleFbRule('${escapeHtml(r.meta_rule_id)}', this.checked)"> ${enabled ? 'Enabled' : 'Disabled'}</label>
+            <label style="font-size:11px;cursor:pointer;"><input type="checkbox" ${enabled ? 'checked' : ''} data-rule-id="${escapeHtml(r.meta_rule_id)}" onchange="toggleFbRule(this.dataset.ruleId, this.checked)"> ${enabled ? 'Enabled' : 'Disabled'}</label>
             <div style="font-size:10px;color:#aaa;">${escapeHtml(syncedLabel)}</div>
           </td>
           <td style="padding:8px;white-space:nowrap;">
