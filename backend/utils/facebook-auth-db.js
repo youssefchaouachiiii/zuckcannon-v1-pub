@@ -541,6 +541,22 @@ export const FacebookAuthDB = {
       [business_manager_id]
     );
   },
+
+  async getAccountBmMap() {
+    const rows = await db.allAsync(`
+      SELECT aa.account_id AS account_id,
+             bm.id AS bm_id,
+             bm.name AS bm_name
+      FROM ad_accounts aa
+      JOIN business_managers bm ON bm.id = aa.business_manager_id
+    `);
+    const map = {};
+    for (const r of rows) {
+      const key = String(r.account_id).replace(/^act_/, '');
+      map[key] = { bm_id: String(r.bm_id), bm_name: r.bm_name };
+    }
+    return map;
+  },
 };
 
 export default FacebookAuthDB;
