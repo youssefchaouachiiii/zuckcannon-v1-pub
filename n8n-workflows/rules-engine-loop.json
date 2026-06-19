@@ -41,51 +41,6 @@
     },
     {
       "parameters": {
-        "jsCode": "const rule = $input.item.json;\nconst entities = rule.entities || [];\nif (entities.length === 0) return [{ json: { skip: true, reason: 'No entities', rule } }];\nconst token = entities[0]?.token || null;\nif (!token) return [{ json: { skip: true, reason: 'No token', rule } }];\nconst MAX = 24;\nconst chunks = [];\nconst tok = (e) => encodeURIComponent(e.token);\n\nif (rule.scope === 'account' && entities.every(e => e.entityId.startsWith('act_'))) {\n  for (let i = 0; i < entities.length; i += MAX) {\n    const chunk = entities.slice(i, i + MAX);\n    const batch = chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?date_preset=today&fields=spend&access_token=${tok(e)}` }));\n    chunks.push({ json: { batch, token, rule, entities, chunkIndex: chunks.length, isAccountScope: true } });\n  }\n  return chunks;\n}\n\nconst STATUS_FIELDS = 'effective_status,name,daily_budget,budget_remaining';\nconst INSIGHTS_FIELDS = 'spend,actions,action_values,purchase_roas,ctr,cpc,frequency,inline_link_clicks,outbound_clicks_ctr';\n\nfor (let i = 0; i < entities.length; i += MAX) {\n  const chunk = entities.slice(i, i + MAX);\n  const batch = [\n    ...chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}?fields=${STATUS_FIELDS}&access_token=${tok(e)}` })),\n    ...chunk.map(e => ({ method: 'GET', relative_url: `${e.entityId}/insights?fields=${INSIGHTS_FIELDS}&date_preset=today&access_token=${tok(e)}` })),\n  ];\n  chunks.push({ json: { batch, token, rule, entities, chunkIndex: chunks.length } });\n}\nreturn chunks;"
-      },
-      "id": "c38f9179-3daf-4c57-b60a-b3e37aab948f",
-      "name": "Build FB Batch",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -169232,
-        -3168
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "cond-skip",
-              "leftValue": "={{ $json.skip }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "notEquals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "71def043-a475-4390-85bc-024b7f79f14f",
-      "name": "Has Data?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -168992,
-        -3168
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "https://graph.facebook.com/v25.0/",
         "sendBody": true,
@@ -119,7 +74,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { entities, rule, fbResponses, isAccountScope } = $input.item.json;\nconst responses = fbResponses || [];\nconst n = entities.length;\nconst snapshots = entities.map((e, i) => {\n  let spend = 0;\n  const resp = isAccountScope ? responses[i] : responses[n + i];\n  if (resp && resp.code === 200) {\n    try { const b = JSON.parse(resp.body); spend = parseFloat(b?.data?.[0]?.spend || 0); } catch {}\n  }\n  return { entity_id: e.entityId, entity_type: rule.scope, spend };\n});\nreturn [{ json: { snapshots, entity_ids: entities.map(e => e.entityId), _passthrough: $input.item.json } }];"
+        "jsCode": "const m=$('Build Entity Map').first().json; const fbMap=m.fbMap||{}; const entity_ids=Object.keys(fbMap);\nconst snapshots=entity_ids.map(eid=>{ const ins=fbMap[eid].insights; const spend=ins?parseFloat(ins.spend||0):0; const entity_type=String(eid).startsWith('act_')?'account':'campaign'; return {entity_id:eid,entity_type,spend}; });\nreturn [{json:{snapshots,entity_ids}}];\n"
       },
       "id": "f790a521-63eb-4798-bfe6-f5da18c60577",
       "name": "Prepare Snapshots",
@@ -205,7 +160,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const burstData_1h = $input.item.json;\nconst burstData = $('Check Burst').item.json;\nconst passthrough = $('Prepare Snapshots').item.json._passthrough;\nreturn [{ json: { ...passthrough, burstData, burstData_1h } }];"
+        "jsCode": "const burstData_1h=$input.item.json||{};\nconst burstData=$('Check Burst').first().json||{};\nconst garItems=$('Get Active Rules').all(); let rules;\nif(garItems.length===1){ const j=garItems[0].json; rules=Array.isArray(j)?j:Array.isArray(j.data)?j.data:Array.isArray(j.rules)?j.rules:[j]; }\nelse { rules=garItems.map(i=>i.json); }\nreturn rules.map(rule=>({json:{...rule,burstData,burstData_1h}}));\n"
       },
       "id": "4598bd67-0da3-4e63-9218-bd45eac361d1",
       "name": "Merge Burst Data",
@@ -218,7 +173,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { rule, entities, token, fbResponses, burstData: burstDataRaw, burstData_1h: burstDataRaw1h } = $input.item.json;\nconst responses = fbResponses || [];\nconst burstData = burstDataRaw || {};\nconst burstData_1h = burstDataRaw1h || {};\nconst n = entities.length;\n\nconst nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));\nconst time_of_day_et = nowET.getHours() * 60 + nowET.getMinutes();\nconst day_of_week = nowET.getDay() === 0 ? 7 : nowET.getDay();\n\nfunction parseInsights(resp, rt, statusBody) {\n  if (!resp || resp.code !== 200) return null;\n  let body; try { body = JSON.parse(resp.body); } catch { return null; }\n  const d = body?.data?.[0];\n  if (!d) return null;\n\n  const spend = parseFloat(d.spend || 0);\n  const fbConv = parseFloat(d.actions?.find(a => a.action_type === 'purchase')?.value || 0);\n  const conversions = rt ? (rt.conversions || 0) : fbConv;\n  const cpa = conversions > 0 ? spend / conversions : 0;\n  const roas = parseFloat(d.purchase_roas?.[0]?.value || 0);\n  const purchaseValue = parseFloat(d.action_values?.find(a => a.action_type === 'purchase')?.value || 0);\n  const roi = rt ? (rt.roi || 0) : (spend > 0 && purchaseValue > 0 ? (purchaseValue - spend) / spend : null);\n  const revenue = rt ? (rt.revenue || 0) : purchaseValue;\n  const profit = rt ? (rt.profit || 0) : (purchaseValue - spend);\n\n  const ctr = parseFloat(d.ctr || 0);\n  const cpc = parseFloat(d.cpc || 0);\n  const frequency = parseFloat(d.frequency || 0);\n  const link_clicks = parseFloat(d.inline_link_clicks || 0);\n  const lp_views = parseFloat(d.actions?.find(a => a.action_type === 'landing_page_view')?.value || 0);\n  const initiate_checkout = parseFloat(d.actions?.find(a => a.action_type === 'initiate_checkout')?.value || 0);\n  const outbound_clicks_ctr = parseFloat(d.outbound_clicks_ctr?.[0]?.value || 0);\n  const lp_conv_rate = link_clicks > 0 ? (lp_views / link_clicks) * 100 : 0;\n\n  const dailyBudgetCents = statusBody ? parseInt(statusBody.daily_budget || 0) : 0;\n  const remainingCents = statusBody ? parseInt(statusBody.budget_remaining || 0) : 0;\n  const budget_pct_used = dailyBudgetCents > 0 ? ((dailyBudgetCents - remainingCents) / dailyBudgetCents) * 100 : 0;\n  const budget_remaining_pct = 100 - budget_pct_used;\n\n  return {\n    spend_today: spend, conversions, cpa, roas, roi, revenue, profit,\n    ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout,\n    outbound_clicks_ctr, lp_conv_rate,\n    budget_pct_used, budget_remaining_pct,\n    time_of_day_et, day_of_week,\n  };\n}\n\nconst conditions = rule.conditions || [];\nconst combinator = rule.combinator || 'AND';\nconst triggered = [];\n\nfor (let i = 0; i < n; i++) {\n  const entity = entities[i];\n  const entityId = entity.entityId;\n  const entityToken = entity.token || token;\n\n  const statusResp = responses[i];\n  let entityName = entityId;\n  let statusBody = null;\n  if (statusResp?.code === 200) {\n    try {\n      statusBody = typeof statusResp.body === 'string' ? JSON.parse(statusResp.body) : statusResp.body;\n      entityName = statusBody?.name || entity.entityName || entityId;\n      if (statusBody?.effective_status === 'PAUSED' && rule.action !== 'enable') continue;\n    } catch {}\n  }\n\n  const todayInsights = parseInsights(responses[n + i], entity.rt, statusBody);\n  const insights3d = entity.insights_3d || null;\n  const insights7d = entity.insights_7d || null;\n  if (!todayInsights) continue;\n\n  const burst = burstData[entityId] || {};\n  const burstMetrics = { burst_multiplier: burst.burst_multiplier || 0, spend_30m: burst.spend_recent || 0, avg_30m: burst.avg_period || 0 };\n  const burst1h = burstData_1h[entityId] || {};\n  const burstMetrics1h = { burst_multiplier: burst1h.burst_multiplier || 0, spend_1h: burst1h.spend_recent || 0, avg_1h: burst1h.avg_period || 0 };\n\n  const evaluate = (c) => {\n    if (c.lookback === 'last_30m') {\n      const val = burstMetrics[c.metric];\n      if (val == null) return false;\n      switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n    }\n    if (c.lookback === 'last_1h') {\n      const val = burstMetrics1h[c.metric];\n      if (val == null) return false;\n      switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n    }\n    const src = c.lookback === 'last_7d' ? insights7d : c.lookback === 'last_3d' ? insights3d : todayInsights;\n    let val;\n    if (c.metric === 'spend') {\n      val = c.lookback === 'today' ? src?.spend_today : src?.spend;\n    } else {\n      val = src?.[c.metric];\n    }\n    if (val == null) return false;\n    switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n  };\n\n  const allMet = combinator === 'OR' ? conditions.some(evaluate) : conditions.every(evaluate);\n  if (allMet) {\n    triggered.push({ json: { rule, entityId, entityName, metrics: { ...todayInsights, ...burstMetrics }, insights_3d: insights3d, insights_7d: insights7d, token: entityToken } });\n  }\n}\n\nif (rule.scope === 'account' && conditions.length > 0) {\n  const isAcct = !!$input.item.json.isAccountScope;\n  if (isAcct) {\n    const totalSpend = entities.reduce((sum, e, i) => {\n      const resp = responses[i];\n      if (!resp || resp.code !== 200) return sum;\n      let body; try { body = JSON.parse(resp.body); } catch { return sum; }\n      return sum + parseFloat(body?.data?.[0]?.spend || 0);\n    }, 0);\n    const condition = conditions[0];\n    if (condition && totalSpend > condition.value) {\n      const campaignItems = [];\n      for (const e of entities) {\n        for (const cid of (e.campaignIds || [])) {\n          campaignItems.push({ json: { rule, entityId: String(cid), entityName: `Campaign ${cid} (Acct ${e.entityId})`, metrics: { spend_today: totalSpend, account_spend_today: totalSpend }, token: e.token || token } });\n        }\n      }\n      if (campaignItems.length > 0) return campaignItems;\n      return [{ json: { noTrigger: true } }];\n    }\n    return [{ json: { noTrigger: true } }];\n  }\n  const totalSpend = entities.reduce((sum, e, i) => {\n    const ins = parseInsights(responses[n + i], null, null);\n    return sum + (ins?.spend_today || 0);\n  }, 0);\n  const condition = conditions[0];\n  if (condition && totalSpend > condition.value) {\n    return entities.map((e, i) => {\n      let entityName = e.entityId;\n      const statusResp = responses[i];\n      if (statusResp?.code === 200) { try { entityName = JSON.parse(statusResp.body)?.name || e.entityId; } catch {} }\n      const ins = parseInsights(responses[n + i], null, null) || { spend_today: 0 };\n      return { json: { rule, entityId: e.entityId, entityName, metrics: { spend_today: ins.spend_today, account_spend_today: totalSpend }, token: e.token || token } };\n    });\n  }\n  return [{ json: { noTrigger: true } }];\n}\n\nreturn triggered.length > 0 ? triggered : [{ json: { noTrigger: true } }];"
+        "jsCode": "const { burstData: burstDataRaw, burstData_1h: burstDataRaw1h, ...rule } = $input.item.json;\nconst entities = rule.entities || [];\nconst token = rule.token || (entities[0] && entities[0].token) || null;\nconst fbMap = $('Build Entity Map').first().json.fbMap || {};\nconst isAccountScope = rule.scope === 'account' && entities.every(e => String(e.entityId).startsWith('act_'));\nconst burstData = burstDataRaw || {};\nconst burstData_1h = burstDataRaw1h || {};\nconst n = entities.length;\n\nconst nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));\nconst time_of_day_et = nowET.getHours() * 60 + nowET.getMinutes();\nconst day_of_week = nowET.getDay() === 0 ? 7 : nowET.getDay();\n\nfunction parseInsights(d, rt, statusBody) {\n  if (!d) return null;\n\n  const spend = parseFloat(d.spend || 0);\n  const fbConv = parseFloat(d.actions?.find(a => a.action_type === 'purchase')?.value || 0);\n  const conversions = rt ? (rt.conversions || 0) : fbConv;\n  const cpa = conversions > 0 ? spend / conversions : 0;\n  const roas = parseFloat(d.purchase_roas?.[0]?.value || 0);\n  const purchaseValue = parseFloat(d.action_values?.find(a => a.action_type === 'purchase')?.value || 0);\n  // RT cost lags FB intraday spend — use the larger of the two as today's cost\n  // basis so a kill rule never sees an optimistic ROI while FB spend runs ahead.\n  const rtRevenue = rt ? (rt.revenue || 0) : 0;\n  const rtCost = rt ? Math.max(0, rtRevenue - (rt.profit || 0)) : 0;\n  const effCost = Math.max(rtCost, spend);\n  const roi = rt ? (effCost > 0 ? (rtRevenue - effCost) / effCost : 0) : (spend > 0 && purchaseValue > 0 ? (purchaseValue - spend) / spend : null);\n  const roi_rt = rt ? (rt.roi ?? null) : null;\n  const revenue = rt ? rtRevenue : purchaseValue;\n  const profit = rt ? (rtRevenue - effCost) : (purchaseValue - spend);\n\n  const ctr = parseFloat(d.ctr || 0);\n  const cpc = parseFloat(d.cpc || 0);\n  const frequency = parseFloat(d.frequency || 0);\n  const link_clicks = parseFloat(d.inline_link_clicks || 0);\n  const lp_views = parseFloat(d.actions?.find(a => a.action_type === 'landing_page_view')?.value || 0);\n  const initiate_checkout = parseFloat(d.actions?.find(a => a.action_type === 'initiate_checkout')?.value || 0);\n  const outbound_clicks_ctr = parseFloat(d.outbound_clicks_ctr?.[0]?.value || 0);\n  const lp_conv_rate = link_clicks > 0 ? (lp_views / link_clicks) * 100 : 0;\n\n  const dailyBudgetCents = statusBody ? parseInt(statusBody.daily_budget || 0) : 0;\n  const remainingCents = statusBody ? parseInt(statusBody.budget_remaining || 0) : 0;\n  const budget_pct_used = dailyBudgetCents > 0 ? ((dailyBudgetCents - remainingCents) / dailyBudgetCents) * 100 : 0;\n  const budget_remaining_pct = 100 - budget_pct_used;\n\n  return {\n    spend_today: spend, conversions, cpa, roas, roi, roi_rt, revenue, profit,\n    ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout,\n    outbound_clicks_ctr, lp_conv_rate,\n    budget_pct_used, budget_remaining_pct,\n    time_of_day_et, day_of_week,\n  };\n}\n\nconst conditions = rule.conditions || [];\nconst combinator = rule.combinator || 'AND';\nconst triggered = [];\n\nfor (let i = 0; i < n; i++) {\n  const entity = entities[i];\n  const entityId = entity.entityId;\n  const entityToken = entity.token || token;\n\n  const fb = fbMap[entityId] || { status: null, insights: null };\n  const statusBody = fb.status;\n  let entityName = entityId;\n  if (statusBody) {\n    entityName = statusBody.name || entity.entityName || entityId;\n    if (statusBody.effective_status === 'PAUSED' && rule.action !== 'enable') continue;\n  }\n\n  const todayInsights = parseInsights(fb.insights, entity.rt, statusBody);\n  const insights3d = entity.insights_3d || null;\n  const insights7d = entity.insights_7d || null;\n  if (!todayInsights) continue;\n\n  const burst = burstData[entityId] || {};\n  const burstMetrics = { burst_multiplier: burst.burst_multiplier || 0, spend_30m: burst.spend_recent || 0, avg_30m: burst.avg_period || 0 };\n  const burst1h = burstData_1h[entityId] || {};\n  const burstMetrics1h = { burst_multiplier: burst1h.burst_multiplier || 0, spend_1h: burst1h.spend_recent || 0, avg_1h: burst1h.avg_period || 0 };\n\n  const evaluate = (c) => {\n    if (c.lookback === 'last_30m') {\n      const val = burstMetrics[c.metric];\n      if (val == null) return false;\n      switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n    }\n    if (c.lookback === 'last_1h') {\n      const val = burstMetrics1h[c.metric];\n      if (val == null) return false;\n      switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n    }\n    const src = c.lookback === 'last_7d' ? insights7d : c.lookback === 'last_3d' ? insights3d : todayInsights;\n    let val;\n    if (c.metric === 'spend') {\n      val = c.lookback === 'today' ? src?.spend_today : src?.spend;\n    } else {\n      val = src?.[c.metric];\n    }\n    if (val == null) return false;\n    switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; }\n  };\n\n  const allMet = combinator === 'OR' ? conditions.some(evaluate) : conditions.every(evaluate);\n  if (allMet) {\n    triggered.push({ json: { rule, entityId, entityName, metrics: { ...todayInsights, ...burstMetrics }, insights_3d: insights3d, insights_7d: insights7d, token: entityToken } });\n  }\n}\n\nif (rule.scope === 'account' && conditions.length > 0) {\n  const _acctSpend = entities.reduce((sum, e) => { const ins = (fbMap[e.entityId] || {}).insights; return sum + (ins ? parseFloat(ins.spend || 0) : 0); }, 0);\n  const _acctMetrics = { spend: _acctSpend, spend_today: _acctSpend, account_spend_today: _acctSpend, account_spend: _acctSpend };\n  const _evalAcct = (c) => { const val = c.metric === 'spend' ? _acctSpend : _acctMetrics[c.metric]; if (val == null) return false; switch (c.operator) { case 'gt': return val > c.value; case 'lt': return val < c.value; case 'gte': return val >= c.value; case 'lte': return val <= c.value; case 'eq': return val === c.value; default: return false; } };\n  const _acctAllMet = combinator === 'OR' ? conditions.some(_evalAcct) : conditions.every(_evalAcct);\n  const isAcct = isAccountScope;\n  if (isAcct) {\n    const totalSpend = entities.reduce((sum, e) => {\n      const ins = (fbMap[e.entityId] || {}).insights;\n      return sum + (ins ? parseFloat(ins.spend || 0) : 0);\n    }, 0);\n    const condition = conditions[0];\n    if (_acctAllMet) {\n      const campaignItems = [];\n      for (const e of entities) {\n        for (const cid of (e.campaignIds || [])) {\n          campaignItems.push({ json: { rule, entityId: String(cid), entityName: `Campaign ${cid} (Acct ${e.entityId})`, metrics: { spend_today: totalSpend, account_spend_today: totalSpend }, token: e.token || token } });\n        }\n      }\n      if (campaignItems.length > 0) return campaignItems;\n      return [{ json: { noTrigger: true } }];\n    }\n    return [{ json: { noTrigger: true } }];\n  }\n  const totalSpend = entities.reduce((sum, e) => {\n    const ins = (fbMap[e.entityId] || {}).insights;\n    return sum + (ins ? parseFloat(ins.spend || 0) : 0);\n  }, 0);\n  const condition = conditions[0];\n  if (_acctAllMet) {\n    return entities.map((e) => {\n      const fb = fbMap[e.entityId] || { status: null, insights: null };\n      let entityName = e.entityId;\n      if (fb.status) entityName = fb.status.name || e.entityId;\n      const spend = fb.insights ? parseFloat(fb.insights.spend || 0) : 0;\n      return { json: { rule, entityId: e.entityId, entityName, metrics: { spend_today: spend, account_spend_today: totalSpend }, token: e.token || token } };\n    });\n  }\n  return [{ json: { noTrigger: true } }];\n}\n\nreturn triggered.length > 0 ? triggered : [{ json: { noTrigger: true } }];\n"
       },
       "id": "93c92b12-ccaa-4349-9567-9c6ce54c0069",
       "name": "Evaluate Rules",
@@ -415,7 +370,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst m = d.metrics || {};\nconst m3d = d.insights_3d || {};\nconst m7d = d.insights_7d || {};\nconst name = d.entityName || d.entityId || '';\nconst ruleName = (d.rule && d.rule.name) || '';\nconst ruleAction = (d.rule && d.rule.action) || 'action';\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = ((d.rule && d.rule.conditions) || []).some(c => c.lookback === 'last_30m');\nconst actionLabel = String(ruleAction).toUpperCase().replace(/_/g, ' ');\n\nfunction getSrc(lookback) {\n  if (lookback === 'last_7d') return m7d;\n  if (lookback === 'last_3d') return m3d;\n  return m;\n}\n\nconst esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeNum = (v, d2) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d2) : '0';\n\nfunction fmtMetric(metric, val, lookback) {\n  const lb = (lookback && lookback !== 'today') ? ' ·' + String(lookback).replace('last_', '') : '';\n  if (val == null || !isFinite(val)) return '';\n  if (metric === 'roi') return 'ROI' + lb + ': ' + (val * 100).toFixed(1) + '%';\n  if (metric === 'cpa') return 'CPA' + lb + ': $' + val.toFixed(0);\n  if (metric === 'conversions') return 'Conv' + lb + ': ' + Math.round(val);\n  if (metric === 'ctr') return 'CTR' + lb + ': ' + val.toFixed(2) + '%';\n  if (metric === 'cpc') return 'CPC' + lb + ': $' + val.toFixed(2);\n  if (metric === 'frequency') return 'Freq' + lb + ': ' + val.toFixed(1);\n  if (metric === 'link_clicks') return 'Clicks' + lb + ': ' + Math.round(val);\n  if (metric === 'lp_views') return 'LPV' + lb + ': ' + Math.round(val);\n  if (metric === 'spend' || metric === 'spend_today') return 'Spend' + lb + ': $' + val.toFixed(0);\n  return esc(metric) + lb + ': ' + esc(val);\n}\n\nlet text;\ntry {\n  if (isBurst) {\n    const burst = d.burstMetrics || {};\n    const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n    text = '🧪 <b>[DRY RUN]</b> 💥 ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would PAUSE\\nLast 30 min: $' + safeNum(burst.spend_30m, 0) + ' spent (normal: $' + safeNum(burst.avg_30m, 0) + ') — ' + pct + '%\\n' + time;\n  } else {\n    const parts = [];\n    if (m.spend_today != null && isFinite(m.spend_today)) parts.push('Spend today: $' + m.spend_today.toFixed(0));\n    const shown = new Set(['spend']);\n    for (const c of ((d.rule && d.rule.conditions) || [])) {\n      if (!c || shown.has(c.metric)) continue;\n      shown.add(c.metric);\n      const src = getSrc(c.lookback);\n      const val = src ? src[c.metric] : null;\n      if (val == null) continue;\n      const line = fmtMetric(c.metric, val, c.lookback);\n      if (line) parts.push(line);\n    }\n    const metricsLine = parts.join('  |  ');\n    text = '🧪 <b>[DRY RUN]</b> ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would ' + esc(actionLabel) + (metricsLine ? '\\n' + metricsLine : '') + '\\n' + time;\n  }\n} catch (e) {\n  text = '🧪 [DRY RUN] ' + String(ruleName) + ' — ' + String(name) + ' (alert build error: ' + e.message + ')';\n}\n\nconst ruleId = (d.rule && d.rule.id) || '';\nconst entityId = d.entityId || '';\nconst btns = [];\nif (ruleAction === 'pause') btns.push({ text: '✅ Approve & Pause', callback_data: 'approve_pause:' + ruleId + ':' + entityId });\nbtns.push({ text: '💤 Snooze 6h', callback_data: 'snooze:' + ruleId + ':' + entityId });\nconst reply_markup = JSON.stringify({ inline_keyboard: [btns] });\nreturn [{ json: { chat_id: '-1003905420798', message_thread_id: 82, text, parse_mode: 'HTML', reply_markup } }];"
+        "jsCode": "const d = $input.item.json;\nconst m = d.metrics || {};\nconst m3d = d.insights_3d || {};\nconst m7d = d.insights_7d || {};\nconst name = d.entityName || d.entityId || '';\nconst ruleName = (d.rule && d.rule.name) || '';\nconst ruleAction = (d.rule && d.rule.action) || 'action';\nconst time = new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit'}) + ' ET';\nconst isBurst = ((d.rule && d.rule.conditions) || []).some(c => c.lookback === 'last_30m');\nconst actionLabel = String(ruleAction).toUpperCase().replace(/_/g, ' ');\n\nfunction getSrc(lookback) {\n  if (lookback === 'last_7d') return m7d;\n  if (lookback === 'last_3d') return m3d;\n  return m;\n}\n\nconst esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeNum = (v, d2) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d2) : '0';\n\nfunction fmtMetric(metric, val, lookback) {\n  const lb = (lookback && lookback !== 'today') ? ' ·' + String(lookback).replace('last_', '') : '';\n  if (val == null || !isFinite(val)) return '';\n  if (metric === 'roi') return 'ROI' + lb + ': ' + (val * 100).toFixed(1) + '%';\n  if (metric === 'cpa') return 'CPA' + lb + ': $' + val.toFixed(0);\n  if (metric === 'conversions') return 'Conv' + lb + ': ' + Math.round(val);\n  if (metric === 'ctr') return 'CTR' + lb + ': ' + val.toFixed(2) + '%';\n  if (metric === 'cpc') return 'CPC' + lb + ': $' + val.toFixed(2);\n  if (metric === 'frequency') return 'Freq' + lb + ': ' + val.toFixed(1);\n  if (metric === 'link_clicks') return 'Clicks' + lb + ': ' + Math.round(val);\n  if (metric === 'lp_views') return 'LPV' + lb + ': ' + Math.round(val);\n  if (metric === 'spend' || metric === 'spend_today') return 'Spend' + lb + ': $' + val.toFixed(0);\n  if (metric === 'revenue') return 'Rev' + lb + ': $' + val.toFixed(0);\n  return esc(metric) + lb + ': ' + esc(val);\n}\n\nlet text;\ntry {\n  if (isBurst) {\n    const burst = d.burstMetrics || {};\n    const pct = ((burst.burst_multiplier || 0) * 100).toFixed(0);\n    text = '🧪 <b>[DRY RUN]</b> 💥 ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would PAUSE\\nLast 30 min: $' + safeNum(burst.spend_30m, 0) + ' spent (normal: $' + safeNum(burst.avg_30m, 0) + ') — ' + pct + '%\\n' + time;\n  } else {\n    const parts = [];\n    if (m.spend_today != null && isFinite(m.spend_today)) parts.push('Spend today: $' + m.spend_today.toFixed(0));\n    const shown = new Set(['spend']);\n    for (const c of ((d.rule && d.rule.conditions) || [])) {\n      if (!c || shown.has(c.metric)) continue;\n      shown.add(c.metric);\n      const src = getSrc(c.lookback);\n      const val = src ? src[c.metric] : null;\n      if (val == null) continue;\n      const line = fmtMetric(c.metric, val, c.lookback);\n      if (line) parts.push(line);\n    }\n    // Always-on context so ROI can be sanity-checked from the message alone\n    for (const extra of ['revenue', 'conversions', 'cpa']) {\n      if (shown.has(extra)) continue;\n      const val = m[extra];\n      if (val == null || !isFinite(val)) continue;\n      shown.add(extra);\n      const line = fmtMetric(extra, val, 'today');\n      if (line) parts.push(line);\n    }\n    // RT-basis ROI when it diverges >2pts from effective-cost ROI (RT cost-lag indicator)\n    if (m.roi_rt != null && isFinite(m.roi_rt) && m.roi != null && isFinite(m.roi) && Math.abs(m.roi_rt - m.roi) > 0.02) {\n      parts.push('ROI·rt: ' + (m.roi_rt * 100).toFixed(1) + '%');\n    }\n    const metricsLine = parts.join('  |  ');\n    text = '🧪 <b>[DRY RUN]</b> ' + esc(ruleName) + '\\n<code>' + esc(name) + '</code>  |  would ' + esc(actionLabel) + (metricsLine ? '\\n' + metricsLine : '') + '\\n' + time;\n  }\n} catch (e) {\n  text = '🧪 [DRY RUN] ' + String(ruleName) + ' — ' + String(name) + ' (alert build error: ' + e.message + ')';\n}\n\nconst ruleId = (d.rule && d.rule.id) || '';\nconst entityId = d.entityId || '';\nconst btns = [];\nif (ruleAction === 'pause') btns.push({ text: '✅ Approve & Pause', callback_data: 'approve_pause:' + ruleId + ':' + entityId });\nbtns.push({ text: '💤 Snooze 6h', callback_data: 'snooze:' + ruleId + ':' + entityId });\nconst reply_markup = JSON.stringify({ inline_keyboard: [btns] });\nreturn [{ json: { chat_id: '-1003905420798', message_thread_id: 82, text, parse_mode: 'HTML', reply_markup } }];"
       },
       "id": "1ffc2a1b-7b1f-4d0c-8425-5e4edbd3c0d9",
       "name": "Prepare Dry Run Alert",
@@ -446,6 +401,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 10000,
+      "disabled": true,
       "onError": "continueRegularOutput"
     },
     {
@@ -501,7 +457,8 @@
           "id": "gBEVUYvaXvzCfV8P",
           "name": "info@sigmagrowthpartners.com account"
         }
-      }
+      },
+      "disabled": true
     },
     {
       "parameters": {
@@ -677,7 +634,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentCents = parseInt(daily_budget || 0);\nconst scalePct = (rule.action_params?.scale_pct ?? 20) / 100;\nconst scaledCents = Math.round(currentCents * (1 + scalePct));\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = Math.min(scaledCents, maxCents);\nconst noAction = newBudgetCents === currentCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents, noAction } }];"
+        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\n// M3: a campaign with no scalable campaign-level daily_budget (CBO / ABO budget at the\n// ad-set; null/0/negative) cannot be scaled here. Make that an explicit no-op instead of\n// relying on the 0*scale=0 coincidence. Also refuse a non-numeric scale_pct (NaN) rather\n// than POSTing a NaN budget.\nconst currentCents = parseInt(daily_budget || 0) || 0;\nconst hasBudget = currentCents > 0;\nconst scalePct = Number(rule.action_params?.scale_pct ?? 20) / 100;\nconst validPct = Number.isFinite(scalePct);\nconst scaledCents = Math.round(currentCents * (1 + scalePct));\nconst maxCents = rule.action_params?.max_budget ? rule.action_params.max_budget * 100 : Infinity;\nconst newBudgetCents = validPct ? Math.min(scaledCents, maxCents) : currentCents;\nconst noAction = !hasBudget || !validPct || newBudgetCents === currentCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents, noAction } }];"
       },
       "id": "63b472c3-781b-420e-b167-89738594667a",
       "name": "Compute Scale Budget",
@@ -754,7 +711,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const d = $('Evaluate Rules').item.json;\nconst fbResult = $input.item.json;\nreturn [{ json: { ...d, fbResult, actionFailed: !!(fbResult?.error || fbResult?.message) } }];"
+        "jsCode": "const d = $('Evaluate Rules').item.json;\nconst budget = $('Budget Changed?').item.json;\nconst fbResult = $input.item.json;\nreturn [{ json: {\n  ...d,\n  oldBudgetCents: budget.oldBudgetCents,\n  newBudgetCents: budget.newBudgetCents,\n  noAction: budget.noAction,\n  fbResult,\n  actionFailed: !!(fbResult?.error || fbResult?.message),\n} }];"
       },
       "id": "aa83f5a8-ffe2-417d-8045-bdb3cdcaef88",
       "name": "Restore After Scale",
@@ -899,6 +856,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 10000,
+      "disabled": true,
       "onError": "continueRegularOutput"
     },
     {
@@ -1044,32 +1002,6 @@
     },
     {
       "parameters": {
-        "jsCode": "const chunkMeta = $('Build FB Batch').item.json;\nconst fbItems = $input.all();\nconst chunkResponses = fbItems.map(i => i.json);\nreturn [{ json: {\n  rule: chunkMeta.rule,\n  entities: chunkMeta.entities,\n  token: chunkMeta.token,\n  chunkIndex: chunkMeta.chunkIndex,\n  isAccountScope: chunkMeta.isAccountScope || false,\n  chunkResponses,\n}}];"
-      },
-      "id": "1b36f7ef-720f-463e-88a8-c97e54ec2215",
-      "name": "Restore Chunk Context",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -168512,
-        -3168
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst first = items[0].json;\nconst allResponses = items.flatMap(i => i.json.chunkResponses || []);\nreturn [{ json: {\n  rule: first.rule,\n  entities: first.entities,\n  fbResponses: allResponses,\n  token: first.token,\n  isAccountScope: first.isAccountScope || false,\n}}];"
-      },
-      "id": "0098d9df-9b7a-4506-944e-8a94ebfd8160",
-      "name": "Aggregate Responses",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -168272,
-        -3168
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/log",
         "sendHeaders": true,
@@ -1096,7 +1028,8 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1184,11 +1117,12 @@
           "name": "Sigma Ad Rules Engine Bot"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "disabled": true
     },
     {
       "parameters": {
-        "jsCode": "const d = $input.item.json;\nconst responses = d.fbResponses || [];\nconst successCount = responses.filter(r => r && r.code === 200).length;\nconst pullOk = responses.length > 0 && successCount > 0;\nreturn [{ json: { ...d, pullOk } }];"
+        "jsCode": "const m=$('Build Entity Map').first().json; return [{json:{pullOk:!!m.pullOk,pullStats:m.pullStats||{},entity_ids:m.entity_ids||[]}}];\n"
       },
       "id": "25f8a1a4-5aca-4ead-b71e-424def40728b",
       "name": "Classify Pull Result",
@@ -1197,7 +1131,8 @@
       "position": [
         -168032,
         -3168
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1227,7 +1162,8 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 10000
+      "waitBetweenTries": 10000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1240,7 +1176,8 @@
       "position": [
         -167552,
         -3168
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1408,6 +1345,7 @@
           "name": "Sigma Ad Rules Engine Bot"
         }
       },
+      "disabled": true,
       "onError": "continueRegularOutput"
     },
     {
@@ -1485,7 +1423,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { entities, fbResponses } = $input.item.json;\nconst n = entities.length;\nconst names = [];\nfor (let i = 0; i < n; i++) {\n  const resp = fbResponses[i];\n  if (!resp || resp.code !== 200) continue;\n  let body;\n  try { body = JSON.parse(resp.body); } catch { continue; }\n  if (body.name) names.push({ id: entities[i].entityId, name: body.name });\n}\nreturn [{ json: { names } }];"
+        "jsCode": "const m = $('Build Entity Map').first(); const names = (m && m.json && m.json.names) || []; return [{ json: { names } }];"
       },
       "id": "087ff9bc-32dd-415e-8a9d-f264ec82d0a8",
       "name": "Extract Entity Names",
@@ -1494,7 +1432,8 @@
       "position": [
         -167552,
         -2720
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1620,7 +1559,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { results, _context } = $input.item.json;\nconst pendingMap = Object.fromEntries((results || []).map(r => [String(r.entity_id), r.pending]));\nreturn (_context || []).map(item => ({\n  json: { ...item, pending: pendingMap[String(item.entityId)] || false }\n}));"
+        "jsCode": "const { results, _context } = $input.item.json;\nconst pendingMap = Object.fromEntries((results || []).map(r => [String(r.entity_id), r.pending]));\nreturn (_context || []).map(item => {\n  const key = String(item.entityId);\n  // M8: fail CLOSED — if the batch-check returned no verdict for this entity, suppress.\n  const pending = key in pendingMap ? !!pendingMap[key] : true;\n  return { json: { ...item, pending } };\n});"
       },
       "id": "d38bd01d-9635-4d52-ab70-0cc3c28b9bed",
       "name": "Expand Batch Results",
@@ -1684,7 +1623,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { results, _context } = $input.item.json;\nconst exemptMap = Object.fromEntries((results || []).map(r => [`${r.rule_id}:${String(r.entity_id)}`, r.exempt]));\nreturn (_context || []).map(item => {\n  let lookupId = item.entityId;\n  if (item.rule && item.rule.scope === 'account') {\n    const m = (item.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n    if (m) lookupId = m[1];\n  }\n  return { json: { ...item, exempt: exemptMap[`${item.rule.id}:${String(lookupId)}`] || false } };\n});"
+        "jsCode": "const { results, _context } = $input.item.json;\nconst exemptMap = Object.fromEntries((results || []).map(r => [`${r.rule_id}:${String(r.entity_id)}`, r.exempt]));\nreturn (_context || []).map(item => {\n  let lookupId = item.entityId;\n  if (item.rule && item.rule.scope === 'account') {\n    const m = (item.entityName || '').match(/\\(Acct (act_\\d+)\\)/);\n    if (m) lookupId = m[1];\n  }\n  const key = `${item.rule.id}:${String(lookupId)}`;\n  // M8: fail CLOSED — undeterminable exemption status is treated as exempt (suppress).\n  const exempt = key in exemptMap ? !!exemptMap[key] : true;\n  return { json: { ...item, exempt } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1918,7 +1857,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentCents = parseInt(daily_budget || 0);\nconst decreasePct = (rule.action_params?.decrease_pct ?? 50) / 100;\nconst minCents = rule.action_params?.min_budget ? rule.action_params.min_budget * 100 : 0;\nconst newCents = Math.max(Math.round(currentCents * (1 - decreasePct)), minCents);\nconst noAction = newCents === currentCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents: newCents, oldBudgetCents: currentCents, noAction } }];"
+        "jsCode": "const { entityId, entityName, rule, metrics, token, daily_budget } = $input.item.json;\nconst currentCents = parseInt(daily_budget || 0) || 0;\nconst hasBudget = currentCents > 0;\n// M4 (Option A): only act on an explicit, valid, positive decrease_pct. Missing, non-numeric\n// or NaN config -> no-op (never guess a cut, never POST a NaN budget).\nconst rawPct = rule.action_params?.decrease_pct;\nconst pctNum = Number(rawPct);\nconst validPct = rawPct != null && Number.isFinite(pctNum) && pctNum > 0;\nconst decreasePct = pctNum / 100;\nconst minCents = rule.action_params?.min_budget ? rule.action_params.min_budget * 100 : 0;\n// A decrease must never raise the budget: clamp to <= current. The min_budget floor only\n// applies between the decreased value and current — it can never push the budget above current.\nconst decreasedCents = Math.round(currentCents * (1 - decreasePct));\nconst newCents = (hasBudget && validPct) ? Math.min(currentCents, Math.max(decreasedCents, minCents)) : currentCents;\nconst noAction = !hasBudget || !validPct || newCents === currentCents;\nreturn [{ json: { entityId, entityName, rule, metrics, token, newBudgetCents: newCents, oldBudgetCents: currentCents, noAction } }];"
       },
       "id": "c36fa091-3546-47eb-9143-7678ad87c9a1",
       "name": "Compute Decrease Budget",
@@ -1964,11 +1903,20 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3000/api/n8n/budget-history",
+        "url": "={{ $env.ZUCKCANNON_URL }}/api/rules-engine/budget-history",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={ \"entity_id\": \"{{ $json.entityId }}\", \"entity_type\": \"campaign\", \"rule_id\": \"{{ $json.rule.id }}\", \"old_budget_cents\": {{ $json.oldBudgetCents }}, \"new_budget_cents\": {{ $json.newBudgetCents }}, \"action\": \"decrease_budget\" }",
-        "options": {}
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.ZUCKCANNON_SECRET }}"
+            }
+          ]
+        }
       },
       "id": "0c51589e-be51-4ff5-92dd-dcc2818d4d85",
       "name": "Save Budget History",
@@ -2019,19 +1967,79 @@
         "rule": {
           "interval": [
             {
-              "field": "minutes"
+              "field": "minutes",
+              "minutesInterval": 10
             }
           ]
         }
       },
       "id": "5ac90e28-b6a3-40d1-be1b-effc27a29f67",
-      "name": "Every 5 Minutes",
+      "name": "Every 10 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
         -170192,
         -3168
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function collectRules(items){ if(items.length===1){ const j=items[0].json; if(Array.isArray(j))return j; if(Array.isArray(j.data))return j.data; if(Array.isArray(j.rules))return j.rules; return [j]; } return items.map(i=>i.json); }\nconst rules = collectRules($input.all());\nconst MAX = 24;\nconst campMap = new Map(); const acctMap = new Map(); const tokenConflicts = [];\nfor (const rule of rules) { for (const e of (rule.entities||[])) { if(!e||!e.entityId) continue;\n  const isAcct = rule.scope==='account' && String(e.entityId).startsWith('act_');\n  const target = isAcct ? acctMap : campMap; const prev = target.get(e.entityId);\n  if(!prev){ target.set(e.entityId,{entityId:e.entityId,token:e.token||null}); }\n  else { if(prev.token==null && e.token) prev.token=e.token; else if(e.token && prev.token && e.token!==prev.token) tokenConflicts.push({entityId:e.entityId,ruleId:rule.id}); } } }\nconst STATUS_FIELDS='effective_status,name,daily_budget,budget_remaining';\nconst INSIGHTS_FIELDS='spend,actions,action_values,purchase_roas,ctr,cpc,frequency,inline_link_clicks,outbound_clicks_ctr';\nconst tok=(e)=>encodeURIComponent(e.token||'');\nconst campEntities=[...campMap.values()].filter(e=>e.token);\nconst acctEntities=[...acctMap.values()].filter(e=>e.token);\nconst chunks=[];\nfor(let i=0;i<campEntities.length;i+=MAX){ const g=campEntities.slice(i,i+MAX);\n  const batch=[...g.map(e=>({method:'GET',relative_url:`${e.entityId}?fields=${STATUS_FIELDS}&access_token=${tok(e)}`})),\n               ...g.map(e=>({method:'GET',relative_url:`${e.entityId}/insights?fields=${INSIGHTS_FIELDS}&date_preset=today&access_token=${tok(e)}`}))];\n  chunks.push({kind:'campaign',entityIds:g.map(e=>e.entityId),batch}); }\nfor(let i=0;i<acctEntities.length;i+=MAX){ const g=acctEntities.slice(i,i+MAX);\n  const batch=g.map(e=>({method:'GET',relative_url:`${e.entityId}/insights?date_preset=today&fields=spend&access_token=${tok(e)}`}));\n  chunks.push({kind:'account',entityIds:g.map(e=>e.entityId),batch}); }\nconst fallbackToken=(campEntities[0]||acctEntities[0]||{}).token||null;\nconst uniqueEntities=campEntities.length+acctEntities.length;\nif(chunks.length===0) return [{json:{skip:true,reason:'No entities with tokens',tokenConflicts,uniqueEntities:0,chunkCount:0,entityIds:[]}}];\nconst entityIds=[...campEntities,...acctEntities].map(e=>e.entityId);\nreturn chunks.map((c,idx)=>({json:{batch:c.batch,token:fallbackToken,kind:c.kind,entityIds:c.entityIds,chunkIndex:idx,chunkCount:chunks.length,tokenConflicts,uniqueEntities,allEntityIds:entityIds}}));\n"
+      },
+      "id": "dedupe-entities-0001",
+      "name": "Dedupe Entities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -169632,
+        -3168
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-global-data-0001",
+      "name": "Has Global Data?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -169192,
+        -3168
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dedupeChunks=$('Dedupe Entities').all().map(i=>i.json).filter(c=>!c.skip);\nconst fbItems=$input.all();\nconst fbMap={}; const names=[]; let total=0, ok=0; let cursor=0;\nfor(const meta of dedupeChunks){ const entityIds=meta.entityIds||[]; const m=entityIds.length;\n  const subCount = meta.kind==='account' ? m : 2*m;\n  const slice=fbItems.slice(cursor,cursor+subCount).map(it=>it&&it.json); cursor+=subCount;\n  for(let i=0;i<m;i++){ const eid=entityIds[i]; if(!fbMap[eid]) fbMap[eid]={status:null,insights:null};\n    if(meta.kind==='account'){ const r=slice[i]; total++;\n      if(r&&r.code===200){ ok++; try{ const b=typeof r.body==='string'?JSON.parse(r.body):r.body; fbMap[eid].insights=b?.data?.[0]||null; }catch{} } }\n    else { const sr=slice[i]; const ir=slice[m+i]; total+=2;\n      if(sr&&sr.code===200){ ok++; try{ const sb=typeof sr.body==='string'?JSON.parse(sr.body):sr.body; fbMap[eid].status=sb||null; if(sb&&sb.name) names.push({id:eid,name:sb.name}); }catch{} }\n      if(ir&&ir.code===200){ ok++; try{ const ib=typeof ir.body==='string'?JSON.parse(ir.body):ir.body; fbMap[eid].insights=ib?.data?.[0]||null; }catch{} } } } }\nconst pullOk=total>0&&ok>0;\nconst tokenConflicts=(dedupeChunks[0]||{}).tokenConflicts||[];\nreturn [{json:{fbMap,names,pullOk,pullStats:{subrequests:total,ok,failed:total-ok,entities:Object.keys(fbMap).length},entity_ids:Object.keys(fbMap),tokenConflicts}}];\n"
+      },
+      "id": "build-entity-map-0001",
+      "name": "Build Entity Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -168552,
+        -3168
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -2039,7 +2047,7 @@
       "main": [
         [
           {
-            "node": "Split Rules",
+            "node": "Dedupe Entities",
             "type": "main",
             "index": 0
           }
@@ -2051,36 +2059,7 @@
         [],
         [
           {
-            "node": "Build FB Batch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build FB Batch": {
-      "main": [
-        [
-          {
-            "node": "Has Data?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Has Data?": {
-      "main": [
-        [
-          {
-            "node": "FB Batch API",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Split Rules",
+            "node": "Evaluate Rules",
             "type": "main",
             "index": 0
           }
@@ -2091,7 +2070,7 @@
       "main": [
         [
           {
-            "node": "Restore Chunk Context",
+            "node": "Build Entity Map",
             "type": "main",
             "index": 0
           }
@@ -2146,7 +2125,7 @@
       "main": [
         [
           {
-            "node": "Evaluate Rules",
+            "node": "Split Rules",
             "type": "main",
             "index": 0
           }
@@ -2612,28 +2591,6 @@
         ]
       ]
     },
-    "Restore Chunk Context": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Responses",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Aggregate Responses": {
-      "main": [
-        [
-          {
-            "node": "Classify Pull Result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Log Cycle": {
       "main": [
         [
@@ -3069,11 +3026,51 @@
         ]
       ]
     },
-    "Every 5 Minutes": {
+    "Every 10 Minutes": {
       "main": [
         [
           {
             "node": "Acquire Cycle Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe Entities": {
+      "main": [
+        [
+          {
+            "node": "Has Global Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Global Data?": {
+      "main": [
+        [
+          {
+            "node": "FB Batch API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Entity Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Entity Map": {
+      "main": [
+        [
+          {
+            "node": "Classify Pull Result",
             "type": "main",
             "index": 0
           }
