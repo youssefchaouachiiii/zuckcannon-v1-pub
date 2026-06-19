@@ -2,6 +2,8 @@
 import express from 'express';
 import { RulesEngineDB } from '../db/rules-engine-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
+import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
+import { buildAppliedTo } from '../utils/applied-to.js';
 
 export const rulesEngineUiRouter = express.Router();
 
@@ -144,10 +146,26 @@ rulesEngineUiRouter.post('/rules/from-template', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// helper (exported for unit testing)
+export async function attachAppliedTo(rules) {
+  const [accountBm, campaignAccount] = await Promise.all([
+    FacebookAuthDB.getAccountBmMap(),
+    FacebookCacheDB.getCampaignAccountMap(),
+  ]);
+  const out = [];
+  for (const r of rules) {
+    const assignments = await RulesEngineDB.getAssignmentsForRule(r.id);
+    out.push({ ...r, applied_to: buildAppliedTo(assignments, { accountBm, campaignAccount }) });
+  }
+  return out;
+}
+
 // --- Rules CRUD ---
 rulesEngineUiRouter.get('/rules', async (req, res) => {
-  try { res.json(await RulesEngineDB.listAllRules()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const rules = await RulesEngineDB.listAllRules();
+    res.json(await attachAppliedTo(rules));
+  } catch (err) { res.status(500).json({ error: 'Failed to list rules' }); }
 });
 
 rulesEngineUiRouter.get('/rules/:id', async (req, res) => {
