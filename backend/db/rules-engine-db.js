@@ -730,6 +730,20 @@ export const RulesEngineDB = {
     );
   },
 
+  // Freshest (max) date present in the id-joined RT daily window. Used by the
+  // staleness guard to compute data age — the table has no sync timestamp, so
+  // max(date) is the only freshness signal. Returns null when no rows match.
+  async getRtDailyByIdMaxDate(campaignId, campaignName, days) {
+    const row = await db.getAsync(
+      `SELECT MAX(date) as max_date
+       FROM redtrack_daily
+       WHERE (campaign_id=? OR (campaign_id IS NULL AND LOWER(campaign_name)=LOWER(?)))
+         AND date >= date('now', ? || ' days')`,
+      [campaignId, campaignName, `-${days}`]
+    );
+    return row?.max_date || null;
+  },
+
   async upsertFbDaily(entityId, entityType, date, { spend, conversions, revenue, ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout, outbound_clicks }) {
     return db.runAsync(
       `INSERT INTO fb_daily (entity_id, entity_type, date, spend, conversions, revenue, ctr, cpc, frequency, link_clicks, lp_views, initiate_checkout, outbound_clicks)
@@ -771,6 +785,19 @@ export const RulesEngineDB = {
        WHERE entity_id=? AND date >= date('now', ? || ' days')`,
       [entityId, `-${days}`]
     );
+  },
+
+  // Freshest (max) date present in the FB daily window — freshness signal for
+  // the staleness guard (fb_daily also has only a `date` TEXT, no timestamp).
+  // Returns null when no rows match.
+  async getFbDailyMaxDate(entityId, days) {
+    const row = await db.getAsync(
+      `SELECT MAX(date) as max_date
+       FROM fb_daily
+       WHERE entity_id=? AND date >= date('now', ? || ' days')`,
+      [entityId, `-${days}`]
+    );
+    return row?.max_date || null;
   },
 
   async getOfferPerformance(days = 7) {

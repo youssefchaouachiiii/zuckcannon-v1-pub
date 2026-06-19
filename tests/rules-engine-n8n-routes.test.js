@@ -33,6 +33,7 @@ beforeEach(() => {
   RulesEngineDB.getAllRedtrackSnapshots = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.listSystemUserTokens = jest.fn().mockResolvedValue([]);
   FacebookAuthDB.getExpiringTokens = jest.fn().mockResolvedValue([]);
+  FacebookAuthDB.getExpiringSystemUsers = jest.fn().mockResolvedValue([]);
   FacebookCacheDB.getCampaigns = jest.fn().mockResolvedValue([]);
 });
 
@@ -165,6 +166,116 @@ describe('GET /api/rules-engine/token-health', () => {
       { id: 1, business_name: 'Test Biz', business_manager_id: 'bm_1', expires_at: '2026-04-22T00:00:00Z' }
     ]);
     expect(FacebookAuthDB.getExpiringTokens).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('GET /api/rules-engine/system-users/expiring', () => {
+  test('returns expiring system users with alert fields, default window 7 days', async () => {
+    FacebookAuthDB.getExpiringSystemUsers = jest.fn().mockResolvedValue([
+      {
+        fb_user_id: 'u_1', business_manager_id: 'bm_1', name: 'Sigma 1',
+        access_token: 'SECRET_TOKEN', expires_at: '2026-06-24T00:00:00Z',
+        last_validated_at: '2026-06-19T00:00:00Z', last_validation_ok: 1,
+        created_at: '2026-01-01T00:00:00Z', updated_at: '2026-06-19T00:00:00Z',
+      },
+    ]);
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.window_days).toBe(7);
+    expect(res.body.count).toBe(1);
+    expect(typeof res.body.checked_at).toBe('string');
+    expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(7);
+    const row = res.body.expiring[0];
+    expect(row.fb_user_id).toBe('u_1');
+    expect(row.business_manager_id).toBe('bm_1');
+    expect(row.name).toBe('Sigma 1');
+    expect(row.expires_at).toBe('2026-06-24T00:00:00Z');
+    expect(row.last_validation_ok).toBe(1);
+  });
+
+  test('CRITICAL: never leaks access_token in the response', async () => {
+    FacebookAuthDB.getExpiringSystemUsers = jest.fn().mockResolvedValue([
+      {
+        fb_user_id: 'u_1', business_manager_id: 'bm_1', name: 'Sigma 1',
+        access_token: 'SUPER_SECRET_TOKEN', expires_at: '2026-06-24T00:00:00Z',
+        last_validated_at: null, last_validation_ok: 1,
+        created_at: '2026-01-01T00:00:00Z', updated_at: '2026-06-19T00:00:00Z',
+      },
+    ]);
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    // No row carries access_token …
+    expect(res.body.expiring[0]).not.toHaveProperty('access_token');
+    // … and the secret never appears anywhere in the serialized payload.
+    expect(JSON.stringify(res.body)).not.toContain('SUPER_SECRET_TOKEN');
+  });
+
+  test('honours ?days= override and clamps to a sane window', async () => {
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring?days=14')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.window_days).toBe(14);
+    expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(14);
+  });
+
+  test('?days=0 clamps up to 1 (not treated as missing)', async () => {
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring?days=0')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.window_days).toBe(1);
+    expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(1);
+  });
+
+  test('?days=-1 clamps up to 1', async () => {
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring?days=-1')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.window_days).toBe(1);
+    expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(1);
+  });
+
+  test('?days=999 clamps down to 90', async () => {
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring?days=999')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.window_days).toBe(90);
+    expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(90);
+  });
+
+  test('?days=abc (non-numeric) falls back to default 7', async () => {
+    const prev = process.env.TOKEN_EXPIRY_ALERT_DAYS;
+    delete process.env.TOKEN_EXPIRY_ALERT_DAYS;
+    try {
+      const res = await request(app)
+        .get('/api/rules-engine/system-users/expiring?days=abc')
+        .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+      expect(res.status).toBe(200);
+      expect(res.body.window_days).toBe(7);
+      expect(FacebookAuthDB.getExpiringSystemUsers).toHaveBeenCalledWith(7);
+    } finally {
+      if (prev === undefined) delete process.env.TOKEN_EXPIRY_ALERT_DAYS;
+      else process.env.TOKEN_EXPIRY_ALERT_DAYS = prev;
+    }
+  });
+
+  test('empty result returns ok with count 0 and empty array', async () => {
+    FacebookAuthDB.getExpiringSystemUsers = jest.fn().mockResolvedValue([]);
+    const res = await request(app)
+      .get('/api/rules-engine/system-users/expiring')
+      .set('x-n8n-secret', process.env.N8N_SHARED_SECRET || 'test-secret');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.count).toBe(0);
+    expect(res.body.expiring).toEqual([]);
   });
 });
 

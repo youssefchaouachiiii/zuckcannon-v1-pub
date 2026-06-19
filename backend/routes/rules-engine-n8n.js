@@ -5,6 +5,7 @@ import { resolveRuleEntities } from '../utils/rules-engine-resolver.js';
 import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 import { selectFbToken } from '../utils/fb-token-selector.js';
+import { maxStalenessHours, windowFreshness } from '../utils/data-staleness.js';
 
 export const rulesEngineN8nRouter = express.Router();
 
@@ -61,6 +62,12 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
     // Accounts UI writes renewals), not the legacy/stale system_user_tokens table.
     const healthyDefault = await FacebookAuthDB.getAnyHealthySystemUser();
     const defaultToken = healthyDefault?.access_token || systemUserTokens[0]?.access_token || null;
+
+    // Staleness threshold (hours) for the multi-day windows. Surfaced to n8n on
+    // each window so the "Evaluate Rules" node can skip-and-alert instead of
+    // firing last_3d/last_7d rules on stale data. Computed once per request.
+    const stalenessHours = maxStalenessHours();
+    const freshnessNow = new Date();
 
     const cachedCampaigns = await FacebookCacheDB.getCampaigns();
     await RulesEngineDB.autoAssignVerticalLabels(cachedCampaigns);
@@ -126,12 +133,21 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
         // rtById is empty → resolves by name exactly as before.
         const rt = rtById[String(entityId)] ?? rtByName[nameLower] ?? null;
 
-        const [fb3d, rt3d, fb7d, rt7d] = await Promise.all([
+        const [fb3d, rt3d, fb7d, rt7d, rt3dMax, fb3dMax, rt7dMax, fb7dMax] = await Promise.all([
           RulesEngineDB.getFbDailyWindow(entityId, 3),
           RulesEngineDB.getRtDailyByIdWindow(entityId, nameLower, 3),
           RulesEngineDB.getFbDailyWindow(entityId, 7),
           RulesEngineDB.getRtDailyByIdWindow(entityId, nameLower, 7),
+          RulesEngineDB.getRtDailyByIdMaxDate(entityId, nameLower, 3),
+          RulesEngineDB.getFbDailyMaxDate(entityId, 3),
+          RulesEngineDB.getRtDailyByIdMaxDate(entityId, nameLower, 7),
+          RulesEngineDB.getFbDailyMaxDate(entityId, 7),
         ]);
+        // Freshest date across whichever source(s) fed each window. The window
+        // is only as fresh as its NEWEST row, so take the later of the two.
+        const newerDate = (a, b) => (!a ? b : !b ? a : (a > b ? a : b));
+        const max3d = newerDate(rt3dMax, fb3dMax);
+        const max7d = newerDate(rt7dMax, fb7dMax);
 
         const mergeWindow = (fb, rt) => {
           if (!fb && !rt) return null;
@@ -169,8 +185,11 @@ rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
           };
         };
 
-        const insights_3d = mergeWindow(fb3d, rt3d);
-        const insights_7d = mergeWindow(fb7d, rt7d);
+        // Attach freshness (max_date, days_stale, is_stale) so n8n can gate on
+        // it. windowFreshness returns null when the merged window is null, so
+        // the existing null-insights guard in the node is untouched.
+        const insights_3d = windowFreshness(mergeWindow(fb3d, rt3d), max3d, stalenessHours, freshnessNow);
+        const insights_7d = windowFreshness(mergeWindow(fb7d, rt7d), max7d, stalenessHours, freshnessNow);
         return {
           entityId,
           entityName,
@@ -617,6 +636,44 @@ rulesEngineN8nRouter.get('/token-health', async (req, res) => {
     const days = parseInt(req.query.days) || 7;
     const expiring = await FacebookAuthDB.getExpiringTokens(days);
     res.json({ ok: true, expiring_soon: expiring });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// System-user token expiry (new multi-BM schema). Feeds the n8n "Token Expiry
+// Monitor" alert workflow. SECURITY: getExpiringSystemUsers returns SELECT * which
+// includes access_token — we MUST whitelist alert-safe fields and never emit the
+// token. Default window 7d (matches getExpiringSystemUsers + its unit test);
+// overridable via ?days= or TOKEN_EXPIRY_ALERT_DAYS, clamped 1..90.
+// Resolve explicitly (not via ||) so ?days=0 clamps to 1 instead of being
+// mistaken for "missing": ?days=0/-5 -> 1, ?days=999 -> 90, non-numeric or
+// absent -> default (env TOKEN_EXPIRY_ALERT_DAYS, else 7).
+rulesEngineN8nRouter.get('/system-users/expiring', async (req, res) => {
+  try {
+    const envDefault = parseInt(process.env.TOKEN_EXPIRY_ALERT_DAYS, 10);
+    const fallback = Number.isFinite(envDefault) ? envDefault : 7;
+    const parsed = parseInt(req.query.days, 10);
+    const requested = (req.query.days !== undefined && Number.isFinite(parsed))
+      ? parsed
+      : fallback;
+    const days = Math.min(Math.max(requested, 1), 90);
+    const rows = await FacebookAuthDB.getExpiringSystemUsers(days);
+    const expiring = (rows || []).map((r) => ({
+      fb_user_id: r.fb_user_id,
+      business_manager_id: r.business_manager_id,
+      name: r.name,
+      expires_at: r.expires_at,
+      last_validated_at: r.last_validated_at,
+      last_validation_ok: r.last_validation_ok,
+    }));
+    res.json({
+      ok: true,
+      window_days: days,
+      expiring,
+      count: expiring.length,
+      checked_at: new Date().toISOString(),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
