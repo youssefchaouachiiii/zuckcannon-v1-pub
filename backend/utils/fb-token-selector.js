@@ -80,24 +80,26 @@ export async function selectFbToken(userId, adAccountId) {
  *
  * This function:
  *   1. Looks up the account in the BM map.
- *   2. Resolves the BM's system-user token.
- *   3. Returns the token, or throws if either lookup fails.
+ *   2. Resolves the BM's system_user row from the maintained system_users table.
+ *   3. Gates on isHealthy (last_validation_ok=1 + not expired).
+ *   4. Returns the token, or throws if either lookup fails or the user is unhealthy.
  *
- * NEVER returns an OAuth token. NEVER falls back to OAuth. If no system user exists, throws.
+ * NEVER returns an OAuth token. NEVER falls back to OAuth. If no healthy system user
+ * exists, throws with code='no_system_user'.
  *
  * @param {string|number} accountId  Can be 'act_123' or '123'; will strip 'act_' prefix.
  * @returns {Promise<{ token: string, bm_id: string, bm_name: string }>}
  * @throws {Error} with `.code='no_bm_for_account'` if account not found, or
- *                 with `.code='no_system_user'` and `.bm_name` if no system-user token.
+ *                 with `.code='no_system_user'` and `.bm_name` if no healthy system user.
  */
 export async function resolveSystemUserTokenForAccount(accountId) {
   const acct = String(accountId).replace(/^act_/, '');
   const map = await FacebookAuthDB.getAccountBmMap();
   const bm = map[acct];
   if (!bm) { const e = new Error(`No BM mapped for account ${acct}`); e.code = 'no_bm_for_account'; throw e; }
-  const tok = await FacebookAuthDB.getSystemUserToken(bm.bm_id);
-  if (!tok?.access_token) { const e = new Error(`No system user for BM ${bm.bm_name}`); e.code = 'no_system_user'; e.bm_name = bm.bm_name; throw e; }
-  return { token: tok.access_token, bm_id: bm.bm_id, bm_name: bm.bm_name };
+  const su = await FacebookAuthDB.getSystemUserForBm(bm.bm_id);
+  if (!isHealthy(su)) { const e = new Error(`No healthy system user for BM ${bm.bm_name}`); e.code = 'no_system_user'; e.bm_name = bm.bm_name; throw e; }
+  return { token: su.access_token, bm_id: bm.bm_id, bm_name: bm.bm_name };
 }
 
 function isHealthy(systemUser) {
