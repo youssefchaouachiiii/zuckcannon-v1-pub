@@ -441,6 +441,21 @@ export const RulesEngineDB = {
   async deleteFbNativeRule(metaRuleId) {
     await db.runAsync('DELETE FROM fb_native_rules WHERE meta_rule_id = ?', [metaRuleId]);
   },
+  // Remove mirror rows for an account whose rule is no longer in keepMetaRuleIds
+  // (i.e. deleted on FB). Empty/none keep-list => delete all rows for the account.
+  async pruneFbNativeRulesForAccount(accountId, keepMetaRuleIds) {
+    const acct = String(accountId).replace(/^act_/, '');
+    const keep = (keepMetaRuleIds || []).map(String);
+    if (keep.length === 0) {
+      await db.runAsync('DELETE FROM fb_native_rules WHERE account_id = ?', [acct]);
+      return;
+    }
+    const placeholders = keep.map(() => '?').join(',');
+    await db.runAsync(
+      `DELETE FROM fb_native_rules WHERE account_id = ? AND meta_rule_id NOT IN (${placeholders})`,
+      [acct, ...keep]
+    );
+  },
 
   async bulkSetLabelByPattern(pattern, labelType, labelValue, campaignList) {
     const regex = new RegExp(pattern, 'i');

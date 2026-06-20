@@ -523,9 +523,16 @@ rulesEngineUiRouter.delete('/tags/global', async (req, res) => {
 // --- FB Native Rules Mirror ---
 rulesEngineUiRouter.get('/fb-rules', async (req, res) => {
   try {
-    const rules = await RulesEngineDB.listAllFbNativeRules();
+    const [rules, accountBm] = await Promise.all([
+      RulesEngineDB.listAllFbNativeRules(),
+      FacebookAuthDB.getAccountBmMap(),
+    ]);
+    const enriched = rules.map(r => ({
+      ...r,
+      account_name: accountBm[String(r.account_id).replace(/^act_/, '')]?.account_name || `Ad Account ${r.account_id}`,
+    }));
     const synced_at_max = rules.reduce((m, r) => (r.synced_at > m ? r.synced_at : m), '');
-    res.json({ rules, synced_at_max });
+    res.json({ rules: enriched, synced_at_max });
   } catch (err) {
     res.status(500).json({ error: 'Failed to list FB rules' });
   }

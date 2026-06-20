@@ -48,6 +48,8 @@ export const fbRulesSync = {
     for (const r of rules) {
       await RulesEngineDB.upsertFbNativeRule(normalizeFbRule(r, { account_id: acct, bm_id, bm_name }));
     }
+    // Prune mirror rows for rules deleted on FB (sync is the source of truth per account).
+    await RulesEngineDB.pruneFbNativeRulesForAccount(acct, rules.map(r => r.id));
     return { account_id: acct, count: rules.length };
   },
 

@@ -354,10 +354,11 @@ async function loadRules() {
       const syncedLabel = fb.synced_at_max ? `synced ${fb.synced_at_max} UTC` : 'not synced yet';
       const fbRows = (fb.rules || []).map(r => {
         const appliedTo = JSON.parse(r.applied_to_json || '{}');
-        const applied = `${r.bm_name ? r.bm_name + ' · ' : ''}Ad Account ${r.account_id}` +
+        const applied = `${r.bm_name ? r.bm_name + ' · ' : ''}${r.account_name || 'Ad Account ' + r.account_id}` +
           (r.applied_to_json ? ` · ${appliedTo.count || 0} ${(appliedTo.entity_type || 'CAMPAIGN').toLowerCase()}` : '');
         const enabled = r.status === 'ENABLED';
         const acctNum = String(r.account_id).replace(/^act_/, '');
+        const bizId = r.bm_id ? `&business_id=${encodeURIComponent(r.bm_id)}&global_scope_id=${encodeURIComponent(r.bm_id)}` : '';
         return `<tr style="border-bottom:1px solid #f0f0f0;background:#fbfdff;">
           <td style="padding:8px;">${escapeHtml(r.name || '')} <span title="Managed in Facebook — single source of truth" style="background:#e7f0ff;color:#1d4ed8;padding:1px 5px;border-radius:3px;font-size:10px;">FB</span></td>
           <td style="padding:8px;color:#888;">${escapeHtml((appliedTo.entity_type || 'campaign').toLowerCase())}</td>
@@ -368,7 +369,7 @@ async function loadRules() {
             <div style="font-size:10px;color:#aaa;">${escapeHtml(syncedLabel)}</div>
           </td>
           <td style="padding:8px;white-space:nowrap;">
-            <a class="btn-sm" href="https://adsmanager.facebook.com/adsmanager/manage/rules?act=${encodeURIComponent(acctNum)}" target="_blank" rel="noopener">View in Facebook ↗</a>
+            <a class="btn-sm" href="https://business.facebook.com/ads/manager/rules/management/?act=${encodeURIComponent(acctNum)}${bizId}&page=rules&tab=rules_management_tab" target="_blank" rel="noopener">View in Facebook ↗</a>
           </td>
         </tr>`;
       }).join('');

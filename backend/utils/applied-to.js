@@ -4,7 +4,7 @@
 
 function accountLabel(accountId, accountBm) {
   const bm = accountBm[accountId]?.bm_name;
-  const name = `Ad Account ${accountId}`;
+  const name = accountBm[accountId]?.account_name || `Ad Account ${accountId}`;
   return bm ? `${bm} · ${name}` : name;
 }
 
@@ -37,7 +37,7 @@ export function buildAppliedTo(assignments, { accountBm = {}, campaignAccount = 
     seen.add(accountId);
     detail.push({
       bm_name: accountBm[accountId]?.bm_name || null,
-      account_name: `Ad Account ${accountId}`,
+      account_name: accountBm[accountId]?.account_name || `Ad Account ${accountId}`,
       account_id: accountId,
     });
   };
