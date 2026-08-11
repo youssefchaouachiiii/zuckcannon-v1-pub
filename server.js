@@ -28,6 +28,9 @@ import { getPaths } from "./backend/utils/paths.js";
 import MetaBatch from "./backend/utils/meta-batch.js";
 import { RulesDB } from "./backend/utils/rules-db.js";
 import { rateLimitTracker, trackRateLimitFromResponse, enforceRateLimit } from "./backend/utils/rate-limit-tracker.js";
+import {
+  installMetaGuard, isKillSwitchOn, killSwitchReason, killSwitchPath, recentCalls,
+} from "./backend/utils/meta-guard.js";
 import { FacebookAuthDB } from "./backend/utils/facebook-auth-db.js";
 import { selectFbToken } from "./backend/utils/fb-token-selector.js";
 import { resolveFbToken } from "./backend/utils/fb-token-resolver.js";
@@ -230,6 +233,10 @@ const oauth2Client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.
 oauth2Client.setCredentials({
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
 });
+
+// SGP Project 6 rails on every Meta write: kill switch, per-account hourly cap, and no
+// budget or bid change on a live entity. One interceptor rather than ~95 call sites.
+installMetaGuard(axios);
 
 // Setup axios interceptor to track Facebook API rate limits
 axios.interceptors.response.use(
@@ -671,6 +678,23 @@ app.get("/api/rate-limit-stats", ensureAuthenticatedAPI, async (req, res) => {
     console.error("Error fetching rate limit stats:", error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Project 6 rails, read-only. Flipping the switch is deliberately NOT an endpoint: it has to
+// work when this server is wedged, which is exactly when it gets reached for.
+// Use `node scripts/kill-switch.js on|off|status`.
+app.get("/api/meta-guard-status", ensureAuthenticatedAPI, (req, res) => {
+  const on = isKillSwitchOn();
+  res.json({
+    success: true,
+    killSwitch: { on, reason: on ? killSwitchReason() : "", path: killSwitchPath() },
+    hourlyCap: {
+      maxCallsPerHour: Number(process.env.META_MAX_CALLS_PER_HOUR || 150),
+      accounts: (req.query.accounts ? String(req.query.accounts).split(",") : [])
+        .map((a) => ({ accountId: a, callsThisHour: recentCalls(a).length })),
+    },
+    budgetChanges: "blocked on live entities; allowed only when creating a new campaign or ad set",
+  });
 });
 
 // Create upload session endpoint

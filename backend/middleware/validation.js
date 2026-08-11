@@ -1,4 +1,23 @@
 // Request validation middleware
+
+// SGP Project 6: our code may not change a budget or a bid on a live entity. An automated
+// rule is that same write, deferred — Meta runs it for us on a schedule, so the axios guard in
+// meta-guard.js never sees it and this is the only place it can be stopped.
+//
+// One list referenced three times, because three hand-maintained copies drift, and the copy
+// that drifts is the one that lets a budget rule through.
+export const BUDGET_MOVING_ACTIONS = ["CHANGE_BUDGET", "CHANGE_BID"];
+export const ALLOWED_RULE_ACTIONS = ["PAUSE", "UNPAUSE", "SEND_NOTIFICATION"];
+
+export const budgetActionRefusal = (actionType) => ({
+  error:
+    `action.type ${actionType} is disabled: an automated rule that moves a budget or a bid is ` +
+    "still our code moving it, just on Meta's schedule. The daily budget is the last-resort " +
+    "brake if a bad number lands anywhere else.",
+  hint: "Use PAUSE or SEND_NOTIFICATION, or raise the campaign spending limit by hand, $100 at a time.",
+  code: "BUDGET_RULE_BLOCKED",
+});
+
 export const validateRequest = {
   // Validate file upload requests
   uploadFiles: (req, res, next) => {
@@ -1420,14 +1439,18 @@ export const validateRequest = {
       return res.status(400).json({ error: "action.type is required" });
     }
 
-    const validActionTypes = ["PAUSE", "UNPAUSE", "CHANGE_BUDGET", "CHANGE_BID", "SEND_NOTIFICATION"];
+    if (BUDGET_MOVING_ACTIONS.includes(action.type)) {
+      return res.status(400).json(budgetActionRefusal(action.type));
+    }
+
+    const validActionTypes = ALLOWED_RULE_ACTIONS;
     if (!validActionTypes.includes(action.type)) {
       return res.status(400).json({
         error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
       });
     }
 
-    // Validate action-specific fields
+    // Kept for the day the budget ban is lifted deliberately; unreachable while it stands.
     if (action.type === "CHANGE_BUDGET") {
       if (!action.budget_change_type) {
         return res.status(400).json({
@@ -1669,7 +1692,11 @@ export const validateRequest = {
         return res.status(400).json({ error: "action.type is required" });
       }
 
-      const validActionTypes = ["PAUSE", "UNPAUSE", "CHANGE_BUDGET", "CHANGE_BID", "SEND_NOTIFICATION"];
+      if (BUDGET_MOVING_ACTIONS.includes(action.type)) {
+        return res.status(400).json(budgetActionRefusal(action.type));
+      }
+
+      const validActionTypes = ALLOWED_RULE_ACTIONS;
       if (!validActionTypes.includes(action.type)) {
         return res.status(400).json({
           error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,
@@ -1798,7 +1825,11 @@ export const validateRequest = {
     }
 
     // Validate action type
-    const validActionTypes = ["PAUSE", "UNPAUSE", "SEND_NOTIFICATION", "CHANGE_BUDGET", "CHANGE_BID"];
+    if (BUDGET_MOVING_ACTIONS.includes(action.type)) {
+      return res.status(400).json(budgetActionRefusal(action.type));
+    }
+
+    const validActionTypes = ALLOWED_RULE_ACTIONS;
     if (!validActionTypes.includes(action.type)) {
       return res.status(400).json({
         error: `Invalid action.type. Must be one of: ${validActionTypes.join(", ")}`,

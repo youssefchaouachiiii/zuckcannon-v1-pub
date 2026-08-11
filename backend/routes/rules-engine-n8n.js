@@ -5,8 +5,106 @@ import { resolveRuleEntities } from '../utils/rules-engine-resolver.js';
 import { FacebookAuthDB } from '../utils/facebook-auth-db.js';
 import { FacebookCacheDB } from '../utils/facebook-cache-db.js';
 import { selectFbToken } from '../utils/fb-token-selector.js';
+import { guardMetaWrite, markBudgetDecrease, isKillSwitchOn, killSwitchReason } from '../utils/meta-guard.js';
+import axios from 'axios';
 
 export const rulesEngineN8nRouter = express.Router();
+
+// Meta's own floor for a daily budget. A "decrease" that lands under it is a silent kill, not a
+// throttle, so it is refused rather than clamped — clamping would hide the rule being wrong.
+const MIN_DAILY_BUDGET_CENTS = Number(process.env.META_MIN_DAILY_BUDGET_CENTS || 100);
+const GRAPH_VERSION = process.env.META_API_VERSION || 'v25.0';
+
+/**
+ * The one sanctioned way to move a daily budget: strictly downward, verified against Meta.
+ *
+ * Rayhan's call, 2026-08-11: keep decreases for unprofitable campaigns, drop raises, because a
+ * decrease can only ever reduce spend. Raises stay banned everywhere.
+ *
+ * This exists as a server endpoint rather than a guard node in n8n because direction cannot be
+ * taken on the caller's word. The rules engine computes `newCents = current * (1 - pct)`, so a
+ * rule saved with `decrease_pct: -50` computes a 50% RAISE and still calls itself a decrease.
+ * The only trustworthy check reads the live budget back from Meta and compares.
+ */
+rulesEngineN8nRouter.post('/decrease-budget', async (req, res) => {
+  const { entity_id, entity_type = 'campaign', new_daily_budget_cents, rule_id, reason } = req.body || {};
+
+  if (!entity_id) return res.status(400).json({ error: 'entity_id is required' });
+  const target = Number(new_daily_budget_cents);
+  if (!Number.isInteger(target)) {
+    return res.status(400).json({ error: 'new_daily_budget_cents must be an integer number of cents' });
+  }
+
+  try {
+    const accountId = entity_type === 'adset'
+      ? await FacebookCacheDB.getAccountIdForAdset(entity_id)
+      : await FacebookCacheDB.getAccountIdForCampaign(entity_id);
+
+    const picked = accountId ? await selectFbToken(null, accountId) : null;
+    const token = (picked?.type === 'system_user' && picked.token)
+      ? picked.token
+      : (await FacebookAuthDB.listSystemUserTokens())[0]?.access_token;
+    if (!token) return res.status(500).json({ error: 'no FB token available' });
+
+    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${entity_id}`;
+
+    // Read the live value. Never trust a budget the caller supplied — that is the number the
+    // caller is trying to change, computed by the code we are guarding against.
+    const current = await axios.get(url, {
+      params: { fields: 'daily_budget', access_token: token },
+    });
+    const currentCents = parseInt(current.data?.daily_budget, 10);
+    if (!Number.isInteger(currentCents)) {
+      return res.status(409).json({
+        error: 'entity has no daily_budget to lower (lifetime budget, or budget held at campaign level)',
+        code: 'NO_DAILY_BUDGET',
+      });
+    }
+
+    if (target >= currentCents) {
+      return res.status(400).json({
+        error: `refused: ${target} is not lower than the current ${currentCents}. This endpoint only lowers budgets.`,
+        code: 'NOT_A_DECREASE',
+        current_daily_budget_cents: currentCents,
+      });
+    }
+
+    if (target < MIN_DAILY_BUDGET_CENTS) {
+      return res.status(400).json({
+        error: `refused: ${target} is below the floor of ${MIN_DAILY_BUDGET_CENTS} cents. `
+          + 'Pause the campaign instead of starving it — a budget near zero looks alive and is not.',
+        code: 'BELOW_FLOOR',
+        floor_cents: MIN_DAILY_BUDGET_CENTS,
+      });
+    }
+
+    // The marker carries the value just read. The interceptor re-checks target < current itself,
+    // so this cannot be used to smuggle a raise through.
+    await axios.post(url, new URLSearchParams({ daily_budget: String(target), access_token: token }),
+      markBudgetDecrease({
+        __metaGuardAccountId: accountId ? `act_${accountId}` : undefined,
+      }, { fromCents: currentCents, toCents: target }));
+
+    await RulesEngineDB.saveBudgetHistory(
+      entity_id, entity_type, rule_id || null, currentCents, target, 'decrease_budget'
+    );
+
+    return res.json({
+      ok: true,
+      entity_id,
+      entity_type,
+      old_daily_budget_cents: currentCents,
+      new_daily_budget_cents: target,
+      reason: reason || null,
+    });
+  } catch (err) {
+    if (err.isMetaGuardError) {
+      return res.status(423).json({ error: err.message, code: err.code });
+    }
+    const fbError = err.response?.data?.error;
+    return res.status(fbError ? 502 : 500).json({ error: fbError?.message || err.message });
+  }
+});
 
 rulesEngineN8nRouter.get('/health', async (req, res) => {
   try {
@@ -33,6 +131,22 @@ rulesEngineN8nRouter.get('/health', async (req, res) => {
 
 rulesEngineN8nRouter.get('/active-rules', async (req, res) => {
   try {
+    // The kill switch reaches the n8n rules engine from here, and only from here.
+    //
+    // n8n writes to Meta directly — both `Call FB API` (pause/enable) and `Call FB API Scale`
+    // (daily_budget) post to graph.facebook.com without touching this server, so the axios
+    // interceptor never sees them and cannot stop them. But every cycle starts by asking this
+    // endpoint what to act on. Hand back nothing and the whole loop does nothing: no pause, no
+    // budget change, no enable.
+    //
+    // That makes one flag file the stop button for all three Meta callers, without needing a
+    // single edit inside n8n.
+    if (isKillSwitchOn()) {
+      const why = killSwitchReason();
+      console.warn(`[MetaGuard] kill switch ON — serving 0 rules to the engine${why ? `: ${why}` : ''}`);
+      return res.json([]);
+    }
+
     const rules = await RulesEngineDB.listActiveRules();
     const systemUserTokens = await FacebookAuthDB.listSystemUserTokens();
     const defaultToken = systemUserTokens[0]?.access_token || null;
@@ -645,10 +759,21 @@ rulesEngineN8nRouter.post('/execute-once', async (req, res) => {
     const token = tokens[0]?.access_token;
     if (!token) return res.status(500).json({ error: 'no FB token available' });
 
-    const fbResp = await fetch(`https://graph.facebook.com/v25.0/${entity_id}`, {
+    // The one Meta write in this repo that does not go through axios, so it does not inherit
+    // the request interceptor. Guarded by hand rather than left as the gap.
+    const pauseUrl = `https://graph.facebook.com/v25.0/${entity_id}`;
+    const pauseBody = new URLSearchParams({ status: 'PAUSED', access_token: token });
+    try {
+      guardMetaWrite({ url: pauseUrl, method: 'POST', data: pauseBody });
+    } catch (guardErr) {
+      if (!guardErr.isMetaGuardError) throw guardErr;
+      return res.status(423).json({ error: guardErr.message, code: guardErr.code });
+    }
+
+    const fbResp = await fetch(pauseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ status: 'PAUSED', access_token: token }),
+      body: pauseBody,
     });
     let fbBody;
     try { fbBody = await fbResp.json(); } catch { fbBody = {}; }

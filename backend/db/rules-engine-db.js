@@ -272,9 +272,36 @@ async function initializeDatabase() {
 
 await initializeDatabase();
 
+// SGP Project 6, Rayhan's call 2026-08-11: a rule may LOWER a budget, never raise one.
+// A decrease can only ever reduce spend; a raise is the one that turns a bad number into money.
+//
+// Enforced here rather than in the two UI routes, because this is the function both of them call
+// and a rail repeated at each caller is the one the third caller misses.
+//
+// Existing `scale_budget` rows are left in place rather than migrated: the CHECK constraint still
+// permits them, and rewriting the table on boot is a worse risk than dead rows. They are filtered
+// out of listActiveRules instead, so the engine never receives them.
+export const BUDGET_RAISE_ACTIONS = ['scale_budget'];
+
+export class BudgetRaiseBlocked extends Error {
+  constructor(action) {
+    super(
+      `action "${action}" is disabled: a rule may lower a budget, never raise one. `
+      + 'Use decrease_budget, or raise the campaign spending limit by hand, $100 at a time.'
+    );
+    this.code = 'BUDGET_RAISE_BLOCKED';
+    this.isBudgetRaiseBlocked = true;
+  }
+}
+
+function refuseBudgetRaise(action) {
+  if (BUDGET_RAISE_ACTIONS.includes(action)) throw new BudgetRaiseBlocked(action);
+}
+
 export const RulesEngineDB = {
   // --- Rules ---
   async createRule(data) {
+    refuseBudgetRaise(data.action);
     const { lastID } = await db.runAsync(
       `INSERT INTO rules (name, scope, conditions_json, action, action_params_json, cooldown_hours, is_active, is_dry_run, combinator, alert_level)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -287,12 +314,23 @@ export const RulesEngineDB = {
     return (await db.getAsync('SELECT * FROM rules WHERE id = ?', [id])) || null;
   },
   async listActiveRules() {
-    return db.allAsync('SELECT * FROM rules WHERE is_active = 1');
+    const rows = await db.allAsync('SELECT * FROM rules WHERE is_active = 1');
+    const kept = rows.filter((r) => !BUDGET_RAISE_ACTIONS.includes(r.action));
+    if (kept.length !== rows.length) {
+      // Say what was dropped. A silent filter reads as "there were none".
+      console.warn(
+        `[RulesEngine] withheld ${rows.length - kept.length} budget-raise rule(s) from the engine: `
+        + rows.filter((r) => BUDGET_RAISE_ACTIONS.includes(r.action))
+             .map((r) => `#${r.id} ${r.name}`).join(', ')
+      );
+    }
+    return kept;
   },
   async listAllRules() {
     return db.allAsync('SELECT * FROM rules ORDER BY created_at DESC');
   },
   async updateRule(id, data) {
+    refuseBudgetRaise(data.action);
     await db.runAsync(
       `UPDATE rules SET name=?, scope=?, conditions_json=?, action=?, action_params_json=?,
        cooldown_hours=?, is_active=?, is_dry_run=?, combinator=?, alert_level=? WHERE id=?`,
